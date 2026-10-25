@@ -2,12 +2,13 @@ param([Parameter(Mandatory=$true)][string]$RequestFile)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+Add-Type -AssemblyName System.Windows.Forms
 Add-Type @'
 using System;
 using System.Runtime.InteropServices;
 public static class DialogMessages {
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wparam, IntPtr lparam);
-  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr hwnd, uint message, IntPtr wparam, string text);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
 }
 '@
 $request = [IO.File]::ReadAllText($RequestFile) | ConvertFrom-Json
@@ -40,24 +41,22 @@ try {
     }
     if (!$dialog) { throw "Dialog not found: $($step.title)" }
     if ($step.path) {
-      $hostControl = Find-Element $dialog $properties::AutomationIdProperty 'FileNameControlHost'
-      $edit = if ($hostControl) { Find-Element $hostControl $properties::ClassNameProperty 'Edit' }
-      if (!$edit) {
-        $candidates = $dialog.FindAll($scope, [System.Windows.Automation.PropertyCondition]::new($properties::AutomationIdProperty, '1148'))
-        foreach ($candidate in $candidates) {
-          if ($candidate.Current.ClassName -eq 'Edit') { $edit = $candidate; break }
-          $edit = Find-Element $candidate $properties::ClassNameProperty 'Edit'
-          if ($edit) { break }
-        }
-      }
-      if (!$edit) { throw 'File name edit control was not found' }
-      # These standard HWND controls sometimes expose only a generic UIA pane.
-      # WM_SETTEXT works with their actual Edit handles without keyboard/clipboard races.
-      [void][DialogMessages]::SendMessage([IntPtr]$edit.Current.NativeWindowHandle, 0x000C, [IntPtr]::Zero, [string]$step.path)
+      [void][DialogMessages]::SetForegroundWindow([IntPtr]$dialog.Current.NativeWindowHandle)
+      [System.Windows.Forms.Clipboard]::SetText([string]$step.path)
+      [System.Windows.Forms.SendKeys]::SendWait('%n')
+      [System.Windows.Forms.SendKeys]::SendWait('^a')
+      [System.Windows.Forms.SendKeys]::SendWait('^v')
+      Start-Sleep -Milliseconds 150
     }
     $button = if ($step.buttonName) {
       Find-Element $dialog $properties::NameProperty ([string]$step.buttonName)
-    } else { Find-Element $dialog $properties::AutomationIdProperty ([string]$step.buttonId) }
+    } else {
+      # File list items also use numeric IDs; select the actual native button.
+      $condition = [System.Windows.Automation.AndCondition]::new(
+        [System.Windows.Automation.PropertyCondition]::new($properties::AutomationIdProperty, [string]$step.buttonId),
+        [System.Windows.Automation.PropertyCondition]::new($properties::ClassNameProperty, 'Button'))
+      $dialog.FindFirst($scope, $condition)
+    }
     Click-Button $button
     Start-Sleep -Milliseconds 150
   }

@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { spawn, execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { writeFile, mkdir } = require('node:fs/promises');
+const { writeFile, mkdir, realpath } = require('node:fs/promises');
 const net = require('node:net');
 const path = require('node:path');
 const { chromium } = require('playwright');
@@ -50,7 +50,7 @@ async function launch(root) {
     await page.getByTestId('ruby-version').filter({ hasText: /ruby 3\.4\.12/i }).waitFor();
     const ruby = await page.evaluate(() => window.__TAURI__.core.invoke('ruby_info'));
     const canonical = value => path.toNamespacedPath(path.resolve(value)).toLowerCase();
-    assert.equal(canonical(ruby.path), canonical(path.join(path.dirname(executable), 'ruby', 'bin', 'ruby.exe')));
+    assert.equal(canonical(await realpath(ruby.path)), canonical(await realpath(path.join(path.dirname(executable), 'ruby', 'bin', 'ruby.exe'))));
     console.log(JSON.stringify({ executable, ruby, systemRubyAvailable: false }));
     return { child, browser, page, root, dialogSequence: 0 };
   } catch (error) {
@@ -69,7 +69,7 @@ async function dialogs(app, trigger, steps, closesApp = false) {
   const request = path.join(app.root, `dialog-${++app.dialogSequence}.json`);
   await writeFile(request, JSON.stringify({ processId: app.child.pid, steps }), 'utf8');
   const automation = execute(system('WindowsPowerShell/v1.0/powershell.exe'), [
-    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'native-dialog.ps1'), '-RequestFile', request
+    '-NoProfile', '-STA', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'native-dialog.ps1'), '-RequestFile', request
   ], { timeout: 60000, maxBuffer: 1024 * 1024 });
   try {
     await Promise.all([automation, trigger()]);

@@ -1,6 +1,6 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtemp, mkdir, readFile, writeFile, rm, access } = require('node:fs/promises');
+const { mkdtemp, mkdir, readFile, writeFile, rm, access, realpath } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 const { once } = require('node:events');
@@ -10,7 +10,7 @@ let app;
 let page;
 let root;
 before(async () => {
-  root = await mkdtemp(path.join(tmpdir(), 'AtCoder IDE 日本語 '));
+  root = await realpath(await mkdtemp(path.join(tmpdir(), 'AtCoder IDE 日本語 ')));
   app = await launch(root);
   page = app.page;
 });
@@ -25,10 +25,12 @@ async function fileOperation(trigger, steps) {
 async function openDocument(file) {
   const dirty = await page.evaluate(() => document.getElementById('save-state').textContent.includes('変更'));
   await fileOperation(() => page.getByRole('button', { name: '開く', exact: true }).click(), [...(dirty ? [discard(true)] : []), open(file)]);
+  assert.equal(await page.locator('#file-path').textContent(), file);
 }
 async function saveAs(file, exists = false) {
   await fileOperation(() => page.getByRole('button', { name: '名前を付けて保存', exact: true }).click(), [save(file), ...(exists ? [overwrite()] : [])]);
   await page.locator('#message').filter({ hasText: 'ファイルを保存しました' }).waitFor();
+  assert.equal(await page.locator('#file-path').textContent(), file);
 }
 async function newDocument() {
   const dirty = await page.evaluate(() => document.getElementById('save-state').textContent.includes('変更'));
@@ -281,6 +283,7 @@ test('M09: cancel native close/new confirmation, then create and save a document
   await page.getByTestId('code-editor').fill('puts "新規保存"');
   const file = path.join(root, '新しい解答.rb');
   await fileOperation(() => page.getByRole('button', { name: '保存', exact: true }).click(), [save(file)]);
+  assert.equal(await page.locator('#file-path').textContent(), file);
   assert.equal(await readFile(file, 'utf8'), 'puts "新規保存"');
 });
 
@@ -389,9 +392,8 @@ test('M06/M09: accepting native close stops Ruby descendants and exits', async (
   await page.getByTestId('code-editor').fill(`require 'rbconfig'; spawn(RbConfig.ruby, '-e', 'sleep 2; File.write(${JSON.stringify(marker)}, "survived")'); puts 'ready'; sleep 30`);
   await page.getByRole('button', { name: '実行', exact: true }).click();
   await page.getByTestId('stdout').filter({ hasText: 'ready' }).waitFor();
-  const exited = once(app.child, 'exit');
-  await dialogs(app, () => page.evaluate(() => window.__TAURI__.window.getCurrentWindow().close()), [discard(true)], true);
-  await exited;
+  const exited = once(app.child, 'exit', { signal: AbortSignal.timeout(30000) });
+  await Promise.all([exited, dialogs(app, () => page.evaluate(() => window.__TAURI__.window.getCurrentWindow().close()), [discard(true)], true)]);
   await pause(2200);
   await assert.rejects(access(marker), { code: 'ENOENT' });
 });
