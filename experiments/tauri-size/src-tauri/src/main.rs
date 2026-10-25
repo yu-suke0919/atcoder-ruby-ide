@@ -63,10 +63,19 @@ mod desktop {
     }
 
     pub fn start() {
+        let mut context = tauri::generate_context!();
+        if let Ok(port) = std::env::var("TAURI_SIZE_TEST_PORT") {
+            let port: u16 = port
+                .parse()
+                .expect("TAURI_SIZE_TEST_PORT must be a port number");
+            for window in &mut context.config_mut().app.windows {
+                window.additional_browser_args = Some(format!("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port={port}"));
+            }
+        }
         tauri::Builder::default()
             .manage(Runner::new(Duration::from_secs(5), 1048576))
             .invoke_handler(tauri::generate_handler![ruby_info, run_ruby, stop_ruby])
-            .build(tauri::generate_context!())
+            .build(context)
             .expect("Tauri prototype failed to build")
             .run(|app, event| {
                 if let tauri::RunEvent::ExitRequested { .. } = event {

@@ -14,6 +14,7 @@ main の MVP をベースに、既存の HTML / CSS と同じ RubyInstaller 3.4.
 - 既存 Electron ポータブル exe と Tauri NSIS setup.exe の実サイズを記録する。
 - パッケージ形式の差を区別するため、実行可能な各配布用ディレクトリも同じ圧縮設定で ZIP 化して比較する。
 - 圧縮前の容量、Ruby の容量、実行ファイル単体の容量、圧縮後の容量を区別する。単位は bytes と MiB (1024² bytes)。
+- 圧縮前はファイルの論理サイズ合計とし、`du` のディスク占有量やファイルシステムのブロック余白は含めない。同じ Ruby は論理サイズ 102.71 MiB、19,696 ファイルである。
 - 結果 JSON / Markdown と実際の Windows 配布物を CI Artifact として保存する。
 
 ## 受入条件と検証順序
@@ -21,7 +22,7 @@ main の MVP をベースに、既存の HTML / CSS と同じ RubyInstaller 3.4.
 1. この資料を先に作り、Ruby 実行・停止と容量集計のテストを実装前に追加する。
 2. Rust の実プロセステストでサンプル、標準入力の EOF、日本語出力、エラー、停止、時間制限、出力上限を確認する。
 3. 最小実装し、Windows の Tauri 実アプリで初期サンプルの `6 test`、日本語の stdout / stderr、停止後の再実行を確認する。
-4. Playwright は WebView2 のテスト用 CDP 接続を利用する。リリースビルドでも検証できるよう `devtools` feature を有効にし、ポート指定はテスト時だけ環境変数で渡す。
+4. Playwright は WebView2 のテスト用 CDP 接続を利用する。リリースビルドでも検証できるよう `devtools` feature を有効にする。テスト時だけ `TAURI_SIZE_TEST_PORT` を渡し、Tauri の `additionalBrowserArgs` に明示的に反映する。通常起動ではポートを開かない。
 5. 配布物に含まれる Ruby を使うことを確認し、同じ Ruby 一式を含むことをハッシュでも確認する。
 6. 配布容量を集計し、比較条件と制約を添えてこの資料と PR に結果を記録する。
 

@@ -21,7 +21,7 @@ async function verify(executable, screenshot) {
   const app = spawn(executable, [], { env: { ...process.env,
     RUBY_PATH: 'C:\\missing-ruby-for-size-probe.exe',
     WEBVIEW2_USER_DATA_FOLDER: profile,
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`
+    TAURI_SIZE_TEST_PORT: String(port)
   }, stdio: 'inherit' });
   let browser;
   try {

@@ -29,7 +29,6 @@ jobs:
           workspaces: experiments/tauri-size/src-tauri
           cache-on-failure: true
       - run: npm ci
-      - run: npm run setup:electron
       - run: npm run prepare:ruby
       - name: Use the same Ruby for runner tests
         shell: pwsh
@@ -37,12 +36,13 @@ jobs:
       - run: npm ci --prefix experiments/tauri-size
       - run: npm test --prefix experiments/tauri-size
       - run: cargo test --locked --manifest-path experiments/tauri-size/src-tauri/Cargo.toml --test runner
-      - run: npm run build:win
       - run: npm run build --prefix experiments/tauri-size
       - name: Prepare the portable app and installer
         run: node experiments/tauri-size/stage.cjs
       - name: Verify the portable and installed Tauri apps with their bundled Ruby
         run: node experiments/tauri-size/verify-windows.cjs
+      - run: npm run setup:electron
+      - run: npm run build:win
       - name: Compare the complete Ruby payload and distribution sizes
         run: node experiments/tauri-size/measure.cjs
       - uses: actions/upload-artifact@v4
