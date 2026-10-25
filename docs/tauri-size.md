@@ -51,4 +51,33 @@ Tauri のビルド時だけ `desktop` feature を有効にし、実プロセス�
 
 ## 結果
 
-未測定。Windows ビルドと動作確認の完了後に実測値を記録する。
+2026-10-25、[Windows CI run 40193201513](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/40193201513) でビルド・動作・容量の検証がすべて成功した。
+検証コードは `98cd01428b06357feb115559e1a84c72a1f6168f`、実際に checkout された PR のマージ参照は `35eb7699a7011a7f305da0926820419eb88eaa0e`。
+
+| 比較 | Electron | Tauri | 削減率 |
+| --- | ---: | ---: | ---: |
+| 実行ファイル単体 | 238.23 MiB | 5.81 MiB | — |
+| 配布用ディレクトリのファイルサイズ合計 | 459.50 MiB | 108.51 MiB | — |
+| 同じ設定の ZIP (`7za -tzip -mx=9 -mmt=2`) | 178.81 MiB | 34.36 MiB | 80.8% |
+| Electron portable exe / Tauri NSIS setup.exe | 119.77 MiB | 17.54 MiB | 85.4% |
+
+Ruby は 107,695,373 bytes (102.71 MiB)、19,696 ファイルを両方に含む。全ファイルのパス・サイズ・SHA-256 が一致した。
+ZIP は 187,495,627 → 36,026,189 bytes、パッケージは 125,591,636 → 18,395,198 bytes。
+パッケージ形式が違う後者の削減率だけで判断せず、同じ ZIP 設定の 80.8% 削減を主な比較結果とする。
+
+### 動作確認
+
+- Linux / Windows の Rust 実プロセステスト 8 件と、容量集計の実ファイルテストが成功した。
+- Windows の portable ディレクトリと NSIS インストール先の両方で、初期サンプルの `6 test`、日本語 stdout / stderr、停止、停止後の再実行、構文エラー表示を確認した。
+- 外部の `RUBY_PATH` を存在しないパスにした状態でも起動し、実際に使用した Ruby が各配布物内の `ruby/bin/ruby.exe` であることを照合した。
+- リリース版の WebView 検査設定と Windows 拡張パス表記への対応を含め、最終 CI はすべて成功した。通常起動ではテスト用ポートを開かない。
+
+### 成果物と判断
+
+- [JSON / Markdown / 実画面の画像](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/40193201513/artifacts/12598853530)
+- [Windows 検証用配布物（ZIP と setup.exe の両方を含む）](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/40193201513/artifacts/12598718926)
+
+同じ Ruby を残したまま配布容量が大幅に減ったため、容量対策として Tauri v2 への移行は有効と判断する。
+ただし、これは編集・実行・停止に絞った検証版であり、ファイル操作・期待出力比較を含む全移行後の最終容量ではない。
+CI の端末は WebView2 導入済みで、未導入端末の追加ダウンロード量はこの表に含めていない。
+結果の追記コミットは資料のみであり、上記の検証コードに対する CI と区別する。
