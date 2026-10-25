@@ -1,14 +1,30 @@
 const $ = (id) => document.getElementById(id);
 const editor = $('code-editor');
 const input = $('stdin');
+const expectedOutput = $('expected-output');
+const compareOutput = $('compare-output');
 const sample = 'a = gets.to_i\nb, c = gets.split.map(&:to_i)\ns = gets.chomp\n\nputs "#{a + b + c} #{s}"\n';
 editor.value = sample;
 input.value = '1\n2 3\ntest\n';
+expectedOutput.value = '6 test\n';
 let savedCode = sample;
 let filePath = null;
 let running = false;
 let fileBusy = false;
 let rubyAvailable = false;
+let comparisonRevision = 0;
+
+function showComparison(state) {
+  const labels = { none: '比較なし', pending: '未比較', running: '比較中…', matched: '一致', mismatched: '不一致', unavailable: '判定なし' };
+  $('comparison-status').textContent = labels[state];
+  $('comparison-status').dataset.state = state;
+}
+
+function resetComparison() {
+  comparisonRevision++;
+  expectedOutput.disabled = !compareOutput.checked;
+  showComparison(compareOutput.checked ? 'pending' : 'none');
+}
 
 function message(text, error = false) {
   $('message').textContent = text;
@@ -16,6 +32,7 @@ function message(text, error = false) {
 }
 
 function updateEditor() {
+  resetComparison();
   const dirty = editor.value !== savedCode;
   window.ide.setDirty(dirty);
   $('save-state').textContent = dirty ? '● 未保存の変更' : filePath ? '保存済み' : '未保存のファイル';
@@ -73,24 +90,31 @@ function saveFile(saveAs = false) {
 
 async function run() {
   if (running || fileBusy || !rubyAvailable) return;
+  const revision = comparisonRevision;
+  const expected = compareOutput.checked ? expectedOutput.value : null;
   running = true;
   updateButtons();
   $('stdout').textContent = '';
   $('stderr').textContent = '';
   $('run-status').textContent = '実行中…';
   $('run-duration').textContent = '— ms';
+  showComparison(expected === null ? 'none' : 'running');
   message('Ruby を実行しています。');
   try {
-    const result = await window.ide.run(editor.value, input.value);
+    const result = await window.ide.run(editor.value, input.value, expected);
     const statuses = {
       completed: '正常終了', failed: `エラー終了${result.exitCode === null ? '' : ` (${result.exitCode})`}`,
       stopped: '停止しました', timeout: '時間制限で停止（5 秒）', 'output-limit': '出力上限で停止（1 MiB）'
     };
     $('run-status').textContent = statuses[result.status];
     $('run-duration').textContent = `${result.durationMs} ms`;
+    if (revision === comparisonRevision && expected !== null) {
+      showComparison(result.comparison === null ? 'unavailable' : result.comparison ? 'matched' : 'mismatched');
+    }
     message(result.status === 'completed' ? '実行が完了しました。' : statuses[result.status], ['failed', 'timeout', 'output-limit'].includes(result.status));
   } catch (error) {
     $('run-status').textContent = '実行できませんでした';
+    if (revision === comparisonRevision && expected !== null) showComparison('unavailable');
     message(error.message, true);
   } finally { running = false; updateButtons(); }
 }
@@ -118,11 +142,15 @@ $('new').addEventListener('click', () => fileAction(async () => {
   message('新しいファイルを作成しました。');
 }));
 $('clear-output').addEventListener('click', () => {
+  resetComparison();
   $('stdout').textContent = '';
   $('stderr').textContent = '';
   $('run-status').textContent = '実行する準備ができています';
   $('run-duration').textContent = '— ms';
 });
+input.addEventListener('input', resetComparison);
+expectedOutput.addEventListener('input', resetComparison);
+compareOutput.addEventListener('change', resetComparison);
 editor.addEventListener('input', updateEditor);
 editor.addEventListener('click', updateCursor);
 editor.addEventListener('keyup', updateCursor);

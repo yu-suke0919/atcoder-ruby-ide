@@ -41,12 +41,15 @@ async function assertWorkspaceFits() {
     stdoutHeight: document.querySelector('#stdout').getBoundingClientRect().height,
     stderrHeight: document.querySelector('#stderr').getBoundingClientRect().height,
     inputHeight: document.querySelector('#stdin').getBoundingClientRect().height,
+    expectedHeight: document.querySelector('#expected-output').getBoundingClientRect().height,
+    comparisonBottom: document.querySelector('#comparison-status').getBoundingClientRect().bottom,
     viewportHeight: innerHeight
   }));
   const details = JSON.stringify(layout);
   assert.ok(layout.outputBottom <= layout.toolbarTop, `output must not overlap run controls: ${details}`);
   assert.ok(layout.summaryBottom <= layout.outputBottom, `run summary must remain visible: ${details}`);
-  assert.ok(layout.stdoutHeight > 12 && layout.stderrHeight > 12 && layout.inputHeight > 12, `text areas must remain usable: ${details}`);
+  assert.ok(layout.stdoutHeight > 12 && layout.stderrHeight > 12 && layout.inputHeight > 12 && layout.expectedHeight > 12, `text areas must remain usable: ${details}`);
+  assert.ok(layout.comparisonBottom <= layout.outputBottom, `comparison must remain visible: ${details}`);
 }
 
 test('M01: editor, output and run controls fit the minimum window size', async () => {
@@ -58,10 +61,12 @@ test('M01: editor, output and run controls fit the minimum window size', async (
 test('R03: larger font line boxes do not push output into run controls', async () => {
   await page.setViewportSize({ width: 900, height: 650 });
   try {
+    await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
     await page.evaluate(() => { document.body.style.lineHeight = '1.8'; });
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).lineHeight), '23.4px');
     await assertWorkspaceFits();
   } finally {
+    await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
     await page.evaluate(() => { document.body.style.lineHeight = ''; });
     await page.setViewportSize({ width: 1280, height: 850 });
   }
@@ -71,8 +76,105 @@ test('M04: the initial AtCoder sample produces 6 test', async () => {
   await page.getByRole('button', { name: '実行', exact: true }).click();
   await page.getByTestId('run-status').filter({ hasText: '正常終了' }).waitFor();
   assert.equal(await page.getByTestId('stdout').textContent(), '6 test\n');
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '比較なし');
   await mkdir('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/workspace.png' });
+});
+
+test('M11: compare stdout with expected output and keep stderr separate', async () => {
+  const toggle = page.getByRole('checkbox', { name: '期待出力と比較' });
+  assert.equal(await toggle.count(), 1);
+  assert.equal(await page.getByTestId('expected-output').inputValue(), '6 test\n');
+  await toggle.check();
+  await page.getByTestId('code-editor').fill('puts STDIN.read.upcase; warn "標準エラー"');
+  await page.getByTestId('stdin').fill('日本語\nhello\n');
+  await page.getByTestId('expected-output').fill('日本語\nHELLO');
+  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
+  assert.equal(await page.getByTestId('stdout').textContent(), '日本語\nHELLO\n');
+  assert.equal(await page.getByTestId('stderr').textContent(), '標準エラー\n');
+  await page.screenshot({ path: 'test-results/expected-output.png' });
+  await page.getByTestId('expected-output').fill('wrong');
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
+  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await page.getByTestId('comparison-status').filter({ hasText: /^不一致$/ }).waitFor();
+  assert.equal(await page.getByTestId('run-status').textContent(), '正常終了');
+  await toggle.uncheck();
+});
+
+test('M11: distinguish an empty expectation from disabled comparison', async () => {
+  const toggle = page.getByRole('checkbox', { name: '期待出力と比較' });
+  await toggle.check();
+  await page.getByTestId('expected-output').fill('');
+  await page.getByTestId('code-editor').fill('# no output');
+  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
+  await page.getByTestId('code-editor').fill('puts "unexpected"');
+  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await page.getByTestId('comparison-status').filter({ hasText: /^不一致$/ }).waitFor();
+  await toggle.uncheck();
+  assert.equal(await page.getByTestId('expected-output').isDisabled(), true);
+  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await page.getByTestId('run-status').filter({ hasText: '正常終了' }).waitFor();
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '比較なし');
+});
+
+test('M11: edits and clearing results reset the comparison', async () => {
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
+  for (const field of ['code-editor', 'stdin', 'expected-output']) {
+    await page.getByTestId('code-editor').fill('print STDIN.read');
+    await page.getByTestId('stdin').fill('one');
+    await page.getByTestId('expected-output').fill('one');
+    await page.getByRole('button', { name: '実行', exact: true }).click();
+    await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
+    await page.getByTestId(field).fill('changed');
+    assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
+  }
+  await page.getByTestId('expected-output').fill('one');
+  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
+  await page.getByRole('button', { name: 'クリア', exact: true }).click();
+  assert.equal(await page.getByTestId('stdout').textContent(), '');
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
+});
+
+test('M11: do not show a stale comparison when expectations change during a run', async () => {
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
+  await page.getByTestId('code-editor').fill('puts "ready"; sleep 0.5');
+  await page.getByTestId('expected-output').fill('ready');
+  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await page.getByTestId('stdout').filter({ hasText: 'ready' }).waitFor();
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '比較中…');
+  await page.getByTestId('expected-output').fill('changed');
+  await page.getByTestId('run-status').filter({ hasText: '正常終了' }).waitFor();
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
+});
+
+test('M11: matching stdout from a failed process is not a passing comparison', async () => {
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
+  await page.getByTestId('code-editor').fill('print "same"; exit 1');
+  await page.getByTestId('expected-output').fill('same');
+  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await page.getByTestId('run-status').filter({ hasText: 'エラー終了' }).waitFor();
+  assert.equal(await page.getByTestId('stdout').textContent(), 'same');
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '判定なし');
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
+});
+
+test('M11: reject invalid or oversized UTF-8 expectations before running Ruby', async () => {
+  for (const expected of [123, 'あ'.repeat(349526)]) {
+    const error = await page.evaluate(async (value) => {
+      try { await window.ide.run('puts "must not run"', '', value); }
+      catch (error) { return error.message; }
+    }, expected);
+    assert.match(error, /期待出力/);
+  }
+  await page.getByTestId('code-editor').fill('puts 42');
+  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await page.getByTestId('run-status').filter({ hasText: '正常終了' }).waitFor();
+  assert.equal(await page.getByTestId('stdout').textContent(), '42\n');
 });
 
 test('M01/M04/M05: edit code and stdin, then show stdout and stderr', async () => {
@@ -96,13 +198,17 @@ test('M05: syntax errors are visible and a later run succeeds', async () => {
 });
 
 test('M06: stop a running program from the UI', async () => {
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
+  await page.getByTestId('expected-output').fill('ready');
   await page.getByTestId('code-editor').fill('$stdout.sync = true; puts "ready"; loop { sleep 0.01 }');
   await page.getByRole('button', { name: '実行', exact: true }).click();
   await page.getByTestId('stdout').filter({ hasText: 'ready' }).waitFor();
   assert.equal(await page.getByRole('button', { name: '実行', exact: true }).isDisabled(), true);
   await page.getByRole('button', { name: '停止', exact: true }).click();
   await page.getByTestId('run-status').filter({ hasText: '停止しました' }).waitFor();
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '判定なし');
   assert.equal(await page.getByRole('button', { name: '実行', exact: true }).isEnabled(), true);
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
 });
 
 test('M02/M03/M09: load, edit and save a file; retain edits when discard is canceled', async () => {
@@ -146,13 +252,18 @@ test('M01: Tab inserts two spaces and output is rendered as text', async () => {
 });
 
 test('M06/M08: show timeout and output-limit reasons in the UI', async () => {
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
+  await page.getByTestId('expected-output').fill('');
   await page.getByTestId('code-editor').fill('loop {}');
   await page.getByRole('button', { name: '実行', exact: true }).click();
   await page.getByTestId('run-status').filter({ hasText: '時間制限で停止' }).waitFor({ timeout: 10000 });
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '判定なし');
   await page.getByTestId('code-editor').fill('loop { puts "x" * 8192 }');
   await page.getByRole('button', { name: '実行', exact: true }).click();
   await page.getByTestId('run-status').filter({ hasText: '出力上限で停止' }).waitFor();
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '判定なし');
   assert.ok(Buffer.byteLength(await page.getByTestId('stdout').textContent()) <= 1048576);
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
 });
 
 test('M09: cancel closing or replacing a dirty buffer; create and save a new file', async () => {
@@ -186,4 +297,25 @@ test('R01: opening a CRLF file keeps the normalized buffer clean', async () => {
   await page.waitForFunction(() => document.querySelector('[data-testid="code-editor"]').value === 'puts 1\nputs 2\n');
   assert.equal(await page.getByTestId('save-state').textContent(), '保存済み');
   assert.equal(await readFile(filePath, 'utf8'), 'puts 1\r\nputs 2\r\n');
+});
+
+test('M11: opening or creating a document resets the previous comparison', async () => {
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
+  await page.getByTestId('expected-output').fill('1\n2\n');
+  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
+  const filePath = path.join(root, '別の解答.rb');
+  await writeFile(filePath, 'puts 1\nputs 2\n', 'utf8');
+  await app.evaluate(({ dialog }, selected) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] });
+  }, filePath);
+  await page.getByRole('button', { name: '開く', exact: true }).click();
+  await page.waitForFunction((selected) => document.getElementById('file-path').textContent === selected, filePath);
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
+  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
+  await page.getByRole('button', { name: '新規', exact: true }).click();
+  await page.waitForFunction(() => document.getElementById('code-editor').value === '');
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
 });

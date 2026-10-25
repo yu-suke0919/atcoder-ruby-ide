@@ -8,7 +8,7 @@ async function invoke(channel, payload) {
 
 contextBridge.exposeInMainWorld('ide', {
   rubyInfo: () => invoke('ruby:info'),
-  run: (code, stdin) => invoke('ruby:run', { code, stdin }),
+  run: (code, stdin, expectedOutput = null) => invoke('ruby:run', { code, stdin, expectedOutput }),
   stop: () => invoke('ruby:stop'),
   openFile: () => invoke('document:open'),
   newFile: () => invoke('document:new'),

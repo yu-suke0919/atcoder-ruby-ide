@@ -29,10 +29,19 @@
 
       <div class="right-column">
         <section class="panel input-panel" aria-labelledby="input-heading">
-          <div class="panel-heading"><div class="panel-label"><span class="section-number">01</span><h3 id="input-heading">標準入力</h3></div><span class="subtle">stdin</span></div>
-          <label class="sr-only" for="stdin">実行時の標準入力</label>
-          <textarea id="stdin" data-testid="stdin" spellcheck="false" placeholder="サンプル入力を貼り付けてください"></textarea>
-          <div class="input-footer">改行を含め、そのままプログラムに渡します。</div>
+          <div class="panel-heading"><div class="panel-label"><span class="section-number">01</span><h3 id="input-heading">サンプル</h3></div><span class="subtle">1 ケース・保存対象外</span></div>
+          <div class="sample-fields">
+            <div class="sample-field">
+              <label for="stdin">標準入力</label>
+              <textarea id="stdin" data-testid="stdin" spellcheck="false" placeholder="サンプル入力を貼り付け"></textarea>
+            </div>
+            <div class="sample-field">
+              <label class="compare-toggle"><input type="checkbox" id="compare-output">期待出力と比較</label>
+              <label class="sr-only" for="expected-output">期待出力</label>
+              <textarea id="expected-output" data-testid="expected-output" spellcheck="false" aria-describedby="comparison-help" disabled></textarea>
+            </div>
+          </div>
+          <div id="comparison-help" class="input-footer">改行コードと末尾の改行 1 つは揃えて比較。</div>
         </section>
         <section class="panel output-panel" aria-labelledby="output-heading">
           <div class="panel-heading"><div class="panel-label"><span class="section-number">02</span><h3 id="output-heading">実行結果</h3></div><button id="clear-output" class="quiet-button">クリア</button></div>
@@ -40,7 +49,7 @@
           <pre id="stdout" data-testid="stdout" aria-label="標準出力" tabindex="0"></pre>
           <div class="output-heading error-heading"><span><span class="output-dot stderr-dot"></span>標準エラー</span><span>stderr</span></div>
           <pre id="stderr" data-testid="stderr" aria-label="標準エラー" tabindex="0"></pre>
-          <div class="run-summary" role="status"><span id="run-status" data-testid="run-status">実行する準備ができています</span><span id="run-duration">— ms</span></div>
+          <div class="run-summary" role="status"><span id="run-status" data-testid="run-status">実行する準備ができています</span><span id="comparison-status" data-testid="comparison-status" data-state="none">比較なし</span><span id="run-duration">— ms</span></div>
         </section>
       </div>
     </div>

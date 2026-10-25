@@ -3,6 +3,7 @@ const { execFile } = require('node:child_process');
 const path = require('node:path');
 const { RubyRunner } = require('./ruby-runner.cjs');
 const { DocumentStore } = require('./document-store.cjs');
+const { compareOutput } = require('./compare-output.cjs');
 
 let window;
 let dirty = false;
@@ -57,9 +58,17 @@ handle('ruby:info', () => new Promise((resolve) => {
 handle('ruby:run', async (payload) => {
   if (!payload || typeof payload !== 'object') throw new Error('実行内容を指定してください。');
   if (runner.busy) throw new Error('すでに実行中です。');
+  const expected = payload.expectedOutput;
+  if (expected !== null) {
+    if (typeof expected !== 'string') throw new Error('期待出力は文字列で指定してください。');
+    if (Buffer.byteLength(expected, 'utf8') > 1024 * 1024) throw new Error('期待出力は 1 MiB 以下にしてください。');
+  }
   const pending = runner.run({ code: payload.code, stdin: payload.stdin, cwd: documents.filePath ? path.dirname(documents.filePath) : undefined });
   currentRun = pending;
-  try { return await pending; }
+  try {
+    const result = await pending;
+    return { ...result, comparison: expected !== null && result.status === 'completed' ? compareOutput(result.stdout, expected) : null };
+  }
   finally { if (currentRun === pending) currentRun = null; }
 });
 handle('ruby:stop', () => runner.stop());
