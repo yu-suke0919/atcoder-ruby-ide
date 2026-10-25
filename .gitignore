@@ -4,3 +4,7 @@ vendor/ruby/
 .cache/
 test-results/
 *.log
+target/
+artifacts/
+frontend-dist/
+src-tauri/gen/

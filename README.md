@@ -1,88 +1,86 @@
 # AtCoder Ruby IDE
 
-個人が Windows で使う Ruby のデスクトップ IDE を開発しています。
-コードの編集・UTF-8 ファイルの読み書き・標準入力付き実行・停止・出力表示を MVP とします。
+Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使い、Ruby は配布物に同梱します。
+利用者による Ruby のインストールや PATH 設定は不要です。
 
 - [MVP の仕様と受入条件](docs/mvp.md)
 - [構成と検証方針](docs/architecture.md)
-- [コードレビューと修正内容](docs/review.md)
+- [移行と配布容量](docs/tauri-migration.md)
+- [検証記録](docs/verification.md)
+- [レビューで維持する修正](docs/review.md)
 
-開発は資料を先に更新し、テスト → 最小実装 → 不要コード・資料矛盾の確認の順で進めます。
+## 機能
 
-## MVP の機能
-
-- Ruby コードの編集、行番号、Tab による 2 スペースのインデント
-- UTF-8 ファイルの読み込み・保存・名前を付けて保存
+- Ruby コード編集、行番号、Tab による 2 スペースのインデント
+- UTF-8 ファイルの読み込み、上書き保存、名前を付けて保存
 - 標準入力付き実行、stdout / stderr の逐次表示、実行時間の表示
-- 停止、5 秒の実行制限、1 MiB の出力制限
+- 停止、5 秒の実行制限、合計 1 MiB の出力制限、子プロセスの終了
+- 1 ケースの期待出力との比較（一致・不一致）
 - 未保存の変更を破棄する前の確認
-- Ruby を同梱した Windows x64 ポータブル exe
 
-初期サンプルはそのまま実行でき、`6 test` を出力します。
+初期サンプルをそのまま実行すると `6 test` を出力します。
+比較は改行コードと最後の改行 1 つの違いを無視し、その他の空白や数値表記は区別します。
+空出力の比較も可能です。エラーや停止時は「判定なし」、入力・コードを変更すると「未比較」になります。
+上書き保存は判定を保持し、初回保存や保存先の変更は判定を解除します。
+標準入力・期待出力の保存、複数ケースの一括実行は未実装です。
 
-## 開発環境
+## Windows 配布版
 
-Node.js 24 と Ruby 3.4.12 を使います。パッケージはロックファイルで固定しています。
+配布物は次の 2 種類です。
 
-```bash
-npm ci
-npm run setup:electron
-npm start
-```
+- `AtCoder-Ruby-IDE-0.2.0-x64-portable.zip`：展開して `atcoder-ruby-ide.exe` を起動
+- `AtCoder-Ruby-IDE-0.2.0-x64-setup.exe`：ユーザー単位の NSIS インストーラー
 
-Electron 45 はバイナリの取得が別コマンドになっているため、`setup:electron` も実行してください。
+どちらも RubyInstaller 3.4.12-1 x64 全体を含み、同梱の `ruby/bin/ruby.exe` を直接起動します。
+Ruby の標準ライブラリ・ネイティブライブラリ・ライセンスも同梱しています。ZIP はフォルダー全体を保持してください。
+単体のアプリ exe だけを取り出すと Ruby を実行できません。
 
-Cloud では最初に次のコマンドで Ruby と書き込み可能なキャッシュを設定します。
+WebView2 Runtime が必要です。Windows で未導入の場合、NSIS インストーラーが取得します（初回はネット接続が必要）。
+オフライン利用する ZIP 版では、あらかじめ WebView2 を用意してください。現時点ではコード署名を設定していません。
+AtCoder 本番の追加 gem や実行環境との完全一致は対象外です。
 
-```bash
-source /workspace/.cloud-setup/activate.sh
-cd /workspace/atcoder-ruby-ide
-```
+## 開発
 
-HTTPS プロキシを使う環境では、注入済みのプロキシ・CA を維持し、Electron の取得時に `ELECTRON_GET_USE_PROXY=1` を設定します。
-画面のない Cloud では `npm run test:e2e` が headless Ozone で実際の Electron を起動します。
-実行サンドボックスがローカルのデバッグ接続を制限する場合は、環境の実行権限の承認を利用してください。
-
-Windows の開発でも、同梱用 Ruby をそのまま利用できます。
+Node.js 24、Rust 1.99.1、Windows の Visual Studio C++ Build Tools と WebView2 を使います。
+Rust は `rust-toolchain.toml`、npm と Cargo の依存は各ロックファイルで固定しています。
 
 ```powershell
 npm ci
-npm run setup:electron
 npm run prepare:ruby
-$env:RUBY_PATH = (Resolve-Path vendor/ruby/bin/ruby.exe).Path
 npm start
 ```
 
-開発時の Ruby は `RUBY_PATH`、未指定なら PATH 上の `ruby` です。
-Windows 配布版は常に同梱の `resources/ruby/bin/ruby.exe` を使います。
-
-## テスト
+Windows は開発時も常に同梱 Ruby を使います。`RUBY_PATH` や PATH の別の Ruby には切り替わりません。
+Linux の共通テストでは `RUBY_PATH`、未指定なら PATH の `ruby` を使います。
+Linux で画面も起動する場合は Tauri の GTK / WebKitGTK 開発依存が別途必要です。Windows 配布物の検証は Windows で行います。
 
 ```bash
 npm test
-npm run test:e2e
+cargo fmt --all --check
 ```
 
-共通テストは実際の Ruby プロセスとファイル I/O、アーカイブの整合性を確認します。
-画面テストは Electron を起動し、編集・実行・停止・ファイル操作・未保存変更・最小画面サイズを確認します。
-ケース数と実行結果は [検証記録](docs/verification.md) に記録しています。
+共通テストは Rust による実際の Ruby プロセス・ファイル操作と、Node によるアーカイブ検証です。
+画面テストは配布アプリを WebView2 CDP に接続して操作し、Windows の実ダイアログは UI Automation で操作します。
+テスト対象のアプリから Ruby の PATH を除去し、不正な `RUBY_PATH` を設定して、同梱 Ruby の利用を確認します。
+通常起動ではテスト用デバッグポートを開きません。
 
-## Windows exe の作成
+## ビルドと検証
 
-```bash
+Windows で実行します。
+
+```powershell
 npm run build:win
+node scripts/package-windows.cjs --stage
+$env:APP_EXE = (Resolve-Path artifacts/portable/atcoder-ruby-ide.exe).Path
+npm run test:e2e
+node scripts/test-installed-windows.cjs
+npm run package:win
 ```
 
-`dist/AtCoder-Ruby-IDE-0.1.0-x64.exe` が生成されます。
-Windows 用 RubyInstaller 3.4.12-1 x64 を公式配布元から取得し、[固定した SHA-256](config/ruby-windows.json) を検証して同梱します。
-Ruby のライセンスは配布物の `resources/ruby/LICENSE.txt` に含まれます。
-
-exe は起動時に一時ディレクトリへアプリを展開するポータブル形式です。
-利用者による Ruby のインストールは不要です。初版はコード署名を設定していません。
-
-[GitHub Actions](.github/workflows/ci.yml) は Linux のテストと、Windows のテスト・exe 生成・配布用ディレクトリからの起動確認を行います。
-リポジトリに push するか手動実行し、成功した Windows ジョブの Artifacts から exe を取得できます。
-CI の定義追加と、実際の Windows ジョブの成功は区別して確認してください。
+Ruby は公式配布元から取得し、[固定した SHA-256](config/ruby-windows.json) を検証します。
+配布物は `artifacts/`、容量と Ruby 全ファイルのハッシュは `artifacts/reports/` に生成します。
+[GitHub Actions](.github/workflows/ci.yml) は Linux の共通テストと、Windows の共通テスト・ビルド・ZIP 展開相当のアプリ・NSIS インストール後の全画面テストを実行します。
+成功した Windows ジョブの Artifacts から ZIP またはインストーラーを取得できます。
 
 ## ショートカット
 
@@ -93,5 +91,5 @@ CI の定義追加と、実際の Windows ジョブの成功は区別して確�
 | 名前を付けて保存 | Ctrl+Shift+S |
 | 実行 | Ctrl+Enter |
 
-コードの保存形式は UTF-8 です。標準入力はソースファイルと別に、その実行時だけ渡します。
-AtCoder 本番の追加 gem や実行環境との完全一致は、今後のイテレーションで確認します。
+コードは UTF-8 で保存します。標準入力はソースと別に、その実行時だけ渡します。
+EOF を含む標準入力や日本語出力も Ruby の事前インストールなしで利用できます。

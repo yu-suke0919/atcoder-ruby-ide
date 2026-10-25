@@ -2,6 +2,7 @@ name: Test and build
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -17,13 +18,19 @@ jobs:
         with:
           node-version: '24'
           cache: npm
+      - uses: dtolnay/rust-toolchain@1.99.1
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          key: tauri-desktop
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4.12'
       - run: npm ci
-      - run: npm run setup:electron
+      - run: cargo fmt --all --check
       - run: npm test
-      - run: xvfb-run -a npm run test:e2e
 
   windows:
     runs-on: windows-latest
@@ -33,25 +40,52 @@ jobs:
         with:
           node-version: '24'
           cache: npm
+      - uses: dtolnay/rust-toolchain@1.99.1
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          key: tauri-desktop
       - run: npm ci
-      - run: npm run setup:electron
       - run: npm run prepare:ruby
-      - name: Use the bundled Ruby for development tests
-        shell: pwsh
-        run: '"RUBY_PATH=$((Resolve-Path vendor/ruby/bin/ruby.exe).Path)" >> $env:GITHUB_ENV'
-      - run: npm test
-      - run: npm run test:e2e
-      - run: npm run build:win
-      - name: Test the packaged app with its bundled Ruby
+      - name: Unit tests with the bundled Ruby
         shell: pwsh
         run: |
-          $env:PACKAGED_APP = (Resolve-Path 'dist/win-unpacked/AtCoder Ruby IDE.exe').Path
-          Remove-Item Env:RUBY_PATH
+          $env:RUBY_PATH = (Resolve-Path vendor/ruby/bin/ruby.exe).Path
+          npm test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - run: npm run build:win
+      - run: node scripts/package-windows.cjs --stage
+      - name: Native GUI tests of the portable app without system Ruby
+        shell: pwsh
+        run: |
+          $env:APP_EXE = (Resolve-Path artifacts/portable/atcoder-ruby-ide.exe).Path
           npm run test:e2e
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install NSIS and repeat native GUI tests without system Ruby
+        run: node scripts/test-installed-windows.cjs
+      - name: Compress portable ZIP and measure distribution sizes
+        run: npm run package:win
+      - name: Preserve test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-verification
+          path: |
+            artifacts/reports/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
-          name: AtCoder-Ruby-IDE-Windows-x64
-          path: dist/AtCoder-Ruby-IDE-*-x64.exe
+          name: AtCoder-Ruby-IDE-Windows-x64-portable
+          path: artifacts/*-portable.zip
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AtCoder-Ruby-IDE-Windows-x64-setup
+          path: artifacts/*-setup.exe
           if-no-files-found: error
           retention-days: 14

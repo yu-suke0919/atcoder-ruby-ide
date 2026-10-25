@@ -1,0 +1,36 @@
+[package]
+name = "atcoder-ruby-ide"
+version = "0.2.0"
+edition = "2021"
+default-run = "atcoder-ruby-ide"
+
+[lib]
+path = "lib.rs"
+
+[[bin]]
+name = "atcoder-ruby-ide"
+path = "main.rs"
+required-features = ["desktop"]
+
+[features]
+desktop = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-dialog"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tempfile = "3"
+tauri = { version = "2", features = ["devtools"], optional = true }
+tauri-plugin-dialog = { version = "2", optional = true }
+
+[build-dependencies]
+tauri-build = { version = "2", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+
+
+[[test]]
+name = "contract"
+path = "../tests/contract.rs"
