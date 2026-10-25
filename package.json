@@ -1,0 +1,39 @@
+{
+  "name": "atcoder-ruby-ide",
+  "version": "0.1.0",
+  "description": "A personal desktop Ruby IDE for AtCoder practice",
+  "author": "yu-suke0919",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "src/main.cjs",
+  "engines": { "node": ">=24 <25" },
+  "scripts": {
+    "start": "electron .",
+    "setup:electron": "install-electron",
+    "test": "node --test --test-isolation=none tests/unit/*.test.cjs",
+    "test:e2e": "node --test --test-isolation=none tests/e2e/*.test.cjs",
+    "prepare:ruby": "node --use-env-proxy scripts/prepare-ruby.cjs",
+    "build:win": "npm run prepare:ruby && electron-builder --win --x64",
+    "build:linux": "electron-builder --linux --dir"
+  },
+  "devDependencies": {
+    "7zip-bin": "5.2.0",
+    "electron": "45.0.0",
+    "electron-builder": "26.18.0",
+    "playwright": "1.64.1"
+  },
+  "build": {
+    "appId": "io.github.yu-suke0919.atcoder-ruby-ide",
+    "productName": "AtCoder Ruby IDE",
+    "directories": { "output": "dist" },
+    "files": ["src/**/*", "package.json"],
+    "asar": true,
+    "win": {
+      "target": "portable",
+      "signAndEditExecutable": false,
+      "extraResources": [{ "from": "vendor/ruby", "to": "ruby" }],
+      "artifactName": "AtCoder-Ruby-IDE-${version}-${arch}.${ext}"
+    },
+    "linux": { "target": "dir", "category": "Development" }
+  }
+}
