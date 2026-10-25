@@ -1,0 +1,57 @@
+name: Test and build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4.12'
+      - run: npm ci
+      - run: npm run setup:electron
+      - run: npm test
+      - run: xvfb-run -a npm run test:e2e
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run setup:electron
+      - run: npm run prepare:ruby
+      - name: Use the bundled Ruby for development tests
+        shell: pwsh
+        run: '"RUBY_PATH=$((Resolve-Path vendor/ruby/bin/ruby.exe).Path)" >> $env:GITHUB_ENV'
+      - run: npm test
+      - run: npm run test:e2e
+      - run: npm run build:win
+      - name: Test the packaged app with its bundled Ruby
+        shell: pwsh
+        run: |
+          $env:PACKAGED_APP = (Resolve-Path 'dist/win-unpacked/AtCoder Ruby IDE.exe').Path
+          Remove-Item Env:RUBY_PATH
+          npm run test:e2e
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AtCoder-Ruby-IDE-Windows-x64
+          path: dist/AtCoder-Ruby-IDE-*-x64.exe
+          if-no-files-found: error
+          retention-days: 14

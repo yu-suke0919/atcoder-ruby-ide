@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>AtCoder Ruby IDE</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="renderer.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="ruby-mark" aria-hidden="true">◆</span><div><h1>AtCoder Ruby IDE</h1><span class="brand-caption">小さく書いて、すぐ試す。</span></div></div>
+    <div class="environment"><span class="live-dot" aria-hidden="true"></span><span data-testid="ruby-version" id="ruby-version">Ruby を確認中…</span></div>
+  </header>
+
+  <main>
+    <div class="workspace-heading"><div><span class="eyebrow">WORKSPACE</span><h2>今日の一問を、ここから。</h2></div><span class="workspace-note">コードと入力を用意して、実行してみましょう。</span></div>
+    <div class="workspace">
+      <section class="panel editor-panel" aria-labelledby="editor-heading">
+        <div class="panel-heading"><div class="panel-label"><span class="file-icon" aria-hidden="true">⌘</span><h3 id="editor-heading">コード</h3><span class="language-pill">Ruby</span></div><span id="save-state" data-testid="save-state" class="subtle">未保存のファイル</span></div>
+        <div class="editor-toolbar">
+          <div class="file-actions"><button id="new" title="新しいファイル">新規</button><button id="open" title="Ctrl+O">開く</button><button id="save" title="Ctrl+S">保存</button><button id="save-as" title="Ctrl+Shift+S">名前を付けて保存</button></div>
+          <span class="shortcut">UTF-8</span>
+        </div>
+        <div class="editor-container"><div id="line-numbers" class="line-numbers" aria-hidden="true"></div><textarea id="code-editor" data-testid="code-editor" aria-label="Ruby コード" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off"></textarea></div>
+        <div class="editor-footer"><span id="file-path" title="未保存のファイル">無題.rb</span><span id="cursor-position">Ln 1, Col 1</span></div>
+      </section>
+
+      <div class="right-column">
+        <section class="panel input-panel" aria-labelledby="input-heading">
+          <div class="panel-heading"><div class="panel-label"><span class="section-number">01</span><h3 id="input-heading">標準入力</h3></div><span class="subtle">stdin</span></div>
+          <label class="sr-only" for="stdin">実行時の標準入力</label>
+          <textarea id="stdin" data-testid="stdin" spellcheck="false" placeholder="サンプル入力を貼り付けてください"></textarea>
+          <div class="input-footer">改行を含め、そのままプログラムに渡します。</div>
+        </section>
+        <section class="panel output-panel" aria-labelledby="output-heading">
+          <div class="panel-heading"><div class="panel-label"><span class="section-number">02</span><h3 id="output-heading">実行結果</h3></div><button id="clear-output" class="quiet-button">クリア</button></div>
+          <div class="output-heading"><span><span class="output-dot stdout-dot"></span>標準出力</span><span>stdout</span></div>
+          <pre id="stdout" data-testid="stdout" aria-label="標準出力" tabindex="0"></pre>
+          <div class="output-heading error-heading"><span><span class="output-dot stderr-dot"></span>標準エラー</span><span>stderr</span></div>
+          <pre id="stderr" data-testid="stderr" aria-label="標準エラー" tabindex="0"></pre>
+          <div class="run-summary" role="status"><span id="run-status" data-testid="run-status">実行する準備ができています</span><span id="run-duration">— ms</span></div>
+        </section>
+      </div>
+    </div>
+    <div class="run-toolbar"><div id="message" role="status">ヒント：Ctrl + Enter でも実行できます。</div><div class="run-actions"><button id="stop" class="stop-button" disabled><span aria-hidden="true">■</span> 停止</button><button id="run" class="run-button"><span aria-hidden="true">&#9654;&#65038;</span> 実行</button></div></div>
+  </main>
+  <footer class="statusbar"><span><span class="status-dot"></span>ローカル実行</span><span>実行上限 5 秒 <span class="separator">·</span> 入力・出力上限 各 1 MiB</span></footer>
+</body>
+</html>
