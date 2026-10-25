@@ -40,6 +40,12 @@ try {
       Start-Sleep -Milliseconds 100
     }
     if (!$dialog) { throw "Dialog not found: $($step.title)" }
+    if ($step.keys) {
+      [void][DialogMessages]::SetForegroundWindow([IntPtr]$dialog.Current.NativeWindowHandle)
+      [System.Windows.Forms.SendKeys]::SendWait([string]$step.keys)
+      Start-Sleep -Milliseconds 150
+      continue
+    }
     if ($step.path) {
       [void][DialogMessages]::SetForegroundWindow([IntPtr]$dialog.Current.NativeWindowHandle)
       [System.Windows.Forms.Clipboard]::SetText([string]$step.path)

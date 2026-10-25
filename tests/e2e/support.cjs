@@ -85,7 +85,7 @@ const discard = accept => ({ title: '未保存の変更', buttonName: accept ? '
 const open = file => ({ title: 'Ruby ファイルを開く', path: file, buttonId: '1' });
 const save = file => ({ title: 'Ruby ファイルを保存', path: file, buttonId: '1' });
 const cancelSave = () => ({ title: 'Ruby ファイルを保存', buttonId: '2' });
-const overwrite = () => ({ title: 'Confirm Save As', buttonId: '6' });
+const overwrite = () => ({ title: 'Confirm Save As', keys: '%y' });
 
 async function close(app) {
   if (app.child.exitCode === null) await execute(system('taskkill.exe'), ['/PID', String(app.child.pid), '/T', '/F']).catch(() => {});
