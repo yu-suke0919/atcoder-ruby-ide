@@ -43,6 +43,11 @@ async function assertWorkspaceFits() {
     inputHeight: document.querySelector('#stdin').getBoundingClientRect().height,
     expectedHeight: document.querySelector('#expected-output').getBoundingClientRect().height,
     comparisonBottom: document.querySelector('#comparison-status').getBoundingClientRect().bottom,
+    textAreas: ['stdin', 'expected-output', 'stdout', 'stderr'].map((id) => {
+      const element = document.getElementById(id);
+      const style = getComputedStyle(element);
+      return { id, contentHeight: element.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom), lineHeight: parseFloat(style.lineHeight) };
+    }),
     viewportHeight: innerHeight
   }));
   const details = JSON.stringify(layout);
@@ -50,6 +55,9 @@ async function assertWorkspaceFits() {
   assert.ok(layout.summaryBottom <= layout.outputBottom, `run summary must remain visible: ${details}`);
   assert.ok(layout.stdoutHeight > 12 && layout.stderrHeight > 12 && layout.inputHeight > 12 && layout.expectedHeight > 12, `text areas must remain usable: ${details}`);
   assert.ok(layout.comparisonBottom <= layout.outputBottom, `comparison must remain visible: ${details}`);
+  for (const area of layout.textAreas) {
+    assert.ok(area.contentHeight >= area.lineHeight, `at least one complete line must fit in ${area.id}: ${details}`);
+  }
 }
 
 test('M01: editor, output and run controls fit the minimum window size', async () => {

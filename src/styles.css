@@ -86,3 +86,4 @@ pre:empty::before { content: "実行結果がここに表示されます"; color
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: #394356; border-radius: 5px; }
 @media (max-width: 1050px) { main { padding: 18px 18px 0; } .topbar { padding-inline: 18px; } .workspace-note { display: none; } .workspace { gap: 12px; } .file-actions button { padding: 6px; font-size: 10px; } }
+@media (max-height: 720px) { .workspace-heading { display: none; } }
