@@ -17,6 +17,7 @@ let rubyAvailable = false;
 let comparisonRevision = 0;
 let currentRun = null;
 let closing = false;
+let scrollFrame = null;
 
 async function confirmDiscard() {
   return editor.value === savedCode || await ide.confirmDiscard();
@@ -137,7 +138,10 @@ async function run() {
 function appendOutput({ stream, text }) {
   const output = stream === 'stderr' ? $('stderr') : $('stdout');
   output.append(document.createTextNode(text));
-  output.scrollTop = output.scrollHeight;
+  if (scrollFrame === null) scrollFrame = requestAnimationFrame(() => {
+    scrollFrame = null;
+    for (const id of ['stdout', 'stderr']) $(id).scrollTop = $(id).scrollHeight;
+  });
 }
 $('run').addEventListener('click', run);
 $('stop').addEventListener('click', async () => {

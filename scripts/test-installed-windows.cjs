@@ -11,7 +11,8 @@ async function main() {
   const directory = await mkdtemp(path.join(tmpdir(), 'AtCoder Installed '));
   const installers = await readdir(path.join(root, 'artifacts'));
   const installer = path.join(root, 'artifacts', installers.find(name => name.endsWith('-setup.exe')));
-  await execute(installer, ['/S', `/D=${directory}`], { timeout: 120000 });
+  // NSIS requires an unquoted /D= argument at the end, including paths with spaces.
+  await execute(installer, ['/S', `/D=${directory}`], { timeout: 120000, windowsVerbatimArguments: true });
   const executable = path.join(directory, 'atcoder-ruby-ide.exe');
   await readFile(executable);
   // Verify the installed stdlib, native libraries and licenses against the original payload.

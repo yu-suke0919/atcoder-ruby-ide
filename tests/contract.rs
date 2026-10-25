@@ -205,6 +205,10 @@ fn m06_timeout_and_output_cap() {
             .status,
         "timeout"
     );
+    assert!(!runner.busy());
+    // Output limiting is independent of the short timeout used above. Cold Windows
+    // Ruby startup can exceed 200 ms under concurrent test load.
+    let runner = Runner::new(Duration::from_secs(5), 1024);
     let result = runner
         .prepare(request("loop { print 'あいうえお' }", ""))
         .unwrap()
@@ -326,14 +330,15 @@ fn m06_descendants_are_stopped_even_after_parent_exit() {
     let root = tempfile::tempdir().unwrap();
     let marker = root.path().join("orphan.txt");
     let literal = format!("\"{}\"", marker.to_string_lossy().replace('\\', "/"));
-    let code = format!("require 'rbconfig'; spawn(RbConfig.ruby, '-e', 'sleep 0.8; File.write({literal}, \"survived\")'); puts 'parent done'");
-    let runner = Runner::new(Duration::from_millis(300), 1048576);
+    let code = format!("require 'rbconfig'; spawn(RbConfig.ruby, '-e', 'sleep 2.5; File.write({literal}, \"survived\")'); puts 'parent done'");
+    let runner = Runner::new(Duration::from_secs(1), 1048576);
     let result = runner
         .prepare(request(&code, ""))
         .unwrap()
         .execute(&ruby(), |_| {})
         .unwrap();
     assert_eq!(result.status, "timeout");
-    std::thread::sleep(Duration::from_millis(900));
+    assert_eq!(result.stdout, "parent done\n");
+    std::thread::sleep(Duration::from_millis(2700));
     assert!(!marker.exists());
 }

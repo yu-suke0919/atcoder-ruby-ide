@@ -2,6 +2,7 @@ name: Test and build
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -23,6 +24,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          key: tauri-desktop
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4.12'
@@ -44,6 +46,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          key: tauri-desktop
       - run: npm ci
       - run: npm run prepare:ruby
       - name: Unit tests with the bundled Ruby

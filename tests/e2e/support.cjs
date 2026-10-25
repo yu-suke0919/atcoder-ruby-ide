@@ -31,6 +31,7 @@ async function launch(root) {
   child.stderr.on('data', data => { log += data; });
   child.on('error', error => { log += error.message; });
   let browser;
+  let page;
   try {
     const deadline = Date.now() + 45000;
     while (Date.now() < deadline) {
@@ -43,7 +44,7 @@ async function launch(root) {
     }
     browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
     const context = browser.contexts()[0];
-    const page = context.pages()[0] || await context.waitForEvent('page');
+    page = context.pages()[0] || await context.waitForEvent('page');
     page.setDefaultTimeout(15000);
     page.on('pageerror', error => console.error('WebView error:', error));
     await page.getByTestId('ruby-version').filter({ hasText: /ruby 3\.4\.12/i }).waitFor();
@@ -53,6 +54,11 @@ async function launch(root) {
     console.log(JSON.stringify({ executable, ruby, systemRubyAvailable: false }));
     return { child, browser, page, root, dialogSequence: 0 };
   } catch (error) {
+    if (page) {
+      await mkdir('test-results', { recursive: true });
+      await page.screenshot({ path: 'test-results/startup-failure.png' }).catch(() => {});
+      log += await page.locator('body').textContent().catch(() => '');
+    }
     await execute(system('taskkill.exe'), ['/PID', String(child.pid), '/T', '/F']).catch(() => {});
     await browser?.close().catch(() => {});
     throw new Error(`${error.message}\n${log}`, { cause: error });

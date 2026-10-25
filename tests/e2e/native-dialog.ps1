@@ -7,6 +7,7 @@ using System;
 using System.Runtime.InteropServices;
 public static class DialogMessages {
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wparam, IntPtr lparam);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr hwnd, uint message, IntPtr wparam, string text);
 }
 '@
 $request = [IO.File]::ReadAllText($RequestFile) | ConvertFrom-Json
@@ -40,11 +41,19 @@ try {
     if (!$dialog) { throw "Dialog not found: $($step.title)" }
     if ($step.path) {
       $hostControl = Find-Element $dialog $properties::AutomationIdProperty 'FileNameControlHost'
-      $edit = if ($hostControl) { Find-Element $hostControl $properties::ControlTypeProperty ([System.Windows.Automation.ControlType]::Edit) }
-      if (!$edit) { $edit = Find-Element $dialog $properties::AutomationIdProperty '1148' }
-      if (!$edit) { $edit = Find-Element $dialog $properties::AutomationIdProperty '1001' }
+      $edit = if ($hostControl) { Find-Element $hostControl $properties::ClassNameProperty 'Edit' }
+      if (!$edit) {
+        $candidates = $dialog.FindAll($scope, [System.Windows.Automation.PropertyCondition]::new($properties::AutomationIdProperty, '1148'))
+        foreach ($candidate in $candidates) {
+          if ($candidate.Current.ClassName -eq 'Edit') { $edit = $candidate; break }
+          $edit = Find-Element $candidate $properties::ClassNameProperty 'Edit'
+          if ($edit) { break }
+        }
+      }
       if (!$edit) { throw 'File name edit control was not found' }
-      $edit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue([string]$step.path)
+      # These standard HWND controls sometimes expose only a generic UIA pane.
+      # WM_SETTEXT works with their actual Edit handles without keyboard/clipboard races.
+      [void][DialogMessages]::SendMessage([IntPtr]$edit.Current.NativeWindowHandle, 0x000C, [IntPtr]::Zero, [string]$step.path)
     }
     $button = if ($step.buttonName) {
       Find-Element $dialog $properties::NameProperty ([string]$step.buttonName)
@@ -56,7 +65,7 @@ try {
   $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll($scope,
     [System.Windows.Automation.PropertyCondition]::new($properties::ProcessIdProperty, [int]$request.processId))
   foreach ($element in $windows) {
-    Write-Output "$($element.Current.ControlType.ProgrammaticName) id=$($element.Current.AutomationId) name=$($element.Current.Name)"
+    Write-Output "$($element.Current.ControlType.ProgrammaticName) class=$($element.Current.ClassName) id=$($element.Current.AutomationId) name=$($element.Current.Name)"
   }
   if ($dialog) {
     [void][DialogMessages]::PostMessage([IntPtr]$dialog.Current.NativeWindowHandle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
