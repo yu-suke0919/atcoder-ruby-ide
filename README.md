@@ -6,6 +6,7 @@
 - [MVP の仕様と受入条件](docs/mvp.md)
 - [構成と検証方針](docs/architecture.md)
 - [コードレビューと修正内容](docs/review.md)
+- [Tauri v2 の配布容量検証](docs/tauri-size.md)
 
 開発は資料を先に更新し、テスト → 最小実装 → 不要コード・資料矛盾の確認の順で進めます。
 

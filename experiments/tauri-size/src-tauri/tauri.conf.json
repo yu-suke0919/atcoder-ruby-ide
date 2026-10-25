@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AtCoder Ruby IDE Tauri Probe",
+  "mainBinaryName": "tauri-size-probe",
+  "version": "0.1.0",
+  "identifier": "io.github.yu-suke0919.atcoder-ruby-ide.size-probe",
+  "build": {
+    "beforeBuildCommand": "node prepare-frontend.cjs",
+    "frontendDist": "../frontend-dist",
+    "features": ["desktop"]
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [{ "label": "main", "title": "AtCoder Ruby IDE — Tauri 容量検証", "width": 1280, "height": 850, "minWidth": 900, "minHeight": 650 }],
+    "security": { "csp": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'" }
+  },
+  "bundle": {
+    "active": true,
+    "icon": ["icons/32x32.png", "icons/icon.ico"],
+    "targets": ["nsis"],
+    "resources": { "../../../vendor/ruby/": "ruby/" },
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": { "installMode": "currentUser", "compression": "lzma" }
+    }
+  }
+}

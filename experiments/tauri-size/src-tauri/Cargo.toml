@@ -1,0 +1,31 @@
+[package]
+name = "tauri-size-probe"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "tauri-size-probe"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[features]
+desktop = ["dep:tauri", "dep:tauri-build"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tempfile = "3"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+tauri = { version = "2", features = [], optional = true }
+
+[target.'cfg(windows)'.build-dependencies]
+tauri-build = { version = "2", features = [], optional = true }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

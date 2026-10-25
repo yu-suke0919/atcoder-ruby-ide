@@ -1,0 +1,10 @@
+{
+  "name": "atcoder-tauri-size-probe",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tauri build",
+    "test": "node --test --test-isolation=none tests/*.test.cjs"
+  },
+  "devDependencies": { "@tauri-apps/cli": "2.12.4" }
+}
