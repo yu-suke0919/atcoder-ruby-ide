@@ -41,7 +41,7 @@ async function verify(executable, screenshot) {
     assert.ok(page, 'Tauri page must be available');
     await page.getByTestId('ruby-version').filter({ hasText: /ruby 3\.4\.12/i }).waitFor({ timeout: 15000 });
     const info = await page.evaluate(() => window.__TAURI__.core.invoke('ruby_info'));
-    assert.equal(path.resolve(info.path).toLowerCase(), path.resolve(path.dirname(executable), 'ruby/bin/ruby.exe').toLowerCase());
+    assert.equal(path.toNamespacedPath(path.resolve(info.path)).toLowerCase(), path.toNamespacedPath(path.resolve(path.dirname(executable), 'ruby/bin/ruby.exe')).toLowerCase());
     const run = async code => {
       if (code !== undefined) await page.getByTestId('code-editor').fill(code);
       await page.getByRole('button', { name: '実行', exact: true }).click();

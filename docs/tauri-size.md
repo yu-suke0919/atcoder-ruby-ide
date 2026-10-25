@@ -47,6 +47,7 @@ npm test --prefix experiments/tauri-size
 Windows のビルド・画面確認・圧縮・計測は `.github/workflows/tauri-size.yml` で再現する。
 Tauri のビルド時だけ `desktop` feature を有効にし、実プロセステストで GUI 全体の二重ビルドを避ける。
 画面検証を ZIP 圧縮より先に行い、接続失敗時はプロセス情報とデスクトップ画像を診断用 Artifact に保存する。
+同梱 Ruby のパス照合は Windows の拡張パス表記 (`\\?\`) を含め、Node.js 標準の `toNamespacedPath` で表記を揃えて比較する。
 
 ## 結果
 
