@@ -8,14 +8,38 @@ Cargo.lock と package-lock.json で依存を固定する。Windows 用 Ruby ア
 資料を先に更新し、Rust の実装前に共通テストの失敗を確認してから最小実装した。
 Electron 専用の実装・依存・テストは置き換え、既存の受入条件 M01〜M11 とレビュー修正 R01〜R06 を維持する。
 
-## 現在の結果
+## 検証結果（2026-10-25）
 
-- Linux の Rust 共通テスト 17 件と Node のアーカイブテスト 2 件は成功済み。
-- Windows の Rust 型検査では Job Object を使うプロセス管理のコンパイルを確認済み。
-- Windows の最終配布物のビルド・全 GUI テスト・容量測定は移行ブランチの CI で実施中。
+測定・受入検証の対象は `679e03a063e5cbe37a1ec55d4d2ee935b2130f14`。
+[GitHub Actions run 40206570408](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/40206570408) は Linux・Windows ともに成功した。
 
-Windows 検証の完了後に、この節を実行コミット・CI 結果・実測値へ更新する。
-Linux の共通テスト成功を Windows の起動成功として扱わない。
+| 対象 | 結果 |
+| --- | --- |
+| Linux 共通テスト | Rust 17 件、Node のアーカイブ検証 2 件が成功 |
+| Windows 共通テスト | 同梱 Ruby で Rust 16 件、Node 2 件が成功。POSIX の権限変更テストは Windows のコンパイル対象外 |
+| Windows リリースビルド | Tauri の exe と NSIS を生成 |
+| ポータブル配布用フォルダー | GUI 23 件すべて成功 |
+| NSIS インストール後 | GUI 23 件すべて成功 |
+| Ruby 未導入を想定した条件 | アプリの PATH から Ruby を除去、`where ruby` の失敗、不正な RUBY_PATH、実際の同梱 Ruby のパスと JSON 読み込みを両配布形態で確認 |
+| 同梱ファイル | 19,696 ファイル、107,695,373 bytes。ポータブル・インストール先の両方で Ruby 全ファイルの SHA-256 を照合 |
+
+Ruby を完全にアンインストールした新規 OS イメージでの検証ではなく、アプリの環境から外部 Ruby の検索経路を除いた検証である。
+同梱 Ruby の起動パス・標準ライブラリ・全ファイルの一致を併せて確認した。
+WebView2 は Windows ランナーに導入済みのものを使用した。未導入端末でのブートストラッパー取得は実機検証の対象外。
+
+| 配布物 | bytes | MiB |
+| --- | ---: | ---: |
+| Ruby 一式 | 107,695,373 | 102.71 |
+| Tauri exe | 6,562,304 | 6.26 |
+| 展開後のフォルダー | 114,257,677 | 108.96 |
+| ポータブル ZIP | 36,169,607 | 34.49 |
+| NSIS インストーラー | 18,500,663 | 17.64 |
+
+MiB は bytes / 1,048,576。ZIP の圧縮条件は `7zip -tzip -mx9 -mmt2`。
+GUI スクリーンショット、容量 JSON、Ruby のファイルハッシュは
+[Windows-verification Artifact](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/40206570408/artifacts/12604790471) に保存した。
+配布物は同じ run の portable / setup Artifacts から取得できる。
+GitHub Artifact 自体の ZIP サイズと、中に含まれる配布 ZIP・exe のサイズは区別する。
 
 ## Windows の受入検証
 

@@ -37,9 +37,8 @@ async function main() {
     await cp(path.join(root, 'vendor/ruby'), path.join(portable, 'ruby'), { recursive: true });
     const source = await manifest(path.join(root, 'vendor/ruby'));
     assert.deepEqual(await manifest(path.join(portable, 'ruby')), source, 'Portable Ruby must include the complete original payload');
-    const installers = await readdir(path.join(root, 'target/release/bundle/nsis'));
-    const installer = installers.find(name => name.endsWith('-setup.exe'));
-    assert.ok(installer, 'NSIS installer is missing');
+    const { productName } = require('../src-tauri/tauri.conf.json');
+    const installer = `${productName}_${version}_x64-setup.exe`;
     await cp(path.join(root, 'target/release/bundle/nsis', installer), path.join(artifacts, `${baseName}-setup.exe`));
     await mkdir(path.join(artifacts, 'reports'), { recursive: true });
     await writeFile(path.join(artifacts, 'reports/ruby-manifest.json'), JSON.stringify(source, null, 2));
