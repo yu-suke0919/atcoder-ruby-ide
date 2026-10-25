@@ -32,7 +32,6 @@ function message(text, error = false) {
 }
 
 function updateEditor() {
-  resetComparison();
   const dirty = editor.value !== savedCode;
   window.ide.setDirty(dirty);
   $('save-state').textContent = dirty ? '● 未保存の変更' : filePath ? '保存済み' : '未保存のファイル';
@@ -71,6 +70,7 @@ function openFile() {
     editor.value = result.code;
     savedCode = editor.value;
     filePath = result.filePath;
+    resetComparison();
     updateEditor();
     message('ファイルを開きました。');
   });
@@ -81,6 +81,7 @@ function saveFile(saveAs = false) {
     const code = editor.value;
     const result = await window.ide.saveFile(code, saveAs);
     if (result.canceled) return;
+    if (filePath !== result.filePath) resetComparison();
     savedCode = code;
     filePath = result.filePath;
     updateEditor();
@@ -138,6 +139,7 @@ $('new').addEventListener('click', () => fileAction(async () => {
   editor.value = '';
   savedCode = '';
   filePath = null;
+  resetComparison();
   updateEditor();
   message('新しいファイルを作成しました。');
 }));
@@ -151,7 +153,7 @@ $('clear-output').addEventListener('click', () => {
 input.addEventListener('input', resetComparison);
 expectedOutput.addEventListener('input', resetComparison);
 compareOutput.addEventListener('change', resetComparison);
-editor.addEventListener('input', updateEditor);
+editor.addEventListener('input', () => { resetComparison(); updateEditor(); });
 editor.addEventListener('click', updateCursor);
 editor.addEventListener('keyup', updateCursor);
 editor.addEventListener('scroll', () => { $('line-numbers').scrollTop = editor.scrollTop; });
@@ -159,6 +161,7 @@ editor.addEventListener('keydown', (event) => {
   if (event.key === 'Tab' && !editor.readOnly) {
     event.preventDefault();
     editor.setRangeText('  ', editor.selectionStart, editor.selectionEnd, 'end');
+    resetComparison();
     updateEditor();
   }
 });
@@ -171,6 +174,7 @@ document.addEventListener('keydown', (event) => {
   if (key === 'enter') run();
 });
 
+resetComparison();
 updateEditor();
 updateButtons();
 window.ide.rubyInfo().then((info) => {
