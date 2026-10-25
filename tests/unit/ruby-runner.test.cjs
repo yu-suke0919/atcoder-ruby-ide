@@ -117,6 +117,39 @@ test('M08: stop excessive output at the shared byte limit', async () => {
   assert.ok(!result.stdout.includes('\uFFFD'));
 });
 
+for (const reason of ['stopped', 'timeout']) {
+  test(`R04: output limit discards incomplete UTF-8 after a ${reason} request`, async () => {
+    const runner = new RubyRunner({ rubyPath, outputLimit: 10 });
+    const events = [];
+    runner.on('output', (event) => events.push(event));
+    const ready = once(runner, 'output', { signal: AbortSignal.timeout(5000) });
+    const pending = runner.run({ code: 'puts "ready"; sleep 10', stdin: '' });
+    try {
+      const [event] = await ready;
+      assert.equal(event.text, 'ready\n');
+      const child = runner.active.child;
+      runner.stop(reason);
+      // Deliver buffered pipe data before close, without relying on OS timing.
+      // Each stream has an incomplete UTF-8 character when the shared cap is hit.
+      for (const stream of ['stdout', 'stderr']) {
+        child[stream].emit('data', Buffer.from([0xe3, 0x81]));
+      }
+      for (const stream of ['stdout', 'stderr']) {
+        child[stream].emit('data', Buffer.from([0x82, 0x78]));
+      }
+      const result = await pending;
+      assert.equal(result.status, reason);
+      assert.equal(result.stdout, 'ready\n');
+      assert.equal(result.stderr, '');
+      assert.deepEqual(events, [{ stream: 'stdout', text: 'ready\n' }]);
+      assert.equal(runner.busy, false);
+    } finally {
+      runner.stop();
+      await pending;
+    }
+  });
+}
+
 test('M06: stop descendants as well as their Ruby parent on either OS', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'IDE-process-tree-'));
   const runner = new RubyRunner({ rubyPath });

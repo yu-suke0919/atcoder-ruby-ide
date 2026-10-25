@@ -73,7 +73,7 @@ class RubyRunner extends EventEmitter {
       };
       for (const stream of ['stdout', 'stderr']) {
         child[stream].on('data', (chunk) => {
-          if (state.reason === 'output-limit') return;
+          if (byteCount >= this.outputLimit) return;
           const remaining = this.outputLimit - byteCount;
           const bytes = chunk.subarray(0, remaining);
           byteCount += bytes.length;
@@ -90,7 +90,7 @@ class RubyRunner extends EventEmitter {
           publish('stderr', `Ruby を起動できませんでした: ${error.message}\n`);
         });
         child.on('close', (exitCode, signal) => {
-          if (state.reason !== 'output-limit') {
+          if (byteCount < this.outputLimit) {
             for (const stream of ['stdout', 'stderr']) publish(stream, decoders[stream].end());
           }
           result.exitCode = exitCode;
@@ -103,7 +103,7 @@ class RubyRunner extends EventEmitter {
     } finally {
       clearTimeout(timer);
       try {
-        if (directory) await rm(directory, { recursive: true, force: true });
+        if (directory) await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
       } finally {
         result.durationMs = Math.round(performance.now() - started);
         this.active = null;
