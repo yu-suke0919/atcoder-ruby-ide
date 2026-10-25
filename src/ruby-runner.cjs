@@ -102,9 +102,12 @@ class RubyRunner extends EventEmitter {
       return result;
     } finally {
       clearTimeout(timer);
-      if (directory) await rm(directory, { recursive: true, force: true });
-      result.durationMs = Math.round(performance.now() - started);
-      this.active = null;
+      try {
+        if (directory) await rm(directory, { recursive: true, force: true });
+      } finally {
+        result.durationMs = Math.round(performance.now() - started);
+        this.active = null;
+      }
     }
   }
 }

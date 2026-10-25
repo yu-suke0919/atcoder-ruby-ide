@@ -145,3 +145,20 @@ test('temporary source files are removed after execution', async () => {
   assert.equal(result.status, 'completed');
   await assert.rejects(access(result.stdout.trim()), { code: 'ENOENT' });
 });
+
+test('R02: a cleanup failure does not leave the runner busy', { skip: process.platform === 'win32' }, async () => {
+  const runner = new RubyRunner({ rubyPath });
+  let directory;
+  runner.on('output', (event) => { if (event.stream === 'stdout' && !directory) directory = event.text.trim(); });
+  const { chmod } = require('node:fs/promises');
+  try {
+    await assert.rejects(runner.run({ code: 'puts __dir__; File.chmod(0, __dir__)', stdin: '' }), { code: 'EACCES' });
+    assert.equal(runner.busy, false);
+    assert.equal((await runner.run({ code: 'puts 42', stdin: '' })).stdout, '42\n');
+  } finally {
+    if (directory) {
+      await chmod(directory, 0o700);
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});

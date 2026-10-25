@@ -150,3 +150,16 @@ test('M09: cancel closing or replacing a dirty buffer; create and save a new fil
   await page.getByTestId('save-state').filter({ hasText: '保存済み' }).waitFor();
   assert.equal(await readFile(newPath, 'utf8'), 'puts "新規保存"');
 });
+
+test('R01: opening a CRLF file keeps the normalized buffer clean', async () => {
+  const filePath = path.join(root, 'Windows 改行.rb');
+  await writeFile(filePath, 'puts 1\r\nputs 2\r\n', 'utf8');
+  await app.evaluate(({ dialog }, selected) => {
+    dialog.showMessageBox = async () => ({ response: 0 });
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] });
+  }, filePath);
+  await page.getByRole('button', { name: '開く', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="code-editor"]').value === 'puts 1\nputs 2\n');
+  assert.equal(await page.getByTestId('save-state').textContent(), '保存済み');
+  assert.equal(await readFile(filePath, 'utf8'), 'puts 1\r\nputs 2\r\n');
+});

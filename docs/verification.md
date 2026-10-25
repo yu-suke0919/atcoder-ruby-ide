@@ -18,19 +18,21 @@
 
 | 対象 | コマンド・方法 | 結果 |
 | --- | --- | --- |
-| 共通テスト 20 件 | `npm test` | 20 件成功、失敗・スキップなし |
-| 画面テスト 10 件 | `npm run test:e2e` | 10 件成功、失敗・スキップなし |
+| 共通テスト 21 件 | `npm test` | 21 件成功、失敗・スキップなし |
+| 画面テスト 11 件 | `npm run test:e2e` | 11 件成功、失敗・スキップなし |
 | 依存関係の再現 | `npm ci` → `npm run setup:electron` | 成功。再インストール後も上記テストを実施 |
 | Ruby 配布物の検証と再利用 | `npm run prepare:ruby` を再実行 | SHA-256 一致、展開済みの Ruby を再利用 |
-| Windows exe | `npm run build:win` | ポータブル exe 生成成功、125,148,959 bytes |
+| Windows exe | `npm run build:win` | レビュー修正を含むポータブル exe 生成成功、125,149,516 bytes |
 | 同梱物 | app.asar、Ruby 実行ファイル、Ruby ライセンス | 全 src ファイルが現在のソースと一致し、同梱物の存在を確認 |
 
 生成物は `dist/AtCoder-Ruby-IDE-0.1.0-x64.exe`。
-この生成物の SHA-256 は `f137788674719306fbf0df959a1afb9dc475b4b6fc6aca0a7896eaf9a0bf7581`。
+この生成物の SHA-256 は `d989ab1bc95ccb43fdae43d7ea1884881088099cee8f4cd6b8729734183ccca4`。
 再ビルド時には生成物とチェックサムの記録を合わせて更新する。
 
 ## Windows の確認範囲
 
 この Cloud は Linux のため、実際の Windows での起動・動作確認は未実施。
 Windows CI に共通・画面テストと配布用ディレクトリからの画面テストを定義している。
-リポジトリへの push や CI の手動実行は、この作業では行っていない。
+GitHub へ main と PR 用ブランチを push 済み。Windows CI の実行結果は未確認。
+レビューで修正した内容と再現条件は [コードレビュー](review.md) に記録している。
+権限変更による削除失敗の再現テスト 1 件は POSIX 専用で、Windows ではスキップする。

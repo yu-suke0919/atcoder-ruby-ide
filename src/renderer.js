@@ -52,7 +52,7 @@ function openFile() {
     const result = await window.ide.openFile();
     if (result.canceled) return;
     editor.value = result.code;
-    savedCode = result.code;
+    savedCode = editor.value;
     filePath = result.filePath;
     updateEditor();
     message('ファイルを開きました。');
