@@ -31,7 +31,7 @@
 
 ## Windows の確認範囲
 
-この Cloud は Linux のため、実際の Windows での起動・動作確認は未実施。
+この Cloud 自身は Linux であり、Windows での起動・動作確認は GitHub Actions の Windows ジョブで行う。
 Windows CI に共通・画面テストと配布用ディレクトリからの画面テストを定義している。
 GitHub Actions run `40174188284`（コミット `f3e8b77`）では Linux ジョブが成功した。
 Windows は共通テストまで成功し、`npm run test:e2e` が失敗したため、exe 生成・配布用ディレクトリからの確認・成果物保存はスキップされている。
