@@ -1,37 +1,45 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtemp, mkdir, readFile, writeFile, rm } = require('node:fs/promises');
+const { mkdtemp, mkdir, readFile, writeFile, rm, access } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
-const { _electron: electron } = require('playwright');
+const { once } = require('node:events');
+const { launch, dialogs, discard, open, save, cancelSave, overwrite, close, pause } = require('./support.cjs');
 
 let app;
 let page;
 let root;
 before(async () => {
   root = await mkdtemp(path.join(tmpdir(), 'AtCoder IDE 日本語 '));
-  const executablePath = process.env.PACKAGED_APP || require('electron');
-  app = await electron.launch({
-    executablePath,
-    args: [
-      `--user-data-dir=${path.join(root, 'electron-profile')}`,
-      ...(process.platform === 'linux' && !process.env.DISPLAY ? ['--ozone-platform=headless', '--disable-gpu'] : []),
-      ...(process.env.PACKAGED_APP ? [] : ['.'])
-    ],
-    cwd: path.resolve(__dirname, '../..'),
-    env: { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true' },
-    timeout: 30000
-  });
-  page = await app.firstWindow();
-  await page.getByTestId('ruby-version').filter({ hasText: /ruby 3\./i }).waitFor();
+  app = await launch(root);
+  page = app.page;
 });
 after(async () => {
-  if (app) {
-    await app.evaluate(({ app }) => app.exit(0));
-    await app.close();
-  }
-  if (root) await rm(root, { recursive: true, force: true });
+  if (app) await close(app);
+  if (root) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
+
+async function fileOperation(trigger, steps) {
+  await dialogs(app, trigger, steps);
+}
+async function openDocument(file) {
+  const dirty = await page.evaluate(() => document.getElementById('save-state').textContent.includes('変更'));
+  await fileOperation(() => page.getByRole('button', { name: '開く', exact: true }).click(), [...(dirty ? [discard(true)] : []), open(file)]);
+}
+async function saveAs(file, exists = false) {
+  await fileOperation(() => page.getByRole('button', { name: '名前を付けて保存', exact: true }).click(), [save(file), ...(exists ? [overwrite()] : [])]);
+  await page.locator('#message').filter({ hasText: 'ファイルを保存しました' }).waitFor();
+}
+async function newDocument() {
+  const dirty = await page.evaluate(() => document.getElementById('save-state').textContent.includes('変更'));
+  if (dirty) await fileOperation(() => page.getByRole('button', { name: '新規', exact: true }).click(), [discard(true)]);
+  else await page.getByRole('button', { name: '新規', exact: true }).click();
+  await page.waitForFunction(() => document.getElementById('code-editor').value === '');
+}
+async function runAndWait(label = '正常終了') {
+  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await page.getByTestId('run-status').filter({ hasText: label }).waitFor();
+}
 
 async function assertWorkspaceFits() {
   const layout = await page.evaluate(() => ({
@@ -174,7 +182,7 @@ test('M11: matching stdout from a failed process is not a passing comparison', a
 test('M11: reject invalid or oversized UTF-8 expectations before running Ruby', async () => {
   for (const expected of [123, 'あ'.repeat(349526)]) {
     const error = await page.evaluate(async (value) => {
-      try { await window.ide.run('puts "must not run"', '', value); }
+      try { const { ide } = await import('./bridge.js'); await ide.run('puts "must not run"', '', value); }
       catch (error) { return error.message; }
     }, expected);
     assert.match(error, /期待出力/);
@@ -219,35 +227,6 @@ test('M06: stop a running program from the UI', async () => {
   await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
 });
 
-test('M02/M03/M09: load, edit and save a file; retain edits when discard is canceled', async () => {
-  const filePath = path.join(root, '解答.rb');
-  await writeFile(filePath, 'puts "ファイル"\n', 'utf8');
-  await app.evaluate(({ dialog }, selected) => {
-    dialog.showMessageBox = async () => ({ response: 0 });
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] });
-  }, filePath);
-  await page.getByRole('button', { name: '開く', exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('[data-testid="code-editor"]').value === 'puts "ファイル"\n');
-  await page.getByTestId('code-editor').fill('puts "変更済み"\n');
-  await app.evaluate(({ dialog }) => { dialog.showMessageBox = async () => ({ response: 1 }); });
-  await page.getByRole('button', { name: '開く', exact: true }).click();
-  assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts "変更済み"\n');
-  await page.keyboard.press('Control+s');
-  await page.getByTestId('save-state').filter({ hasText: '保存済み' }).waitFor();
-  assert.equal(await readFile(filePath, 'utf8'), 'puts "変更済み"\n');
-});
-
-test('M03: canceled Save As keeps the buffer and existing file', async () => {
-  await app.evaluate(({ dialog }) => {
-    dialog.showSaveDialog = async () => ({ canceled: true });
-  });
-  await page.getByTestId('code-editor').fill('puts "未保存"');
-  await page.keyboard.press('Control+Shift+s');
-  assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts "未保存"');
-  assert.match(await page.getByTestId('save-state').textContent(), /未保存/);
-  assert.equal(await readFile(path.join(root, '解答.rb'), 'utf8'), 'puts "変更済み"\n');
-});
-
 test('M01: Tab inserts two spaces and output is rendered as text', async () => {
   await page.getByTestId('code-editor').fill('puts "<img src=x onerror=alert(1)>"');
   await page.getByTestId('code-editor').press('End');
@@ -274,144 +253,121 @@ test('M06/M08: show timeout and output-limit reasons in the UI', async () => {
   await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
 });
 
-test('M09: cancel closing or replacing a dirty buffer; create and save a new file', async () => {
-  await page.getByTestId('code-editor').fill('puts "保持"');
-  await app.evaluate(({ dialog }) => { dialog.showMessageBox = async () => ({ response: 1 }); });
-  await page.getByRole('button', { name: '新規', exact: true }).click();
-  assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts "保持"');
-  await app.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].close(); });
-  assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts "保持"');
-  const newPath = path.join(root, '新しい解答.rb');
-  await app.evaluate(({ dialog }, selected) => {
-    dialog.showMessageBox = async () => ({ response: 0 });
-    dialog.showSaveDialog = async () => ({ canceled: false, filePath: selected });
-  }, newPath);
-  await page.getByRole('button', { name: '新規', exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('[data-testid="code-editor"]').value === '');
-  await page.getByTestId('code-editor').fill('puts "新規保存"');
-  await page.getByRole('button', { name: '保存', exact: true }).click();
+
+test('M02/M03/M09: native open/save preserve Japanese paths and canceled edits', async () => {
+  const file = path.join(root, '解答.rb');
+  await writeFile(file, '\uFEFFputs "ファイル"\n', 'utf8');
+  await openDocument(file);
+  assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts "ファイル"\n');
+  await page.getByTestId('code-editor').fill('puts "変更済み"\n');
+  await fileOperation(() => page.getByRole('button', { name: '開く', exact: true }).click(), [discard(false)]);
+  assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts "変更済み"\n');
+  await page.keyboard.press('Control+s');
   await page.getByTestId('save-state').filter({ hasText: '保存済み' }).waitFor();
-  assert.equal(await readFile(newPath, 'utf8'), 'puts "新規保存"');
+  assert.equal(await readFile(file, 'utf8'), 'puts "変更済み"\n');
+  await page.getByTestId('code-editor').fill('puts "未保存"');
+  await fileOperation(() => page.keyboard.press('Control+Shift+s'), [cancelSave()]);
+  assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts "未保存"');
+  assert.match(await page.getByTestId('save-state').textContent(), /未保存/);
+  assert.equal(await readFile(file, 'utf8'), 'puts "変更済み"\n');
 });
 
-test('R01: opening a CRLF file keeps the normalized buffer clean', async () => {
-  const filePath = path.join(root, 'Windows 改行.rb');
-  await writeFile(filePath, 'puts 1\r\nputs 2\r\n', 'utf8');
-  await app.evaluate(({ dialog }, selected) => {
-    dialog.showMessageBox = async () => ({ response: 0 });
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] });
-  }, filePath);
-  await page.getByRole('button', { name: '開く', exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('[data-testid="code-editor"]').value === 'puts 1\nputs 2\n');
+test('M09: cancel native close/new confirmation, then create and save a document', async () => {
+  await page.getByTestId('code-editor').fill('puts "保持"');
+  await fileOperation(() => page.getByRole('button', { name: '新規', exact: true }).click(), [discard(false)]);
+  await fileOperation(() => page.evaluate(() => window.__TAURI__.window.getCurrentWindow().close()), [discard(false)]);
+  assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts "保持"');
+  await newDocument();
+  await page.getByTestId('code-editor').fill('puts "新規保存"');
+  const file = path.join(root, '新しい解答.rb');
+  await fileOperation(() => page.getByRole('button', { name: '保存', exact: true }).click(), [save(file)]);
+  assert.equal(await readFile(file, 'utf8'), 'puts "新規保存"');
+});
+
+test('R01: a CRLF document opens clean and remains unchanged on disk', async () => {
+  const file = path.join(root, 'Windows 改行.rb');
+  await writeFile(file, 'puts 1\r\nputs 2\r\n', 'utf8');
+  await openDocument(file);
+  assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts 1\nputs 2\n');
   assert.equal(await page.getByTestId('save-state').textContent(), '保存済み');
-  assert.equal(await readFile(filePath, 'utf8'), 'puts 1\r\nputs 2\r\n');
+  assert.equal(await readFile(file, 'utf8'), 'puts 1\r\nputs 2\r\n');
 });
 
-test('M11: opening or creating a document resets the previous comparison', async () => {
+test('M11: native open/new reset the previous comparison', async () => {
   await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
   await page.getByTestId('expected-output').fill('1\n2\n');
-  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await runAndWait();
   await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
-  const filePath = path.join(root, '別の解答.rb');
-  await writeFile(filePath, 'puts 1\nputs 2\n', 'utf8');
-  await app.evaluate(({ dialog }, selected) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] });
-  }, filePath);
-  await page.getByRole('button', { name: '開く', exact: true }).click();
-  await page.waitForFunction((selected) => document.getElementById('file-path').textContent === selected, filePath);
+  const file = path.join(root, '別の解答.rb');
+  await writeFile(file, 'puts 1\nputs 2\n');
+  await openDocument(file);
   assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
-  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await runAndWait();
   await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
-  await page.getByRole('button', { name: '新規', exact: true }).click();
-  await page.waitForFunction(() => document.getElementById('code-editor').value === '');
+  await newDocument();
   assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
   await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
 });
 
-test('R06: overwriting the same file preserves matched and mismatched comparisons', async () => {
-  const selected = path.join(root, '上書き保存.rb');
-  await app.evaluate(({ dialog }, filePath) => {
-    dialog.showSaveDialog = async () => ({ canceled: false, filePath });
-  }, selected);
+test('R06: native overwrite and same-path Save As preserve comparison results', async () => {
+  const file = path.join(root, '上書き保存.rb');
   await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
   await page.getByTestId('code-editor').fill('puts "same"');
-  await page.getByRole('button', { name: '名前を付けて保存', exact: true }).click();
-  await page.locator('#message').filter({ hasText: 'ファイルを保存しました' }).waitFor();
+  await saveAs(file);
   for (const [expected, label] of [['same', '一致'], ['different', '不一致']]) {
     await page.getByTestId('expected-output').fill(expected);
-    await page.getByRole('button', { name: '実行', exact: true }).click();
+    await runAndWait();
     await page.getByTestId('comparison-status').filter({ hasText: new RegExp(`^${label}$`) }).waitFor();
     await page.keyboard.press('Control+s');
-    await page.locator('#message').filter({ hasText: 'ファイルを保存しました' }).waitFor();
-    assert.equal(await readFile(selected, 'utf8'), 'puts "same"');
+    await page.waitForFunction(() => !document.getElementById('save').disabled);
+    assert.equal(await readFile(file, 'utf8'), 'puts "same"');
     assert.equal(await page.getByTestId('comparison-status').textContent(), label);
   }
-  await page.getByRole('button', { name: '実行', exact: true }).click();
-  await page.getByTestId('comparison-status').filter({ hasText: /^不一致$/ }).waitFor();
-  await page.getByRole('button', { name: '名前を付けて保存', exact: true }).click();
-  await page.locator('#message').filter({ hasText: 'ファイルを保存しました' }).waitFor();
+  await saveAs(file, true);
   assert.equal(await page.getByTestId('comparison-status').textContent(), '不一致');
   await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
 });
 
-test('R06: first save and changed paths reset comparisons while canceled or failed saves preserve them', async () => {
-  await app.evaluate(({ dialog }) => { dialog.showMessageBox = async () => ({ response: 0 }); });
-  await page.getByRole('button', { name: '新規', exact: true }).click();
-  await page.waitForFunction(() => document.getElementById('code-editor').value === '');
+test('R06: initial/path-changing saves reset comparisons; cancel and write failure preserve them', async () => {
+  await newDocument();
   await page.getByTestId('code-editor').fill('puts "same"');
   await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
   await page.getByTestId('expected-output').fill('same');
-  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await runAndWait();
   await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
-  const first = path.join(root, '初回保存.rb');
-  await app.evaluate(({ dialog }, filePath) => {
-    dialog.showSaveDialog = async () => ({ canceled: false, filePath });
-  }, first);
-  await page.keyboard.press('Control+s');
-  await page.locator('#message').filter({ hasText: 'ファイルを保存しました' }).waitFor();
+  const directory = path.join(root, '削除されるディレクトリ');
+  await mkdir(directory);
+  const first = path.join(directory, '初回保存.rb');
+  await fileOperation(() => page.keyboard.press('Control+s'), [save(first)]);
   assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
-  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await runAndWait();
   await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
-  await app.evaluate(({ dialog }) => { dialog.showSaveDialog = async () => ({ canceled: true }); });
-  await page.getByRole('button', { name: '名前を付けて保存', exact: true }).click();
-  await page.waitForFunction(() => !document.getElementById('save').disabled);
+  await fileOperation(() => page.getByRole('button', { name: '名前を付けて保存', exact: true }).click(), [cancelSave()]);
   assert.equal(await page.getByTestId('comparison-status').textContent(), '一致');
-  await app.evaluate(({ dialog }, filePath) => {
-    dialog.showSaveDialog = async () => ({ canceled: false, filePath });
-  }, path.join(root, 'missing', 'failure.rb'));
-  await page.getByRole('button', { name: '名前を付けて保存', exact: true }).click();
+  await rm(directory, { recursive: true });
+  await page.keyboard.press('Control+s');
   await page.locator('#message').filter({ hasText: 'ファイル操作に失敗しました' }).waitFor();
   assert.equal(await page.getByTestId('comparison-status').textContent(), '一致');
   assert.equal(await page.locator('#file-path').textContent(), first);
-  const directory = path.join(root, '別の作業ディレクトリ');
-  await mkdir(directory);
-  const second = path.join(directory, '別名保存.rb');
-  await app.evaluate(({ dialog }, filePath) => {
-    dialog.showSaveDialog = async () => ({ canceled: false, filePath });
-  }, second);
-  await page.getByRole('button', { name: '名前を付けて保存', exact: true }).click();
-  await page.locator('#message').filter({ hasText: 'ファイルを保存しました' }).waitFor();
+  const second = path.join(root, '別名保存.rb');
+  await saveAs(second);
   assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
-  assert.equal(await page.locator('#file-path').textContent(), second);
+  assert.equal(await readFile(second, 'utf8'), 'puts "same"');
   await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
 });
 
-test('R06: saving the same file during a run preserves the eventual comparison', async () => {
-  const selected = path.join(root, '実行中の保存.rb');
+test('R06: overwrite during execution preserves the eventual comparison', async () => {
+  const file = path.join(root, '実行中の保存.rb');
   const gate = path.join(root, 'continue.txt');
-  await app.evaluate(({ dialog }, filePath) => {
-    dialog.showSaveDialog = async () => ({ canceled: false, filePath });
-  }, selected);
   await page.getByTestId('code-editor').fill(`puts "ready"; sleep 0.01 until File.exist?(${JSON.stringify(gate.replaceAll('\\', '/'))})`);
   await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
   await page.getByTestId('expected-output').fill('ready');
-  await page.getByRole('button', { name: '名前を付けて保存', exact: true }).click();
-  await page.locator('#message').filter({ hasText: 'ファイルを保存しました' }).waitFor();
+  await saveAs(file);
   try {
     await page.getByRole('button', { name: '実行', exact: true }).click();
     await page.getByTestId('stdout').filter({ hasText: 'ready' }).waitFor();
     await page.keyboard.press('Control+s');
-    await page.locator('#message').filter({ hasText: 'ファイルを保存しました' }).waitFor();
+    await page.waitForFunction(() => !document.getElementById('save').disabled);
     assert.equal(await page.getByTestId('comparison-status').textContent(), '比較中…');
     await writeFile(gate, 'continue');
     await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
@@ -419,4 +375,23 @@ test('R06: saving the same file during a run preserves the eventual comparison',
     await writeFile(gate, 'continue');
     await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
   }
+});
+
+test('M07/M12: bundled Ruby loads JSON and saved-directory files without Ruby on PATH', async () => {
+  await writeFile(path.join(root, '入力.json'), '{"message":"日本語"}', 'utf8');
+  await page.getByTestId('code-editor').fill('require "json"; puts JSON.parse(File.read("入力.json"))["message"]');
+  await runAndWait();
+  assert.equal(await page.getByTestId('stdout').textContent(), '日本語\n');
+});
+
+test('M06/M09: accepting native close stops Ruby descendants and exits', async () => {
+  const marker = path.join(root, 'orphan.txt').replaceAll('\\', '/');
+  await page.getByTestId('code-editor').fill(`require 'rbconfig'; spawn(RbConfig.ruby, '-e', 'sleep 2; File.write(${JSON.stringify(marker)}, "survived")'); puts 'ready'; sleep 30`);
+  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await page.getByTestId('stdout').filter({ hasText: 'ready' }).waitFor();
+  const exited = once(app.child, 'exit');
+  await dialogs(app, () => page.evaluate(() => window.__TAURI__.window.getCurrentWindow().close()), [discard(true)], true);
+  await exited;
+  await pause(2200);
+  await assert.rejects(access(marker), { code: 'ENOENT' });
 });

@@ -1,3 +1,5 @@
+import { ide } from './bridge.js';
+
 const $ = (id) => document.getElementById(id);
 const editor = $('code-editor');
 const input = $('stdin');
@@ -13,6 +15,12 @@ let running = false;
 let fileBusy = false;
 let rubyAvailable = false;
 let comparisonRevision = 0;
+let currentRun = null;
+let closing = false;
+
+async function confirmDiscard() {
+  return editor.value === savedCode || await ide.confirmDiscard();
+}
 
 function showComparison(state) {
   const labels = { none: '比較なし', pending: '未比較', running: '比較中…', matched: '一致', mismatched: '不一致', unavailable: '判定なし' };
@@ -33,7 +41,8 @@ function message(text, error = false) {
 
 function updateEditor() {
   const dirty = editor.value !== savedCode;
-  window.ide.setDirty(dirty);
+  const name = filePath ? filePath.split(/[\\/]/).at(-1) : '無題.rb';
+  ide.setTitle(`${dirty ? '● ' : ''}${name} — AtCoder Ruby IDE`).catch(() => {});
   $('save-state').textContent = dirty ? '● 未保存の変更' : filePath ? '保存済み' : '未保存のファイル';
   $('file-path').textContent = filePath || '無題.rb';
   $('file-path').title = filePath || '未保存のファイル';
@@ -47,15 +56,15 @@ function updateCursor() {
 }
 
 function updateButtons() {
-  $('run').disabled = running || !rubyAvailable || fileBusy;
+  $('run').disabled = running || !rubyAvailable || fileBusy || closing;
   $('stop').disabled = !running;
   $('clear-output').disabled = running;
-  for (const id of ['new', 'open', 'save', 'save-as']) $(id).disabled = fileBusy;
-  editor.readOnly = fileBusy;
+  for (const id of ['new', 'open', 'save', 'save-as']) $(id).disabled = fileBusy || closing;
+  editor.readOnly = fileBusy || closing;
 }
 
 async function fileAction(action) {
-  if (fileBusy) return;
+  if (fileBusy || closing) return;
   fileBusy = true;
   updateButtons();
   try { await action(); }
@@ -65,7 +74,8 @@ async function fileAction(action) {
 
 function openFile() {
   return fileAction(async () => {
-    const result = await window.ide.openFile();
+    if (!await confirmDiscard()) return;
+    const result = await ide.openFile();
     if (result.canceled) return;
     editor.value = result.code;
     savedCode = editor.value;
@@ -79,7 +89,7 @@ function openFile() {
 function saveFile(saveAs = false) {
   return fileAction(async () => {
     const code = editor.value;
-    const result = await window.ide.saveFile(code, saveAs);
+    const result = await ide.saveFile(code, saveAs);
     if (result.canceled) return;
     if (filePath !== result.filePath) resetComparison();
     savedCode = code;
@@ -90,7 +100,7 @@ function saveFile(saveAs = false) {
 }
 
 async function run() {
-  if (running || fileBusy || !rubyAvailable) return;
+  if (running || fileBusy || closing || !rubyAvailable) return;
   const revision = comparisonRevision;
   const expected = compareOutput.checked ? expectedOutput.value : null;
   running = true;
@@ -102,7 +112,11 @@ async function run() {
   showComparison(expected === null ? 'none' : 'running');
   message('Ruby を実行しています。');
   try {
-    const result = await window.ide.run(editor.value, input.value, expected);
+    const pending = ide.run(editor.value, input.value, expected, appendOutput);
+    currentRun = pending;
+    const result = await pending;
+    $('stdout').textContent = result.stdout;
+    $('stderr').textContent = result.stderr;
     const statuses = {
       completed: '正常終了', failed: `エラー終了${result.exitCode === null ? '' : ` (${result.exitCode})`}`,
       stopped: '停止しました', timeout: '時間制限で停止（5 秒）', 'output-limit': '出力上限で停止（1 MiB）'
@@ -117,25 +131,25 @@ async function run() {
     $('run-status').textContent = '実行できませんでした';
     if (revision === comparisonRevision && expected !== null) showComparison('unavailable');
     message(error.message, true);
-  } finally { running = false; updateButtons(); }
+  } finally { currentRun = null; running = false; updateButtons(); }
 }
 
-window.ide.onOutput(({ stream, text }) => {
+function appendOutput({ stream, text }) {
   const output = stream === 'stderr' ? $('stderr') : $('stdout');
   output.append(document.createTextNode(text));
   output.scrollTop = output.scrollHeight;
-});
+}
 $('run').addEventListener('click', run);
 $('stop').addEventListener('click', async () => {
-  try { await window.ide.stop(); }
+  try { await ide.stop(); }
   catch (error) { message(error.message, true); }
 });
 $('open').addEventListener('click', openFile);
 $('save').addEventListener('click', () => saveFile());
 $('save-as').addEventListener('click', () => saveFile(true));
 $('new').addEventListener('click', () => fileAction(async () => {
-  const result = await window.ide.newFile();
-  if (result.canceled) return;
+  if (!await confirmDiscard()) return;
+  await ide.newFile();
   editor.value = '';
   savedCode = '';
   filePath = null;
@@ -177,10 +191,23 @@ document.addEventListener('keydown', (event) => {
 resetComparison();
 updateEditor();
 updateButtons();
-window.ide.rubyInfo().then((info) => {
+ide.onCloseRequested(async event => {
+  event.preventDefault();
+  if (closing) return;
+  closing = true;
+  updateButtons();
+  try {
+    if (!await confirmDiscard()) return;
+    await ide.stop();
+    await currentRun?.catch(() => {});
+    await ide.destroy();
+  } finally { closing = false; updateButtons(); }
+}).catch(error => message(String(error), true));
+
+ide.rubyInfo().then((info) => {
   rubyAvailable = info.available;
   $('ruby-version').textContent = info.version;
   $('ruby-version').title = info.version;
   if (!info.available) message('Ruby を起動できません。インストール状態を確認してください。', true);
   updateButtons();
-}).catch((error) => message(error.message, true));
+}).catch((error) => { $('ruby-version').textContent = 'Ruby を起動できません'; message(String(error), true); });
