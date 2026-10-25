@@ -1,4 +1,4 @@
-const { readdir, readFile, stat, mkdir, cp, writeFile, appendFile } = require('node:fs/promises');
+const { readdir, readFile, stat, writeFile, appendFile } = require('node:fs/promises');
 const { createHash } = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
@@ -42,9 +42,6 @@ async function main() {
   const artifacts = path.join(__dirname, 'artifacts');
   const tauriDir = path.join(artifacts, 'portable');
   const electronDir = path.join(root, 'dist/win-unpacked');
-  await mkdir(tauriDir, { recursive: true });
-  await cp(path.join(__dirname, 'src-tauri/target/release/tauri-size-probe.exe'), path.join(tauriDir, 'tauri-size-probe.exe'));
-  await cp(path.join(root, 'vendor/ruby'), path.join(tauriDir, 'ruby'), { recursive: true });
   const zip = (directory, filename) => {
     execFileSync(require('../../node_modules/7zip-bin').path7za, ['a', '-tzip', '-mx=9', '-mmt=2', '-bso0', '-bsp0', filename, '.'], { cwd: directory, stdio: 'inherit' });
   };
@@ -52,11 +49,7 @@ async function main() {
   const tauriZip = path.join(artifacts, 'tauri-portable.zip');
   zip(electronDir, electronZip);
   zip(tauriDir, tauriZip);
-  const nsis = path.join(__dirname, 'src-tauri/target/release/bundle/nsis');
-  const installer = (await readdir(nsis)).find(name => name.endsWith('-setup.exe'));
-  if (!installer) throw new Error('Tauri NSIS installer is missing');
   const tauriPackage = path.join(artifacts, 'tauri-setup.exe');
-  await cp(path.join(nsis, installer), tauriPackage);
   const portable = (await readdir(path.join(root, 'dist'))).find(name => /^AtCoder-Ruby-IDE-.*-x64\.exe$/.test(name));
   const result = await measure({ electronDir, tauriDir, electronPackage: path.join(root, 'dist', portable), tauriPackage, electronZip, tauriZip });
   const mib = bytes => (bytes / 1048576).toFixed(2);

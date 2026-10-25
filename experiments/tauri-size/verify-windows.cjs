@@ -65,6 +65,12 @@ async function verify(executable, screenshot) {
     await page.getByTestId('run-status').filter({ hasText: 'エラー終了' }).waitFor();
     assert.match(await page.getByTestId('stderr').textContent(), /syntax|unexpected/i);
     console.log(`Verified sample, UTF-8 stdout/stderr, stop, rerun and syntax error with bundled Ruby: ${executable}`);
+  } catch (error) {
+    try {
+      const destination = path.join(path.dirname(screenshot), 'desktop-failure.png').replaceAll("'", "''");
+      execFileSync('powershell.exe', ['-NoProfile', '-Command', `Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'tauri-size-probe.exe' -or $_.ParentProcessId -eq ${app.pid} } | Select-Object Name,ProcessId,ParentProcessId,CommandLine | Format-List; Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $bounds = [System.Windows.Forms.SystemInformation]::VirtualScreen; $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height); $graphics = [System.Drawing.Graphics]::FromImage($bitmap); $graphics.CopyFromScreen($bounds.Left, $bounds.Top, 0, 0, $bitmap.Size); $bitmap.Save('${destination}'); $graphics.Dispose(); $bitmap.Dispose()`], { stdio: 'inherit' });
+    } catch (diagnosticError) { console.error(diagnosticError.message); }
+    throw error;
   } finally {
     if (app.exitCode === null) execFileSync('taskkill', ['/pid', String(app.pid), '/T', '/F'], { stdio: 'ignore' });
     if (browser) await browser.close().catch(() => {});

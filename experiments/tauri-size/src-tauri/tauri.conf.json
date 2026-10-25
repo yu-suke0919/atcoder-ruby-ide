@@ -11,7 +11,7 @@
   },
   "app": {
     "withGlobalTauri": true,
-    "windows": [{ "label": "main", "title": "AtCoder Ruby IDE — Tauri 容量検証", "width": 1280, "height": 850, "minWidth": 900, "minHeight": 650 }],
+    "windows": [{ "label": "main", "title": "AtCoder Ruby IDE — Tauri 容量検証", "width": 1280, "height": 850, "minWidth": 900, "minHeight": 650, "devtools": true }],
     "security": { "csp": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'" }
   },
   "bundle": {

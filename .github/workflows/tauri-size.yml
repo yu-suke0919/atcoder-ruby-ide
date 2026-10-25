@@ -27,6 +27,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: experiments/tauri-size/src-tauri
+          cache-on-failure: true
       - run: npm ci
       - run: npm run setup:electron
       - run: npm run prepare:ruby
@@ -38,19 +39,28 @@ jobs:
       - run: cargo test --locked --manifest-path experiments/tauri-size/src-tauri/Cargo.toml --test runner
       - run: npm run build:win
       - run: npm run build --prefix experiments/tauri-size
-      - name: Compare the complete Ruby payload and distribution sizes
-        run: node experiments/tauri-size/measure.cjs
+      - name: Prepare the portable app and installer
+        run: node experiments/tauri-size/stage.cjs
       - name: Verify the portable and installed Tauri apps with their bundled Ruby
         run: node experiments/tauri-size/verify-windows.cjs
+      - name: Compare the complete Ruby payload and distribution sizes
+        run: node experiments/tauri-size/measure.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: Tauri-size-probe-Windows-x64
           path: |
-            experiments/tauri-size/artifacts/size-report.*
             experiments/tauri-size/artifacts/tauri-portable.zip
             experiments/tauri-size/artifacts/tauri-setup.exe
-            experiments/tauri-size/artifacts/*.png
           if-no-files-found: warn
           compression-level: 0
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Tauri-size-report
+          path: |
+            experiments/tauri-size/artifacts/size-report.*
+            experiments/tauri-size/artifacts/*.png
+          if-no-files-found: warn
           retention-days: 14

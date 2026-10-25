@@ -21,7 +21,7 @@ main の MVP をベースに、既存の HTML / CSS と同じ RubyInstaller 3.4.
 1. この資料を先に作り、Ruby 実行・停止と容量集計のテストを実装前に追加する。
 2. Rust の実プロセステストでサンプル、標準入力の EOF、日本語出力、エラー、停止、時間制限、出力上限を確認する。
 3. 最小実装し、Windows の Tauri 実アプリで初期サンプルの `6 test`、日本語の stdout / stderr、停止後の再実行を確認する。
-4. Playwright は WebView2 のテスト用 CDP 接続を利用する。テスト時だけデバッグ用引数を環境変数で渡す。
+4. Playwright は WebView2 のテスト用 CDP 接続を利用する。リリースビルドでも検証できるよう `devtools` feature を有効にし、ポート指定はテスト時だけ環境変数で渡す。
 5. 配布物に含まれる Ruby を使うことを確認し、同じ Ruby 一式を含むことをハッシュでも確認する。
 6. 配布容量を集計し、比較条件と制約を添えてこの資料と PR に結果を記録する。
 
@@ -45,6 +45,7 @@ npm test --prefix experiments/tauri-size
 
 Windows のビルド・画面確認・圧縮・計測は `.github/workflows/tauri-size.yml` で再現する。
 Tauri のビルド時だけ `desktop` feature を有効にし、実プロセステストで GUI 全体の二重ビルドを避ける。
+画面検証を ZIP 圧縮より先に行い、接続失敗時はプロセス情報とデスクトップ画像を診断用 Artifact に保存する。
 
 ## 結果
 

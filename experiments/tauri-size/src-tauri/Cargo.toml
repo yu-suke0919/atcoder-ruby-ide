@@ -19,7 +19,7 @@ tempfile = "3"
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-tauri = { version = "2", features = [], optional = true }
+tauri = { version = "2", features = ["devtools"], optional = true }
 
 [target.'cfg(windows)'.build-dependencies]
 tauri-build = { version = "2", features = [], optional = true }
