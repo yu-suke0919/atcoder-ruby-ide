@@ -19,20 +19,24 @@
 | 対象 | コマンド・方法 | 結果 |
 | --- | --- | --- |
 | 共通テスト 21 件 | `npm test` | 21 件成功、失敗・スキップなし |
-| 画面テスト 11 件 | `npm run test:e2e` | 11 件成功、失敗・スキップなし |
+| 画面テスト 12 件 | `npm run test:e2e` | 12 件成功、失敗・スキップなし。通常サイズと行高が大きい条件を含む |
 | 依存関係の再現 | `npm ci` → `npm run setup:electron` | 成功。再インストール後も上記テストを実施 |
 | Ruby 配布物の検証と再利用 | `npm run prepare:ruby` を再実行 | SHA-256 一致、展開済みの Ruby を再利用 |
-| Windows exe | `npm run build:win` | レビュー修正を含むポータブル exe 生成成功、125,149,516 bytes |
-| 同梱物 | app.asar、Ruby 実行ファイル、Ruby ライセンス | 全 src ファイルが現在のソースと一致し、同梱物の存在を確認 |
+| Windows exe | `npm run build:win` | Linux で生成を確認済み。最新の Windows ビルド結果は PR の CI チェックで確認 |
+| 同梱物 | app.asar、Ruby 実行ファイル、Ruby ライセンス | Windows CI が配布用ディレクトリから同梱 Ruby で画面テストを実行 |
 
 生成物は `dist/AtCoder-Ruby-IDE-0.1.0-x64.exe`。
-この生成物の SHA-256 は `d989ab1bc95ccb43fdae43d7ea1884881088099cee8f4cd6b8729734183ccca4`。
-再ビルド時には生成物とチェックサムの記録を合わせて更新する。
+最新の配布物は、成功した Windows ジョブの `AtCoder-Ruby-IDE-Windows-x64` Artifact から取得する。
+実行ごとに変わるバイナリのサイズ・ハッシュは、この資料に固定しない。
 
 ## Windows の確認範囲
 
 この Cloud は Linux のため、実際の Windows での起動・動作確認は未実施。
 Windows CI に共通・画面テストと配布用ディレクトリからの画面テストを定義している。
-GitHub へ main と PR 用ブランチを push 済み。Windows CI の実行結果は未確認。
+GitHub Actions run `40174188284`（コミット `f3e8b77`）では Linux ジョブが成功した。
+Windows は共通テストまで成功し、`npm run test:e2e` が失敗したため、exe 生成・配布用ディレクトリからの確認・成果物保存はスキップされている。
+run `40175154987` の詳細ログを取得し、Windows は画面テスト 11 件中 M01（最小ウィンドウのパネルの重なり）の 1 件が失敗し、他の 10 件が成功したことを確認した。
+入力・出力の固定最小高さにより、周囲の文字の行高が大きい環境で結果欄が実行ボタンに重なる問題を修正した。
+最新の確認結果は [PR #1 のチェック](https://github.com/yu-suke0919/atcoder-ruby-ide/pull/1/checks) を参照する。Cloud の成功を Windows の成功として扱わない。
 レビューで修正した内容と再現条件は [コードレビュー](review.md) に記録している。
 権限変更による削除失敗の再現テスト 1 件は POSIX 専用で、Windows ではスキップする。

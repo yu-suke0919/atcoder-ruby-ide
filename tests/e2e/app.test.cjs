@@ -33,14 +33,38 @@ after(async () => {
   if (root) await rm(root, { recursive: true, force: true });
 });
 
-test('M01: editor, output and run controls fit the minimum window size', async () => {
-  await page.setViewportSize({ width: 900, height: 650 });
+async function assertWorkspaceFits() {
   const layout = await page.evaluate(() => ({
     outputBottom: document.querySelector('.output-panel').getBoundingClientRect().bottom,
-    toolbarTop: document.querySelector('.run-toolbar').getBoundingClientRect().top
+    toolbarTop: document.querySelector('.run-toolbar').getBoundingClientRect().top,
+    summaryBottom: document.querySelector('.run-summary').getBoundingClientRect().bottom,
+    stdoutHeight: document.querySelector('#stdout').getBoundingClientRect().height,
+    stderrHeight: document.querySelector('#stderr').getBoundingClientRect().height,
+    inputHeight: document.querySelector('#stdin').getBoundingClientRect().height,
+    viewportHeight: innerHeight
   }));
-  assert.ok(layout.outputBottom <= layout.toolbarTop, 'output must not overlap run controls');
+  const details = JSON.stringify(layout);
+  assert.ok(layout.outputBottom <= layout.toolbarTop, `output must not overlap run controls: ${details}`);
+  assert.ok(layout.summaryBottom <= layout.outputBottom, `run summary must remain visible: ${details}`);
+  assert.ok(layout.stdoutHeight > 12 && layout.stderrHeight > 12 && layout.inputHeight > 12, `text areas must remain usable: ${details}`);
+}
+
+test('M01: editor, output and run controls fit the minimum window size', async () => {
+  await page.setViewportSize({ width: 900, height: 650 });
+  await assertWorkspaceFits();
   await page.setViewportSize({ width: 1280, height: 850 });
+});
+
+test('R03: larger font line boxes do not push output into run controls', async () => {
+  await page.setViewportSize({ width: 900, height: 650 });
+  try {
+    await page.evaluate(() => { document.body.style.lineHeight = '1.8'; });
+    assert.equal(await page.evaluate(() => getComputedStyle(document.body).lineHeight), '23.4px');
+    await assertWorkspaceFits();
+  } finally {
+    await page.evaluate(() => { document.body.style.lineHeight = ''; });
+    await page.setViewportSize({ width: 1280, height: 850 });
+  }
 });
 
 test('M04: the initial AtCoder sample produces 6 test', async () => {
