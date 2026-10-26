@@ -28,3 +28,50 @@ test('M10: do not replace an unmanaged runtime directory', async () => {
     assert.equal(await readFile(path.join(root, 'vendor', 'ruby', 'user.txt'), 'utf8'), 'preserved');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('M10: trim documentation and headers while preserving runtime bytes and license notices', async () => {
+  const { trimRuntime } = require('../../scripts/prepare-ruby.cjs');
+  const root = await mkdtemp(path.join(tmpdir(), 'IDE-ruby-trim-'));
+  try {
+    const fixture = {
+      'bin/ruby.exe': 'ruby executable', 'lib/ruby/json.so': 'native extension',
+      'LICENSE.txt': 'installer license', 'share/doc/ruby/html/COPYING.html': 'ruby copying',
+      'share/doc/ruby/html/COPYING_ja.html': 'ruby copying ja', 'share/doc/ruby/html/LEGAL.html': 'third party notices',
+      'share/ri/large.ri': 'offline manual', 'include/ruby.h': 'C header'
+    };
+    for (const [name, text] of Object.entries(fixture)) {
+      await mkdir(path.dirname(path.join(root, name)), { recursive: true });
+      await writeFile(path.join(root, name), text);
+    }
+    await trimRuntime(root);
+    for (const name of ['bin/ruby.exe', 'lib/ruby/json.so', 'LICENSE.txt']) assert.equal(await readFile(path.join(root, name), 'utf8'), fixture[name]);
+    for (const name of ['COPYING.html', 'COPYING_ja.html', 'LEGAL.html']) assert.equal(await readFile(path.join(root, 'licenses/ruby', name), 'utf8'), fixture[`share/doc/ruby/html/${name}`]);
+    for (const directory of ['share', 'include']) await assert.rejects(readFile(path.join(root, directory)), { code: 'ENOENT' });
+    await trimRuntime(root); // Already-trimmed managed runtimes remain usable.
+    assert.equal(await readFile(path.join(root, 'licenses/ruby/LEGAL.html'), 'utf8'), 'third party notices');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('M10: an existing managed runtime is trimmed before cache reuse', async () => {
+  const { createHash } = require('node:crypto');
+  const root = await mkdtemp(path.join(tmpdir(), 'IDE-ruby-cache-'));
+  const data = Buffer.from('verified cached archive fixture');
+  const source = { ...manifest, sha256: createHash('sha256').update(data).digest('hex') };
+  try {
+    await mkdir(path.join(root, '.cache'), { recursive: true });
+    await writeFile(path.join(root, '.cache', source.archive), data);
+    const runtime = path.join(root, 'vendor/ruby');
+    for (const [name, text] of Object.entries({
+      'bin/ruby.exe': 'keep', 'include/ruby.h': 'remove', 'LICENSE.txt': 'keep license',
+      'share/doc/ruby/html/COPYING.html': 'copying', 'share/doc/ruby/html/COPYING_ja.html': 'copying ja',
+      'share/doc/ruby/html/LEGAL.html': 'legal', '.runtime-source.json': JSON.stringify(source)
+    })) {
+      await mkdir(path.dirname(path.join(runtime, name)), { recursive: true });
+      await writeFile(path.join(runtime, name), text);
+    }
+    assert.equal(await prepareRuby({ root, source }), runtime);
+    await assert.rejects(readFile(path.join(runtime, 'include/ruby.h')), { code: 'ENOENT' });
+    assert.equal(await readFile(path.join(runtime, 'licenses/ruby/LEGAL.html'), 'utf8'), 'legal');
+    assert.equal(await prepareRuby({ root, source }), runtime);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

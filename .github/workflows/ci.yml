@@ -31,6 +31,15 @@ jobs:
       - run: npm ci
       - run: cargo fmt --all --check
       - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - name: Browser UI tests with the real Rust and Ruby backend
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: Linux-UI-failure
+          path: test-results/
+          if-no-files-found: ignore
 
   windows:
     runs-on: windows-latest
@@ -63,7 +72,7 @@ jobs:
           $env:APP_EXE = (Resolve-Path artifacts/portable/atcoder-ruby-ide.exe).Path
           npm run test:e2e
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Install NSIS and repeat native GUI tests without system Ruby
+      - name: Install NSIS and smoke test the app without system Ruby
         run: node scripts/test-installed-windows.cjs
       - name: Compress portable ZIP and measure distribution sizes
         run: npm run package:win

@@ -1,6 +1,6 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
-use atcoder_ruby_ide::{DocumentResult, DocumentStore, RunRequest, RunResult, Runner};
+use atcoder_ruby_ide::{DocumentResult, DocumentStore, RunEvent, RunRequest, Runner};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -58,21 +58,6 @@ async fn ruby_info(app: tauri::AppHandle) -> Result<RubyInfo, String> {
     })
     .await
     .map_err(|e| e.to_string())?
-}
-
-#[derive(Clone, Serialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
-enum RunEvent {
-    Output {
-        stream: &'static str,
-        bytes: Vec<u8>,
-    },
-    Completed {
-        result: RunResult,
-    },
-    Failed {
-        message: String,
-    },
 }
 
 #[tauri::command]
