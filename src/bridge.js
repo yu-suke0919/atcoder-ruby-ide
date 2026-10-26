@@ -3,6 +3,9 @@ const invoke = (...args) => nativeInvoke(...args).catch(error => { throw new Err
 const appWindow = window.__TAURI__.window.getCurrentWindow();
 
 export const ide = {
+  openProblem: url => invoke('problem_open', { url }),
+  refreshProblem: url => invoke('problem_refresh', { url }),
+  saveProblemCases: (url, cases) => invoke('problem_save_cases', { url, cases }),
   rubyInfo: () => invoke('ruby_info'),
   run(code, stdin, expectedOutput = null, output = () => {}) {
     return new Promise((resolve, reject) => {

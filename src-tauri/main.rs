@@ -1,8 +1,8 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 use atcoder_ruby_ide::{
-    load_samples, save_samples, DocumentResult, DocumentStore, RunEvent, RunRequest, Runner,
-    SampleCase, SampleResult,
+    load_samples, save_samples, DocumentResult, DocumentStore, Problem, ProblemLibrary,
+    ProblemWorkspace, RunEvent, RunRequest, Runner, SampleCase, SampleResult,
 };
 use serde::Serialize;
 use std::path::PathBuf;
@@ -230,6 +230,48 @@ async fn samples_save(
     .map_err(|e| e.to_string())?
 }
 
+fn problem_library(app: &tauri::AppHandle) -> Result<ProblemLibrary, String> {
+    Ok(ProblemLibrary::new(
+        app.path().app_local_data_dir().map_err(|e| e.to_string())?,
+    ))
+}
+
+#[tauri::command]
+async fn problem_open(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    url: String,
+) -> Result<ProblemWorkspace, String> {
+    let library = problem_library(&app)?;
+    let documents = Arc::clone(&state.documents);
+    tauri::async_runtime::spawn_blocking(move || {
+        let problem = library.problem(&url, false)?;
+        library.open_workspace(problem, &mut documents.lock().unwrap())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn problem_refresh(app: tauri::AppHandle, url: String) -> Result<Problem, String> {
+    let library = problem_library(&app)?;
+    tauri::async_runtime::spawn_blocking(move || library.problem(&url, true))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn problem_save_cases(
+    app: tauri::AppHandle,
+    url: String,
+    cases: Vec<SampleCase>,
+) -> Result<SampleResult, String> {
+    let library = problem_library(&app)?;
+    tauri::async_runtime::spawn_blocking(move || library.save_cases(&url, cases))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 async fn confirm_discard(window: tauri::WebviewWindow) -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -276,7 +318,10 @@ fn main() {
             document_new,
             samples_open,
             samples_save,
-            confirm_discard
+            confirm_discard,
+            problem_open,
+            problem_refresh,
+            problem_save_cases
         ])
         .build(context)
         .expect("アプリを起動できませんでした")

@@ -52,7 +52,7 @@ async function launch(root) {
     const canonical = value => path.toNamespacedPath(path.resolve(value)).toLowerCase();
     assert.equal(canonical(await realpath(ruby.path)), canonical(await realpath(path.join(path.dirname(executable), 'ruby', 'bin', 'ruby.exe'))));
     console.log(JSON.stringify({ executable, ruby, systemRubyAvailable: false }));
-    return { child, browser, page, root, dialogSequence: 0 };
+    return { child, browser, page, root, dataDir: path.join(process.env.LOCALAPPDATA, require('../../src-tauri/tauri.conf.json').identifier), dialogSequence: 0 };
   } catch (error) {
     if (page) {
       await mkdir('test-results', { recursive: true });

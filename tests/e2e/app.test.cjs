@@ -9,6 +9,7 @@ const { launch, dialogs, discard, open, save, cancelSave, overwrite, close, requ
 let app;
 let page;
 let root;
+const libraryContest = `ide-e2e-${Date.now()}`;
 before(async () => {
   root = await realpath(await mkdtemp(path.join(tmpdir(), 'AtCoder IDE 日本語 ')));
   app = await launch(root);
@@ -31,6 +32,7 @@ beforeEach(resetWorkspace);
 
 after(async () => {
   if (app) await close(app);
+  if (app) for (const kind of ['library/problems', 'workspaces']) await rm(path.join(app.dataDir, kind, libraryContest), { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   if (root) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
@@ -892,6 +894,177 @@ test('M15: long lines show bounded context around the correct Unicode column', a
   await closeDifference();
   await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
   await page.getByTestId('stdin').fill('');
+});
+
+async function seedProblem(task) {
+  const url = `https://atcoder.jp/contests/${libraryContest}/tasks/${task}`;
+  const problem = { url, title: `A - ${task}`, statement: '整数AとBの和。<img src=x onerror=alert(1)>\n1 \\leq A,B \\leq 100\n'.repeat(80), samples: [{ stdin: '1 2\n', expectedOutput: '3\n', compare: true }, { stdin: '10 20\n', expectedOutput: '30\n', compare: true }] };
+  const directory = path.join(app.dataDir, 'library/problems', libraryContest, task);
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, 'problem.json'), JSON.stringify(problem));
+  return problem;
+}
+async function openProblemDialog(url) {
+  await page.locator('#problem-library').click();
+  await page.locator('#problem-url').fill(url);
+}
+async function waitProblem() {
+  await page.waitForFunction(() => !document.getElementById('problem-open').disabled);
+}
+
+test('P01: cached problem opens offline, runs samples and restores its saved workspace', async () => {
+  const problem = await seedProblem('save');
+  await page.setViewportSize({ width: 900, height: 650 });
+  await openProblemDialog(problem.url);
+  await page.locator('#problem-open').click({ timeout: 2000 });
+  await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
+  assert.equal(await page.locator('#problem-statement img').count(), 0);
+  assert.equal(await page.locator('#problem-statement').textContent(), problem.statement);
+  const dialogFits = await page.locator('#problem-dialog').evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    return rect.top >= 0 && rect.left >= 0 && rect.bottom <= innerHeight && rect.right <= innerWidth;
+  });
+  assert.equal(dialogFits, true);
+  await page.screenshot({ path: 'test-results/problem-library.png' });
+  await page.locator('#problem-close').click();
+  assert.equal(await page.locator('#code-editor').inputValue(), '');
+  const sourcePath = path.join(app.dataDir, 'workspaces', libraryContest, 'save', 'solution.rb');
+  const normalizePath = value => process.platform === 'win32' ? path.toNamespacedPath(value).toLowerCase() : path.resolve(value);
+  assert.equal(normalizePath(await page.locator('#file-path').textContent()), normalizePath(sourcePath));
+  await page.locator('#code-editor').fill('puts STDIN.read.split.map(&:to_i).sum');
+  await page.keyboard.press('Control+s');
+  await page.waitForFunction(() => !document.getElementById('save').disabled);
+  await page.locator('#run-all').click();
+  await page.locator('#cases-summary').filter({ hasText: /完了 2 \/ 2.*一致 2/ }).waitFor();
+  await selectCase(1);
+  await page.locator('#stdin').fill('9 1\n');
+  await page.locator('#expected-output').fill('10\n');
+  await page.locator('#cases-save').click();
+  await page.waitForFunction(() => !document.getElementById('cases-save').disabled);
+  assert.equal(await casesDirty(), false, await page.locator('#message').textContent());
+  await page.reload();
+  await page.waitForFunction(() => !document.getElementById('run').disabled);
+  await openProblemDialog(problem.url);
+  await page.locator('#problem-open').click();
+  await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
+  await page.locator('#problem-close').click();
+  assert.equal(await page.locator('#stdin').inputValue(), '9 1\n');
+  assert.equal(await page.locator('#code-editor').inputValue(), await readFile(sourcePath, 'utf8'));
+  await runAndWait();
+  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
+});
+
+test('P02: problem switching protects both unsaved code and cases', async () => {
+  const a = await seedProblem('guard_a'); const b = await seedProblem('guard_b');
+  await openProblemDialog(a.url); await page.locator('#problem-open').click();
+  await page.locator('#problem-title').filter({ hasText: a.title }).waitFor();
+  await page.locator('#problem-close').click();
+  await page.locator('#code-editor').fill('puts "keep code"');
+  await page.locator('#stdin').fill('keep cases');
+  const originalPath = await page.locator('#file-path').textContent();
+  await openProblemDialog(b.url);
+  await fileOperation(() => page.locator('#problem-open').click(), [discard(false)]);
+  assert.equal(await page.locator('#problem-title').textContent(), a.title);
+  assert.equal(await page.locator('#file-path').textContent(), originalPath);
+  assert.equal(await page.locator('#code-editor').inputValue(), 'puts "keep code"');
+  assert.equal(await page.locator('#stdin').inputValue(), 'keep cases');
+  await fileOperation(() => page.locator('#problem-open').click(), [discard(true)]);
+  await page.locator('#problem-title').filter({ hasText: b.title }).waitFor();
+  await page.locator('#problem-close').click();
+  assert.equal(await page.locator('#code-editor').inputValue(), '');
+  assert.equal(await page.locator('#stdin').inputValue(), '1 2\n');
+});
+
+test('P03: invalid cache preserves the current problem and workspace', async () => {
+  const a = await seedProblem('failure_a'); const b = await seedProblem('failure_b');
+  await openProblemDialog(a.url); await page.locator('#problem-open').click();
+  await page.locator('#problem-title').filter({ hasText: a.title }).waitFor();
+  await writeFile(path.join(app.dataDir, 'library/problems', libraryContest, 'failure_b', 'problem.json'), '{}');
+  await page.locator('#problem-url').fill(b.url);
+  await page.locator('#problem-open').click(); await waitProblem();
+  await page.locator('#message').filter({ hasText: '失敗' }).waitFor();
+  assert.equal(await page.locator('#problem-title').textContent(), a.title);
+  await page.locator('#problem-close').click();
+  assert.equal(await page.locator('#stdin').inputValue(), '1 2\n');
+});
+
+test('P04: refresh keeps edited code and cases and retains the previous statement on error', async () => {
+  const problem = await seedProblem('refresh');
+  await openProblemDialog(problem.url); await page.locator('#problem-open').click();
+  await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
+  await page.locator('#problem-close').click();
+  await page.locator('#code-editor').fill('puts "my edits"');
+  await page.locator('#stdin').fill('my cases');
+  await page.locator('#problem-library').click();
+  // Isolate external HTTP at the bridge; Rust separately verifies HTTP and atomic cache updates.
+  await page.evaluate(async problem => {
+    const { ide } = await import('./bridge.js');
+    ide.refreshProblem = async () => ({ ...problem, title: 'Updated problem' });
+  }, problem);
+  await page.locator('#problem-refresh').click();
+  await page.locator('#problem-title').filter({ hasText: 'Updated problem' }).waitFor();
+  assert.equal(await page.locator('#code-editor').inputValue(), 'puts "my edits"');
+  assert.equal(await page.locator('#stdin').inputValue(), 'my cases');
+  assert.equal(await casesDirty(), true);
+  assert.match(await page.locator('#save-state').textContent(), /変更/);
+  const workspace = path.join(app.dataDir, 'workspaces', libraryContest, 'refresh');
+  assert.equal(await readFile(path.join(workspace, 'solution.rb'), 'utf8'), '');
+  assert.deepEqual(JSON.parse(await readFile(path.join(workspace, 'cases.json'), 'utf8')).cases, problem.samples);
+  await page.evaluate(async () => {
+    const { ide } = await import('./bridge.js');
+    ide.refreshProblem = async () => { throw new Error('network offline'); };
+  });
+  await page.locator('#problem-refresh').click(); await waitProblem();
+  await page.locator('#problem-message').filter({ hasText: 'network offline' }).waitFor();
+  assert.equal(await page.locator('#problem-title').textContent(), 'Updated problem');
+  await page.locator('#problem-close').click();
+});
+
+test('P05: imported case JSON is unsaved for the workspace and New returns to normal file operations', async () => {
+  const problem = await seedProblem('import');
+  await openProblemDialog(problem.url); await page.locator('#problem-open').click();
+  await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
+  await page.locator('#problem-close').click();
+  const imported = [{ stdin: 'imported\n', expectedOutput: '', compare: false }];
+  const file = path.join(root, 'problem-import.json');
+  await writeFile(file, JSON.stringify({ cases: imported }));
+  await loadCases(file);
+  assert.equal(await casesDirty(), true);
+  await page.locator('#cases-save').click();
+  await page.waitForFunction(() => !document.getElementById('cases-save').disabled);
+  assert.equal(await casesDirty(), false);
+  const saved = path.join(app.dataDir, 'workspaces', libraryContest, 'import', 'cases.json');
+  assert.deepEqual(JSON.parse(await readFile(saved, 'utf8')).cases, imported);
+  await newDocument();
+  await page.locator('#problem-library').click();
+  assert.equal(await page.locator('#problem-refresh').isEnabled(), true);
+  assert.equal(await page.locator('#problem-title').textContent(), '問題を選んでください');
+  await page.locator('#problem-close').click();
+  await fileOperation(() => page.locator('#cases-save').click(), [{ title: 'サンプルを保存', buttonId: '2' }]);
+});
+
+test('P06: refresh can repair a cache before any problem is selected', async () => {
+  const problem = await seedProblem('repair');
+  const cache = path.join(app.dataDir, 'library/problems', libraryContest, 'repair', 'problem.json');
+  await writeFile(cache, '{}');
+  await openProblemDialog(problem.url);
+  await page.locator('#problem-open').click(); await waitProblem();
+  await page.locator('#problem-message').filter({ hasText: '再取得' }).waitFor();
+  assert.equal(await page.locator('#problem-refresh').isEnabled(), true);
+  await page.evaluate(async problem => {
+    const { ide } = await import('./bridge.js');
+    window.refreshedUrl = null;
+    ide.refreshProblem = async url => { window.refreshedUrl = url; return problem; };
+  }, problem);
+  await page.locator('#problem-refresh').click(); await waitProblem();
+  assert.equal(await page.evaluate(() => window.refreshedUrl), problem.url);
+  assert.equal(await page.locator('#problem-title').textContent(), '問題を選んでください');
+  assert.match(await page.locator('#problem-message').textContent(), /「開く」/);
+  // The bridge mock represents only HTTP; open through the real cache/workspace API.
+  await writeFile(cache, JSON.stringify(problem));
+  await page.locator('#problem-open').click();
+  await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
+  await page.locator('#problem-close').click();
 });
 
 test('M06/M09: accepting close stops Ruby descendants and exits', async () => {

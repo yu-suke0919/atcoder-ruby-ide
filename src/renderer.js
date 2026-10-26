@@ -7,6 +7,8 @@ const input = $('stdin');
 const expectedOutput = $('expected-output');
 const compareOutput = $('compare-output');
 const differenceDialog = $('difference-dialog');
+const problemDialog = $('problem-dialog');
+let activeProblem = null;
 const sample = 'a = gets.to_i\nb, c = gets.split.map(&:to_i)\ns = gets.chomp\n\nputs "#{a + b + c} #{s}"\n';
 editor.value = sample;
 const cases = new SampleCases([{ stdin: '1\n2 3\ntest\n', expectedOutput: '6 test\n', compare: false }]);
@@ -118,12 +120,14 @@ function resetComparison(all = false) {
 function message(text, error = false) {
   $('message').textContent = text;
   $('message').dataset.error = String(error);
+  $('problem-message').textContent = text;
+  $('problem-message').dataset.error = String(error);
 }
 
 function updateEditor() {
   const dirty = editor.value !== savedCode;
   const name = filePath ? filePath.split(/[\\/]/).at(-1) : '無題.rb';
-  ide.setTitle(`${dirty ? '● ' : ''}${name} — AtCoder Ruby IDE`).catch(() => {});
+  ide.setTitle(`${activeProblem ? activeProblem.title + ' · ' : ''}${dirty ? '● ' : ''}${name} — AtCoder Ruby IDE`).catch(() => {});
   $('save-state').textContent = dirty ? '● 未保存の変更' : filePath ? '保存済み' : '未保存のファイル';
   $('file-path').textContent = filePath || '無題.rb';
   $('file-path').title = filePath || '未保存のファイル';
@@ -137,6 +141,10 @@ function updateCursor() {
 }
 
 function updateButtons() {
+  $('problem-library').disabled = fileBusy || closing;
+  for (const id of ['problem-open', 'problem-url']) $(id).disabled = running || fileBusy || closing;
+  $('problem-refresh').disabled = running || fileBusy || closing;
+  $('problem-close').disabled = fileBusy;
   $('ruby-recheck').disabled = rubyChecking || running || fileBusy || closing;
   for (const id of ['run', 'run-all']) $(id).disabled = running || !rubyAvailable || fileBusy || closing;
   $('case-add').disabled = running || fileBusy || closing || cases.items.length >= MAX_CASES;
@@ -167,6 +175,7 @@ function openFile() {
     if (!await confirmDiscard()) return;
     const result = await ide.openFile();
     if (result.canceled) return;
+    detachProblem();
     editor.value = result.code;
     savedCode = editor.value;
     filePath = result.filePath;
@@ -182,7 +191,7 @@ function saveFile(saveAs = false) {
     const code = editor.value;
     const result = await ide.saveFile(code, saveAs || !filePath);
     if (result.canceled) return;
-    if (filePath !== result.filePath) resetComparison(true);
+    if (filePath !== result.filePath) { detachProblem(); resetComparison(true); }
     savedCode = code;
     filePath = result.filePath;
     updateEditor();
@@ -253,14 +262,14 @@ $('cases-open').addEventListener('click', () => fileAction(async () => {
   if (running || (cases.dirty && !await ide.confirmDiscard())) return;
   const result = await ide.openCases();
   if (result.canceled) return;
-  cases.replace(result.cases, { saved: true });
+  cases.replace(result.cases, { saved: !activeProblem });
   showCase();
   message('サンプルを読み込みました。');
 }));
 $('cases-save').addEventListener('click', () => fileAction(async () => {
   if (running) return;
   const data = cases.data();
-  const result = await ide.saveCases(data);
+  const result = activeProblem ? await ide.saveProblemCases(activeProblem.url, data) : await ide.saveCases(data);
   if (result.canceled) return;
   cases.markSaved(data);
   updateCaseList();
@@ -273,6 +282,7 @@ $('new').addEventListener('click', () => fileAction(async () => {
   if (running) return;
   if (!await confirmDiscard()) return;
   await ide.newFile();
+  detachProblem();
   editor.value = '';
   savedCode = '';
   filePath = null;
@@ -307,10 +317,54 @@ document.addEventListener('keydown', (event) => {
   if (!event.ctrlKey && !event.metaKey) return;
   const key = event.key.toLowerCase();
   if (['s', 'o', 'enter'].includes(key)) event.preventDefault();
-  if (differenceDialog.open) return;
+  if (differenceDialog.open || problemDialog.open) return;
   if (key === 's') saveFile(event.shiftKey);
   if (key === 'o') openFile();
   if (key === 'enter') run();
+});
+
+function showProblem() {
+  $('problem-title').textContent = activeProblem ? activeProblem.title : '問題を選んでください';
+  $('problem-statement').textContent = activeProblem ? activeProblem.statement : '';
+  $('problem-library').title = activeProblem ? activeProblem.title : 'AtCoder の問題を開く';
+  document.querySelector('.brand-caption').textContent = activeProblem ? activeProblem.title : '小さく書いて、すぐ試す。';
+}
+function detachProblem() {
+  activeProblem = null;
+  showProblem();
+}
+$('problem-library').addEventListener('click', () => problemDialog.showModal());
+$('problem-close').addEventListener('click', () => problemDialog.close());
+problemDialog.addEventListener('cancel', event => { if (fileBusy) event.preventDefault(); });
+$('problem-open').addEventListener('click', () => {
+  if (running) return;
+  fileAction(async () => {
+    if (!await confirmDiscard(true)) return;
+    message('問題を読み込んでいます。');
+    const result = await ide.openProblem($('problem-url').value);
+    activeProblem = result.problem;
+    editor.value = result.document.code;
+    savedCode = editor.value;
+    filePath = result.document.filePath;
+    cases.replace(result.cases, { saved: true });
+    showProblem(); showCase(); updateEditor();
+    message('問題と保存済みの解答・ケースを開きました。');
+  });
+});
+$('problem-refresh').addEventListener('click', () => {
+  if (running) return;
+  fileAction(async () => {
+    message('問題を再取得しています。');
+    const problem = await ide.refreshProblem($('problem-url').value);
+    if (activeProblem?.url === problem.url) {
+      activeProblem = problem;
+      showProblem();
+      updateEditor();
+      message('問題文と元のサンプルを更新しました。解答・ケースは保持しています。');
+    } else {
+      message('問題を再取得しました。「開く」で解答・ケースを開けます。');
+    }
+  });
 });
 
 window.addEventListener('beforeunload', event => {
