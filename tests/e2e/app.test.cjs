@@ -107,6 +107,11 @@ test('R07: reloading a saved source makes Save choose a new path', async () => {
   await page.reload();
   await page.waitForFunction(() => !document.getElementById('run').disabled);
   assert.equal(await page.locator('#file-path').textContent(), '無題.rb');
+  await page.locator('#code-editor').fill('puts File.exist?("reload-original.rb")');
+  await runAndWait();
+  assert.equal(await page.locator('#stdout').textContent(), 'false\n');
+  // Model a pre-reload file operation completing late, after initialization.
+  await fileOperation(() => page.evaluate(() => window.__TAURI__.core.invoke('document_open')), [open(original)]);
   await fileOperation(() => page.locator('#save').click(), [cancelSave()]);
   assert.equal(await readFile(original, 'utf8'), 'puts "original"');
   const saved = path.join(root, 'reload-new.rb');

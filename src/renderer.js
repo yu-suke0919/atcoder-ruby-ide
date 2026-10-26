@@ -180,7 +180,7 @@ function saveFile(saveAs = false) {
   if (running && (saveAs || !filePath)) return;
   return fileAction(async () => {
     const code = editor.value;
-    const result = await ide.saveFile(code, saveAs);
+    const result = await ide.saveFile(code, saveAs || !filePath);
     if (result.canceled) return;
     if (filePath !== result.filePath) resetComparison(true);
     savedCode = code;
