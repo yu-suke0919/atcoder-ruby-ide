@@ -89,6 +89,11 @@ async function launch(root) {
     await app.page.exposeBinding('__testInvoke', async (_, command, args) => {
       if (command === 'confirm_discard') return take('未保存の変更').buttonName === '破棄して続ける';
       if (command === 'document_open') args.selected = take('Ruby ファイルを開く').path || null;
+      if (command === 'samples_open') args.selected = take('サンプルを開く').path || null;
+      if (command === 'samples_save') {
+        args.selected = take('サンプルを保存').path || null;
+        if (args.selected && await access(args.selected).then(() => true, () => false)) take('Confirm Save As');
+      }
       if (command === 'document_save' && app.steps[0]?.title === 'Ruby ファイルを保存') {
         const step = take('Ruby ファイルを保存');
         args.selected = step.path || null;

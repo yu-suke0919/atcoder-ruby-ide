@@ -44,6 +44,7 @@ textarea { resize: none; border: 0; border-radius: 0; color: #d5deed; background
 .case-toolbar select { min-width: 0; flex: 1; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; font-size: 11px; }
 .case-toolbar button { font-size: 10px; padding: 4px 6px; }
 .cases-summary { font-size: 10px; color: var(--muted); padding: 4px 16px; flex-shrink: 0; }
+.case-file-actions { display: flex; gap: 2px; }
 .right-column .panel-heading { height: 40px; }
 .input-panel { display: flex; flex-direction: column; }
 .section-number { font-size: 9px; color: #a7a0cf; border: 1px solid #47425d; border-radius: 4px; padding: 3px 4px; }
