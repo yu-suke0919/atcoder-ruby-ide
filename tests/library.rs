@@ -53,7 +53,7 @@ fn reject_foreign_urls_credentials_paths_and_invalid_samples() {
         "login page".into(),
         HTML.replace("出力例 1", "出力例 3"),
         HTML.replace("入力例 2", "入力例 1"),
-        HTML.replace("1 2\n", &"x".repeat(1048577)),
+        HTML.replace("1 2", &"x".repeat(1048577)),
     ] {
         assert!(parse_problem(URL, &html).is_err());
     }

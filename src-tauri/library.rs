@@ -384,11 +384,10 @@ mod tests {
         let updated = library
             .store_page(
                 &key,
-                &html
-                    .replace("和を求める", "Updated")
-                    .replace("1 2\n", "8 9\n"),
+                &html.replace("和を求める", "Updated").replace("1 2", "8 9"),
             )
             .unwrap();
+        assert_eq!(updated.samples[0].stdin, "8 9\n");
         let reopened = library.open_workspace(updated, &mut documents).unwrap();
         assert!(reopened.problem.title.contains("Updated"));
         assert_eq!(reopened.cases, workspace.cases);
