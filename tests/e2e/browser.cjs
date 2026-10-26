@@ -37,7 +37,7 @@ async function launch(root) {
     pending.set(id, { resolve, reject });
     child.stdin.write(`${JSON.stringify({ id, command, args })}\n`);
   });
-  child.on('exit', () => {
+  child.on('close', () => {
     for (const request of pending.values()) request.reject(new Error(`UI test host exited: ${stderr}`));
     pending.clear();
   });
@@ -159,7 +159,7 @@ async function dialogs(app, trigger, steps, closesApp = false) {
 }
 async function close(app) {
   if (app.child.exitCode === null) {
-    const exited = once(app.child, 'exit', { signal: AbortSignal.timeout(5000) });
+    const exited = once(app.child, 'close', { signal: AbortSignal.timeout(5000) });
     app.child.stdin.end();
     await exited.catch(() => app.child.kill());
   }

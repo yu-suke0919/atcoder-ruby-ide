@@ -15,12 +15,19 @@ fn send(sink: &Sink, value: Value) {
     }
 }
 
-struct RunnerCleanup<'a>(&'a Runner);
+struct RunnerCleanup<'a> {
+    runner: &'a Runner,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
 
 impl Drop for RunnerCleanup<'_> {
     fn drop(&mut self) {
-        self.0.stop();
-        self.0.wait_idle();
+        self.runner.stop();
+        self.runner.wait_idle();
+        // The reservation is released before the terminal event is sent.
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
     }
 }
 #[derive(Deserialize)]
@@ -44,7 +51,10 @@ fn main() {
         .unwrap_or_else(|| "ruby".into())
         .into();
     let runner = Runner::new(Duration::from_secs(5), 1048576);
-    let _cleanup = RunnerCleanup(&runner);
+    let mut cleanup = RunnerCleanup {
+        runner: &runner,
+        worker: None,
+    };
     let mut documents = DocumentStore::default();
     let sink = Arc::new(Mutex::new(io::stdout()));
     for line in io::stdin().lock().lines() {
@@ -76,7 +86,10 @@ fn main() {
                 })?;
                 let ruby = ruby.clone();
                 let output = Arc::clone(&sink);
-                std::thread::spawn(move || {
+                if let Some(worker) = cleanup.worker.take() {
+                    let _ = worker.join();
+                }
+                cleanup.worker = Some(std::thread::spawn(move || {
                     let chunks = Arc::clone(&output);
                     let result = prepared.execute(&ruby, move |chunk| send(&chunks, json!({
                             "channel": args.on_event,
@@ -87,7 +100,7 @@ fn main() {
                         Err(message) => RunEvent::Failed { message },
                     };
                     send(&output, json!({"channel": args.on_event, "event": event}));
-                });
+                }));
                 Ok(Value::Null)
             }
             "stop_ruby" => Ok(json!(runner.stop())),
