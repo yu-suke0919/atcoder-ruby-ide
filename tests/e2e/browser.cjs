@@ -11,13 +11,21 @@ const { chromium } = require('playwright');
 const native = require('./native.cjs');
 const execute = promisify(execFile);
 const repo = path.resolve(__dirname, '../..');
+let hostBinary;
+
+function ensureUiTestHostBinary() {
+  hostBinary ??= execute('cargo', ['build', '--locked', '--example', 'ui-test-host'], { cwd: repo }).then(() => {
+    const target = path.resolve(repo, process.env.CARGO_TARGET_DIR || 'target');
+    return path.join(target, 'debug', 'examples', process.platform === 'win32' ? 'ui-test-host.exe' : 'ui-test-host');
+  });
+  return hostBinary;
+}
 
 async function launch(root) {
   const started = performance.now();
-  await execute('cargo', ['build', '--locked', '--example', 'ui-test-host'], { cwd: repo });
+  const binary = await ensureUiTestHostBinary();
   const prepared = performance.now();
-  const target = path.resolve(repo, process.env.CARGO_TARGET_DIR || 'target');
-  const child = spawn(path.join(target, 'debug/examples/ui-test-host'), [], { cwd: root, stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(binary, [], { cwd: root, stdio: ['pipe', 'pipe', 'pipe'] });
   const pending = new Map();
   let sequence = 0;
   let stderr = '';
@@ -154,4 +162,4 @@ async function close(app) {
   await app.browser?.close();
   if (app.server) await new Promise(resolve => app.server.close(resolve));
 }
-module.exports = { ...native, launch, dialogs, close };
+module.exports = { ...native, ensureUiTestHostBinary, launch, dialogs, close };

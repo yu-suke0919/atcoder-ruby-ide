@@ -64,6 +64,8 @@ npm run test:e2e
 Linux では `npm run test:e2e` がテスト専用 Rust ホストをビルドし、HTTP 配信した本番画面を headless Chromium で操作します。
 実 Ruby・ファイル I/O・実行制御・比較は本番の Rust ライブラリを共有し、Tauri 通信・ウィンドウ操作・ダイアログ応答だけをテスト用に差し替えます。
 Windows は同じ受入ケースを実際の WebView2 / ネイティブダイアログで確認します。テスト専用ホストは配布しません。
+`E2E_RUNNER=browser` または `native` で明示選択でき、その他の値はエラーになります（native は Windows 専用）。
+Windows でも browser を選べますが、その場合は開発用の Ruby と Chromium を別途用意し、必要なら `RUBY_PATH` を指定してください。
 
 Linux の初回セットアップでは、Node.js 24・Rust・Ruby に加えて Chromium を用意してください。
 `CHROMIUM_PATH` で実行ファイルを指定でき、未指定なら導入済みの Playwright 版、次に `/usr/bin/chromium` を使います。

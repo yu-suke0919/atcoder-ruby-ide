@@ -9,9 +9,11 @@ async function createManifest(directory) {
     for (const entry of await readdir(path.join(directory, relative), { withFileTypes: true })) {
       const name = path.posix.join(relative, entry.name);
       if (entry.isDirectory()) await walk(name);
-      else {
+      else if (entry.isFile()) {
         const data = await readFile(path.join(directory, name));
         files[name] = { bytes: data.length, sha256: createHash('sha256').update(data).digest('hex') };
+      } else {
+        throw new Error(`Unexpected non-regular file in runtime directory: ${name}`);
       }
     }
   }

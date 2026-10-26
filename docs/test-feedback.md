@@ -11,7 +11,22 @@
 - Linux で本番 renderer.js / bridge.js を使い、実 Ruby・Rust の実行とファイル操作を通す。同じ GUI 受入ケースを使い、確認ダイアログの返答だけをテスト側から与える。
 - 初回セットアップ後の Linux の GUI テスト時間、Windows 各工程、配布容量を記録する。過去の検証記録の数値は当時の測定として維持する。
 
+## レビュー後の補強
+
+- `E2E_RUNNER=browser` / `native` で明示選択できるようにする。未指定時は従来どおり Windows が native、それ以外が browser。不正な値はエラーにし、native は Windows のみで利用する。
+- Ruby のマニフェストは通常ファイルとディレクトリだけを受け入れ、シンボリックリンクなどは内容を読む前に拒否する。
+- stdio ホストは通常の EOF に加え、不正な入力による巻き戻しでも実行停止・終了待機・一時ファイル削除を行う。stdout の切断で送信スレッドが panic しないようにする。
+- ホストの事前ビルドと直接起動は既存の構成を維持し、同一 Node プロセスではビルドを共有する。ワークスペースの target / `CARGO_TARGET_DIR` と Windows の `.exe` を考慮する。
+- HTTP 配信は既存の 4 ファイルの許可リストを維持する。汎用のパス解決やファイル配信機能は追加しない。
+- 実行監視の共通ヘルパーは追加しない。現在の `PreparedRun.execute()` と本番側のスレッド起動エラー処理を維持し、テスト用の都合で本番 API を増やさない。
+
+リンク混入、EOF・不正入力時の実 Ruby の後始末、stdout 切断の回帰テストを追加した。
+Linux Cloud の Rust 17 件・Node 11 件（サブテスト含む）と、`E2E_RUNNER=browser` で共通 GUI 23 件が成功した（全 GUI 約 18.2 秒）。
+マージ前に [PR #5](https://github.com/yu-suke0919/atcoder-ruby-ide/pull/5) の最終コミットで両 OS の CI と Windows の GUI・配布検証を確認する。
+
 ## 検証結果
+
+以下はレビュー補強前の速度・容量の測定記録。
 
 Linux Cloud（2026-10-26、Node.js 24、Rust 1.99.1、Ruby 3.4.12、システム Chromium 154）で確認。
 
