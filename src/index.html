@@ -28,7 +28,8 @@
 
       <div class="right-column">
         <section class="panel input-panel" aria-labelledby="input-heading">
-          <div class="panel-heading"><div class="panel-label"><span class="section-number">01</span><h3 id="input-heading">サンプル</h3></div><span class="subtle">1 ケース・保存対象外</span></div>
+          <div class="panel-heading"><div class="panel-label"><span class="section-number">01</span><h3 id="input-heading">サンプル</h3></div><span id="case-count" class="subtle">1 ケース</span></div>
+          <div class="case-toolbar"><select id="case-select" aria-label="サンプルケース"></select><button id="case-add">ケース追加</button><button id="case-remove">ケース削除</button></div>
           <div class="sample-fields">
             <div class="sample-field">
               <label for="stdin">標準入力</label>
@@ -44,6 +45,7 @@
         </section>
         <section class="panel output-panel" aria-labelledby="output-heading">
           <div class="panel-heading"><div class="panel-label"><span class="section-number">02</span><h3 id="output-heading">実行結果</h3></div><button id="clear-output" class="quiet-button">クリア</button></div>
+          <div id="cases-summary" data-testid="cases-summary" class="cases-summary" role="status"></div>
           <div class="output-heading"><span><span class="output-dot stdout-dot"></span>標準出力</span><span>stdout</span></div>
           <pre id="stdout" data-testid="stdout" aria-label="標準出力" tabindex="0"></pre>
           <div class="output-heading error-heading"><span><span class="output-dot stderr-dot"></span>標準エラー</span><span>stderr</span></div>
@@ -52,7 +54,7 @@
         </section>
       </div>
     </div>
-    <div class="run-toolbar"><div id="message" role="status">ヒント：Ctrl + Enter でも実行できます。</div><div class="run-actions"><button id="stop" class="stop-button" disabled><span aria-hidden="true">■</span> 停止</button><button id="run" class="run-button"><span aria-hidden="true">&#9654;&#65038;</span> 実行</button></div></div>
+    <div class="run-toolbar"><div id="message" role="status">ヒント：Ctrl + Enter でも実行できます。</div><div class="run-actions"><button id="stop" class="stop-button" disabled><span aria-hidden="true">■</span> 停止</button><button id="run-all" class="stop-button">全件実行</button><button id="run" class="run-button"><span aria-hidden="true">&#9654;&#65038;</span> 実行</button></div></div>
   </main>
   <footer class="statusbar"><span><span class="status-dot"></span>ローカル実行</span><span>実行上限 5 秒 <span class="separator">·</span> 入力・出力上限 各 1 MiB</span></footer>
 </body>

@@ -387,6 +387,120 @@ test('M07/M12: JSON and saved-directory files work with the configured Ruby runt
   assert.equal(await page.getByTestId('stdout').textContent(), '日本語\n');
 });
 
+async function selectCase(number) {
+  await page.getByLabel('サンプルケース', { exact: true }).selectOption(String(number - 1));
+}
+async function resetCases() {
+  while (await page.getByLabel('サンプルケース', { exact: true }).locator('option').count() > 1) {
+    await page.getByRole('button', { name: 'ケース削除', exact: true }).click();
+  }
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
+}
+async function addCase(stdin, expected = stdin) {
+  await page.getByRole('button', { name: 'ケース追加', exact: true }).click();
+  await page.getByTestId('stdin').fill(stdin);
+  await page.getByTestId('expected-output').fill(expected);
+}
+
+test('M13: cases keep independent inputs, expectations and results', async () => {
+  assert.equal(await page.getByRole('button', { name: 'ケース削除', exact: true }).isDisabled(), true);
+  await page.getByTestId('code-editor').fill('puts STDIN.read.upcase');
+  await page.getByTestId('stdin').fill('one');
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
+  await page.getByTestId('expected-output').fill('ONE');
+  await runAndWait();
+  await addCase('two', 'TWO');
+  await runAndWait();
+  await selectCase(1);
+  assert.equal(await page.getByTestId('stdin').inputValue(), 'one');
+  assert.equal(await page.getByTestId('stdout').textContent(), 'ONE\n');
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '一致');
+  await page.getByTestId('expected-output').fill('changed');
+  await selectCase(2);
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '一致');
+  assert.equal(await page.getByTestId('stdout').textContent(), 'TWO\n');
+  await resetCases();
+});
+
+test('M13: all cases run sequentially and continue after an error', async () => {
+  await page.getByTestId('code-editor').fill('s = STDIN.read; puts s; warn "bad" if s == "error"; exit 1 if s == "error"');
+  await page.getByTestId('stdin').fill('error');
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
+  await page.getByTestId('expected-output').fill('error');
+  await addCase('two', 'different');
+  await addCase('three');
+  await page.getByRole('button', { name: '全件実行', exact: true }).click();
+  await page.getByTestId('cases-summary').filter({ hasText: '完了 3 / 3' }).waitFor();
+  assert.match(await page.getByTestId('cases-summary').textContent(), /一致 1.*不一致 1.*エラー 1/);
+  await selectCase(1);
+  assert.match(await page.getByTestId('run-status').textContent(), /エラー終了/);
+  assert.equal(await page.getByTestId('stderr').textContent(), 'bad\n');
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '判定なし');
+  await selectCase(2);
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '不一致');
+  await selectCase(3);
+  assert.equal(await page.getByTestId('stdout').textContent(), 'three\n');
+  await resetCases();
+});
+
+test('M13: a timeout does not prevent the next case from running', async () => {
+  await page.getByTestId('code-editor').fill('s = STDIN.read; sleep 30 if s == "timeout"; puts s');
+  await page.getByTestId('stdin').fill('timeout');
+  await addCase('after');
+  await page.getByRole('button', { name: '全件実行', exact: true }).click();
+  await page.getByTestId('cases-summary').filter({ hasText: '完了 2 / 2' }).waitFor({ timeout: 12000 });
+  await selectCase(1);
+  assert.match(await page.getByTestId('run-status').textContent(), /時間制限/);
+  await selectCase(2);
+  assert.equal(await page.getByTestId('stdout').textContent(), 'after\n');
+  await resetCases();
+});
+
+test('M13: a batch uses starting code and inputs without restoring stale comparisons', async () => {
+  const gate = path.join(root, 'batch-gate.txt');
+  await page.getByTestId('code-editor').fill(`puts "ready"; sleep 0.01 until File.exist?(${JSON.stringify(gate.replaceAll('\\', '/'))}); puts STDIN.read.upcase`);
+  await page.getByTestId('stdin').fill('one');
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
+  await page.getByTestId('expected-output').fill('ready\nONE');
+  await addCase('two', 'ready\nTWO');
+  await selectCase(1);
+  try {
+    await page.getByRole('button', { name: '全件実行', exact: true }).click();
+    await page.getByTestId('stdout').filter({ hasText: 'ready' }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'ケース追加', exact: true }).isDisabled(), true);
+    assert.equal(await page.getByRole('button', { name: '開く', exact: true }).isDisabled(), true);
+    await selectCase(2);
+    await page.getByTestId('stdin').fill('edited');
+    await page.getByTestId('code-editor').fill('puts "changed code"');
+    await writeFile(gate, 'go');
+    await page.getByTestId('cases-summary').filter({ hasText: '完了 2 / 2' }).waitFor();
+    assert.equal(await page.getByTestId('stdout').textContent(), 'ready\nTWO\n');
+    assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
+    await selectCase(1);
+    assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
+  } finally { await writeFile(gate, 'go'); }
+  await resetCases();
+});
+
+test('M13: stopping a batch skips remaining cases and allows another run', async () => {
+  const marker = path.join(root, 'batch-should-not-run.txt');
+  await page.getByTestId('code-editor').fill(`s = STDIN.read; puts "ready"; sleep 30 if s == "wait"; File.write(${JSON.stringify(marker.replaceAll('\\', '/'))}, s)`);
+  await page.getByTestId('stdin').fill('wait');
+  await addCase('next', 'ready');
+  await selectCase(1);
+  await page.getByRole('button', { name: '全件実行', exact: true }).click();
+  await page.getByTestId('stdout').filter({ hasText: 'ready' }).waitFor();
+  await page.getByRole('button', { name: '停止', exact: true }).click();
+  await page.getByRole('button', { name: '全件実行', exact: true }).waitFor({ state: 'visible' });
+  await page.waitForFunction(() => !document.getElementById('run-all').disabled);
+  await assert.rejects(access(marker), { code: 'ENOENT' });
+  await selectCase(2);
+  assert.match(await page.getByTestId('run-status').textContent(), /中止/);
+  await runAndWait();
+  assert.equal(await readFile(marker, 'utf8'), 'next');
+  await resetCases();
+});
+
 test('M06/M09: accepting close stops Ruby descendants and exits', async () => {
   const marker = path.join(root, 'orphan.txt').replaceAll('\\', '/');
   await page.getByTestId('code-editor').fill(`require 'rbconfig'; spawn(RbConfig.ruby, '-e', 'sleep 2; File.write(${JSON.stringify(marker)}, "survived")'); puts 'ready'; sleep 30`);

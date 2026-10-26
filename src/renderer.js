@@ -7,14 +7,20 @@ const expectedOutput = $('expected-output');
 const compareOutput = $('compare-output');
 const sample = 'a = gets.to_i\nb, c = gets.split.map(&:to_i)\ns = gets.chomp\n\nputs "#{a + b + c} #{s}"\n';
 editor.value = sample;
-input.value = '1\n2 3\ntest\n';
-expectedOutput.value = '6 test\n';
+function newCase(stdin = '', expectedOutput = '', compare = true) {
+  return { stdin, expectedOutput, compare, revision: 0, comparison: compare ? 'pending' : 'none', stdout: '', stderr: '', status: null, durationMs: null };
+}
+let cases = [newCase('1\n2 3\ntest\n', '6 test\n', false)];
+let selectedCase = 0;
+let canceled = false;
+const currentCase = () => cases[selectedCase];
+const comparisonLabels = { none: '比較なし', pending: '未比較', running: '比較中…', matched: '一致', mismatched: '不一致', unavailable: '判定なし' };
+const statusLabel = (status, exitCode) => ({ completed: '正常終了', failed: `エラー終了${exitCode == null ? '' : ` (${exitCode})`}`, stopped: '停止しました', timeout: '時間制限で停止（5 秒）', 'output-limit': '出力上限で停止（1 MiB）', running: '実行中…', canceled: '未実行（中止）', error: '実行できませんでした' })[status] || '実行する準備ができています';
 let savedCode = sample;
 let filePath = null;
 let running = false;
 let fileBusy = false;
 let rubyAvailable = false;
-let comparisonRevision = 0;
 let currentRun = null;
 let closing = false;
 let scrollFrame = null;
@@ -24,15 +30,52 @@ async function confirmDiscard() {
 }
 
 function showComparison(state) {
-  const labels = { none: '比較なし', pending: '未比較', running: '比較中…', matched: '一致', mismatched: '不一致', unavailable: '判定なし' };
-  $('comparison-status').textContent = labels[state];
+  $('comparison-status').textContent = comparisonLabels[state];
   $('comparison-status').dataset.state = state;
 }
 
-function resetComparison() {
-  comparisonRevision++;
-  expectedOutput.disabled = !compareOutput.checked;
-  showComparison(compareOutput.checked ? 'pending' : 'none');
+function updateCaseList() {
+  $('case-select').replaceChildren(...cases.map((item, index) => {
+    const option = document.createElement('option');
+    option.value = String(index);
+    option.textContent = `ケース ${index + 1} · ${item.status === 'running' ? '実行中' : item.status && item.status !== 'completed' ? statusLabel(item.status, item.exitCode) : comparisonLabels[item.comparison]}`;
+    return option;
+  }));
+  $('case-select').value = String(selectedCase);
+  $('case-count').textContent = `${cases.length} ケース`;
+  const done = cases.filter(item => item.status && !['running', 'canceled'].includes(item.status)).length;
+  const count = state => cases.filter(item => item.comparison === state).length;
+  const errors = cases.filter(item => ['failed', 'timeout', 'output-limit', 'error'].includes(item.status)).length;
+  $('cases-summary').textContent = `完了 ${done} / ${cases.length} · 一致 ${count('matched')} · 不一致 ${count('mismatched')} · エラー ${errors}`;
+}
+
+function showResult() {
+  const item = currentCase();
+  for (const stream of ['stdout', 'stderr']) $(stream).textContent = item[stream];
+  $('run-status').textContent = statusLabel(item.status, item.exitCode);
+  $('run-duration').textContent = item.durationMs === null ? '— ms' : `${item.durationMs} ms`;
+  showComparison(item.comparison);
+  updateCaseList();
+}
+
+function showCase() {
+  const item = currentCase();
+  input.value = item.stdin;
+  expectedOutput.value = item.expectedOutput;
+  compareOutput.checked = item.compare;
+  expectedOutput.disabled = !item.compare;
+  showResult();
+  updateButtons();
+}
+
+function resetComparison(all = false) {
+  for (const item of all ? cases : [currentCase()]) {
+    item.revision++;
+    item.comparison = item.compare ? 'pending' : 'none';
+  }
+  expectedOutput.disabled = !currentCase().compare;
+  showComparison(currentCase().comparison);
+  updateCaseList();
 }
 
 function message(text, error = false) {
@@ -57,10 +100,14 @@ function updateCursor() {
 }
 
 function updateButtons() {
-  $('run').disabled = running || !rubyAvailable || fileBusy || closing;
+  for (const id of ['run', 'run-all']) $(id).disabled = running || !rubyAvailable || fileBusy || closing;
+  $('case-add').disabled = running || fileBusy || closing;
+  $('case-remove').disabled = running || fileBusy || closing || cases.length === 1;
+  $('case-select').disabled = fileBusy || closing;
   $('stop').disabled = !running;
   $('clear-output').disabled = running;
-  for (const id of ['new', 'open', 'save', 'save-as']) $(id).disabled = fileBusy || closing;
+  for (const id of ['new', 'open', 'save-as']) $(id).disabled = running || fileBusy || closing;
+  $('save').disabled = fileBusy || closing || (running && !filePath);
   editor.readOnly = fileBusy || closing;
 }
 
@@ -74,6 +121,7 @@ async function fileAction(action) {
 }
 
 function openFile() {
+  if (running) return;
   return fileAction(async () => {
     if (!await confirmDiscard()) return;
     const result = await ide.openFile();
@@ -81,18 +129,19 @@ function openFile() {
     editor.value = result.code;
     savedCode = editor.value;
     filePath = result.filePath;
-    resetComparison();
+    resetComparison(true);
     updateEditor();
     message('ファイルを開きました。');
   });
 }
 
 function saveFile(saveAs = false) {
+  if (running && (saveAs || !filePath)) return;
   return fileAction(async () => {
     const code = editor.value;
     const result = await ide.saveFile(code, saveAs);
     if (result.canceled) return;
-    if (filePath !== result.filePath) resetComparison();
+    if (filePath !== result.filePath) resetComparison(true);
     savedCode = code;
     filePath = result.filePath;
     updateEditor();
@@ -100,78 +149,95 @@ function saveFile(saveAs = false) {
   });
 }
 
-async function run() {
+async function run(all = false) {
   if (running || fileBusy || closing || !rubyAvailable) return;
-  const revision = comparisonRevision;
-  const expected = compareOutput.checked ? expectedOutput.value : null;
+  const code = editor.value;
+  const queue = (all ? cases : [currentCase()]).map(item => ({ item, stdin: item.stdin, expectedOutput: item.expectedOutput, compare: item.compare, revision: item.revision }));
+  for (const { item } of queue) {
+    Object.assign(item, { stdout: '', stderr: '', status: null, durationMs: null, comparison: item.compare ? 'pending' : 'none' });
+  }
+  canceled = false;
   running = true;
   updateButtons();
-  $('stdout').textContent = '';
-  $('stderr').textContent = '';
-  $('run-status').textContent = '実行中…';
-  $('run-duration').textContent = '— ms';
-  showComparison(expected === null ? 'none' : 'running');
-  message('Ruby を実行しています。');
-  try {
-    const pending = ide.run(editor.value, input.value, expected, appendOutput);
-    currentRun = pending;
-    const result = await pending;
-    $('stdout').textContent = result.stdout;
-    $('stderr').textContent = result.stderr;
-    const statuses = {
-      completed: '正常終了', failed: `エラー終了${result.exitCode === null ? '' : ` (${result.exitCode})`}`,
-      stopped: '停止しました', timeout: '時間制限で停止（5 秒）', 'output-limit': '出力上限で停止（1 MiB）'
-    };
-    $('run-status').textContent = statuses[result.status];
-    $('run-duration').textContent = `${result.durationMs} ms`;
-    if (revision === comparisonRevision && expected !== null) {
-      showComparison(result.comparison === null ? 'unavailable' : result.comparison ? 'matched' : 'mismatched');
+  const pending = (async () => {
+    for (const snapshot of queue) {
+      const { item } = snapshot;
+      if (canceled) { item.status = 'canceled'; item.comparison = item.compare ? 'pending' : 'none'; continue; }
+      Object.assign(item, { stdout: '', stderr: '', status: 'running', durationMs: null });
+      if (item.revision === snapshot.revision) item.comparison = snapshot.compare ? 'running' : 'none';
+      showResult();
+      message('Ruby を実行しています。');
+      try {
+        const result = await ide.run(code, snapshot.stdin, snapshot.compare ? snapshot.expectedOutput : null, ({ stream, text }) => {
+          item[stream] += text;
+          if (item === currentCase()) appendOutput(stream, text);
+        });
+        Object.assign(item, { stdout: result.stdout, stderr: result.stderr, status: result.status, exitCode: result.exitCode, durationMs: result.durationMs });
+        if (item.revision === snapshot.revision && snapshot.compare) item.comparison = result.comparison === null ? 'unavailable' : result.comparison ? 'matched' : 'mismatched';
+        message(result.status === 'completed' ? '実行が完了しました。' : statusLabel(result.status, result.exitCode), ['failed', 'timeout', 'output-limit'].includes(result.status));
+      } catch (error) {
+        item.status = 'error';
+        if (item.revision === snapshot.revision && snapshot.compare) item.comparison = 'unavailable';
+        message(error.message, true);
+      }
+      showResult();
     }
-    message(result.status === 'completed' ? '実行が完了しました。' : statuses[result.status], ['failed', 'timeout', 'output-limit'].includes(result.status));
-  } catch (error) {
-    $('run-status').textContent = '実行できませんでした';
-    if (revision === comparisonRevision && expected !== null) showComparison('unavailable');
-    message(error.message, true);
-  } finally { currentRun = null; running = false; updateButtons(); }
+  })();
+  currentRun = pending;
+  try { await pending; }
+  finally { currentRun = null; running = false; showResult(); updateButtons(); }
 }
 
-function appendOutput({ stream, text }) {
-  const output = stream === 'stderr' ? $('stderr') : $('stdout');
+function appendOutput(stream, text) {
+  const output = $(stream);
   output.append(document.createTextNode(text));
   if (scrollFrame === null) scrollFrame = requestAnimationFrame(() => {
     scrollFrame = null;
     for (const id of ['stdout', 'stderr']) $(id).scrollTop = $(id).scrollHeight;
   });
 }
-$('run').addEventListener('click', run);
-$('stop').addEventListener('click', async () => {
+async function stop() {
+  canceled = true;
   try { await ide.stop(); }
   catch (error) { message(error.message, true); }
+}
+$('run').addEventListener('click', () => run());
+$('run-all').addEventListener('click', () => run(true));
+$('stop').addEventListener('click', stop);
+$('case-select').addEventListener('change', () => { selectedCase = Number($('case-select').value); showCase(); });
+$('case-add').addEventListener('click', () => {
+  cases.push(newCase()); selectedCase = cases.length - 1; showCase();
+});
+$('case-remove').addEventListener('click', () => {
+  if (cases.length === 1) return;
+  cases.splice(selectedCase, 1); selectedCase = Math.min(selectedCase, cases.length - 1); showCase();
 });
 $('open').addEventListener('click', openFile);
 $('save').addEventListener('click', () => saveFile());
 $('save-as').addEventListener('click', () => saveFile(true));
 $('new').addEventListener('click', () => fileAction(async () => {
+  if (running) return;
   if (!await confirmDiscard()) return;
   await ide.newFile();
   editor.value = '';
   savedCode = '';
   filePath = null;
-  resetComparison();
+  resetComparison(true);
   updateEditor();
   message('新しいファイルを作成しました。');
 }));
 $('clear-output').addEventListener('click', () => {
-  resetComparison();
-  $('stdout').textContent = '';
-  $('stderr').textContent = '';
-  $('run-status').textContent = '実行する準備ができています';
-  $('run-duration').textContent = '— ms';
+  Object.assign(currentCase(), { stdout: '', stderr: '', status: null, durationMs: null });
+  resetComparison(); showResult();
 });
-input.addEventListener('input', resetComparison);
-expectedOutput.addEventListener('input', resetComparison);
-compareOutput.addEventListener('change', resetComparison);
-editor.addEventListener('input', () => { resetComparison(); updateEditor(); });
+function editCase() {
+  Object.assign(currentCase(), { stdin: input.value, expectedOutput: expectedOutput.value, compare: compareOutput.checked });
+  resetComparison();
+}
+input.addEventListener('input', editCase);
+expectedOutput.addEventListener('input', editCase);
+compareOutput.addEventListener('change', editCase);
+editor.addEventListener('input', () => { resetComparison(true); updateEditor(); });
 editor.addEventListener('click', updateCursor);
 editor.addEventListener('keyup', updateCursor);
 editor.addEventListener('scroll', () => { $('line-numbers').scrollTop = editor.scrollTop; });
@@ -179,7 +245,7 @@ editor.addEventListener('keydown', (event) => {
   if (event.key === 'Tab' && !editor.readOnly) {
     event.preventDefault();
     editor.setRangeText('  ', editor.selectionStart, editor.selectionEnd, 'end');
-    resetComparison();
+    resetComparison(true);
     updateEditor();
   }
 });
@@ -192,7 +258,7 @@ document.addEventListener('keydown', (event) => {
   if (key === 'enter') run();
 });
 
-resetComparison();
+showCase();
 updateEditor();
 updateButtons();
 ide.onCloseRequested(async event => {
@@ -202,7 +268,7 @@ ide.onCloseRequested(async event => {
   updateButtons();
   try {
     if (!await confirmDiscard()) return;
-    await ide.stop();
+    await stop();
     await currentRun?.catch(() => {});
     await ide.destroy();
   } finally { closing = false; updateButtons(); }
