@@ -25,9 +25,9 @@ test('UI runner selection preserves OS defaults, supports overrides and rejects 
   assert.throws(() => select('brower'), error => /E2E_RUNNER/.test(error.stderr));
 });
 
-async function startHost(t, largeOutput = false) {
+async function startHost(t, largeOutput = false, env = {}) {
   const binary = await ensureUiTestHostBinary();
-  const host = spawn(binary, [], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const host = spawn(binary, [], { env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
   const exited = once(host, 'close');
   const messages = [];
   let stderr = '';
@@ -38,10 +38,13 @@ async function startHost(t, largeOutput = false) {
   });
   const lines = createInterface({ input: host.stdout });
   let output = '';
+  let finish;
+  const completed = new Promise(resolve => { finish = resolve; });
   const ready = new Promise(resolve => lines.on('line', line => {
     const message = JSON.parse(line);
     messages.push(message);
     const event = message.event;
+    if (event?.type === 'completed') finish(event.result);
     if (event?.type === 'output') {
       output += Buffer.from(event.bytes).toString('utf8');
       if (output.includes(largeOutput ? 'payload-ready\n' : '\n')) resolve(output.split('\n')[0].trim());
@@ -52,7 +55,7 @@ async function startHost(t, largeOutput = false) {
   } })}\n`);
   const directory = await Promise.race([ready, exited.then(() => { throw new Error(`UI test host exited before Ruby output: ${stderr}`); })]);
   await access(directory);
-  return { host, exited, directory, messages, stderr: () => stderr };
+  return { host, exited, directory, messages, completed, stderr: () => stderr };
 }
 
 test('stdio host stops Ruby and removes its temp directory when stdin closes or panics', { timeout: 15000 }, async t => {
@@ -78,4 +81,13 @@ test('a disconnected stdout does not panic or prevent host shutdown', { timeout:
   assert.equal(code, 0, stderr());
   assert.doesNotMatch(stderr(), /panicked/);
   await assert.rejects(access(directory), { code: 'ENOENT' });
+});
+
+
+test('only the UI test host can shorten its Ruby execution timeout', { timeout: 10000 }, async t => {
+  const { host, completed } = await startHost(t, false, { ATCODER_IDE_UI_TIMEOUT_MS: '1000' });
+  const result = await completed;
+  assert.equal(result.status, 'timeout');
+  assert.ok(result.durationMs >= 1000 && result.durationMs < 4000, `duration: ${result.durationMs}`);
+  host.stdin.end();
 });

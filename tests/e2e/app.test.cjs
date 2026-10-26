@@ -1,10 +1,10 @@
-const { test, before, after } = require('node:test');
+const { test, before, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { mkdtemp, mkdir, readFile, writeFile, rm, access, realpath } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 const { once } = require('node:events');
-const { launch, dialogs, discard, open, save, cancelSave, overwrite, close, pause } = require('./support.cjs');
+const { launch, dialogs, discard, open, save, cancelSave, overwrite, close, requestClose, pause } = require('./support.cjs');
 
 let app;
 let page;
@@ -14,6 +14,19 @@ before(async () => {
   app = await launch(root);
   page = app.page;
 });
+async function resetWorkspace() {
+  if (await page.locator('#stop').isEnabled()) {
+    await page.locator('#stop').click();
+    await page.waitForFunction(() => document.getElementById('stop').disabled);
+  }
+  if (app.steps) app.steps.length = 0;
+  await page.evaluate(() => window.__TAURI__.core.invoke('document_new'));
+  await page.reload();
+  await page.setViewportSize({ width: 1280, height: 850 });
+  await page.waitForFunction(() => !document.getElementById('run').disabled);
+}
+beforeEach(resetWorkspace);
+
 after(async () => {
   if (app) await close(app);
   if (root) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
@@ -69,6 +82,40 @@ async function assertWorkspaceFits() {
     assert.ok(area.contentHeight >= area.lineHeight, `at least one complete line must fit in ${area.id}: ${details}`);
   }
 }
+
+test('M12: Ruby detection can fail and recover without losing edits', async () => {
+  await page.getByTestId('code-editor').fill('puts "recovered"');
+  await page.getByTestId('stdin').fill('keep input');
+  await page.evaluate(async () => {
+    const { ide } = await import('./bridge.js');
+    const original = ide.rubyInfo;
+    let attempt = 0;
+    ide.rubyInfo = () => {
+      attempt++;
+      if (attempt === 1) return new Promise((resolve, reject) => { window.rejectRubyProbe = () => reject(new Error('Ruby probe failed')); });
+      if (attempt === 2) return Promise.resolve({ available: false, version: 'Ruby unavailable' });
+      return original();
+    };
+  });
+  const retry = page.getByRole('button', { name: 'Ruby を再確認', exact: true });
+  await retry.click({ timeout: 2000 });
+  assert.equal(await retry.isDisabled(), true);
+  assert.equal(await page.locator('#run').isDisabled(), true);
+  assert.equal(await page.locator('#code-editor').isEditable(), true);
+  await page.evaluate(() => window.rejectRubyProbe());
+  await page.locator('#message').filter({ hasText: 'Ruby probe failed' }).waitFor();
+  assert.equal(await page.locator('#run').isDisabled(), true);
+  assert.equal(await page.locator('#save').isEnabled(), true);
+  await retry.click();
+  await page.locator('#ruby-version').filter({ hasText: 'Ruby unavailable' }).waitFor();
+  assert.equal(await page.locator('#run').isDisabled(), true);
+  await retry.click();
+  await page.waitForFunction(() => !document.getElementById('run').disabled);
+  assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts "recovered"');
+  assert.equal(await page.getByTestId('stdin').inputValue(), 'keep input');
+  await runAndWait();
+  assert.equal(await page.getByTestId('stdout').textContent(), 'recovered\n');
+});
 
 test('M01: editor, output and run controls fit the minimum window size', async () => {
   await page.setViewportSize({ width: 900, height: 650 });
@@ -253,7 +300,8 @@ test('M06/M08: show timeout and output-limit reasons in the UI', async () => {
   assert.equal(await page.getByTestId('comparison-status').isDisabled(), true);
   await page.getByTestId('code-editor').fill('loop { puts "x" * 8192 }');
   await page.getByRole('button', { name: '実行', exact: true }).click();
-  await page.getByTestId('run-status').filter({ hasText: '出力上限で停止' }).waitFor();
+  await page.waitForFunction(() => document.getElementById('stop').disabled);
+  assert.match(await page.getByTestId('run-status').textContent(), /出力上限で停止/);
   assert.equal(await page.getByTestId('comparison-status').textContent(), '判定なし');
   assert.equal(await page.getByTestId('comparison-status').isDisabled(), true);
   assert.ok(Buffer.byteLength(await page.getByTestId('stdout').textContent()) <= 1048576);
@@ -279,10 +327,29 @@ test('M02/M03/M09: open/save preserve Japanese paths and canceled edits', async 
   assert.equal(await readFile(file, 'utf8'), 'puts "変更済み"\n');
 });
 
+test('M08: opening an oversized source preserves the current code, path and comparison', async () => {
+  await page.getByTestId('code-editor').fill('puts "keep"');
+  await saveAs(path.join(root, '保持するソース.rb'));
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
+  await page.getByTestId('expected-output').fill('keep');
+  await runAndWait();
+  await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
+  const currentPath = await page.locator('#file-path').textContent();
+  const large = path.join(root, 'large.rb');
+  await writeFile(large, 'a'.repeat(1048577));
+  await fileOperation(() => page.locator('#open').click(), [open(large)]);
+  await page.locator('#message').filter({ hasText: '1 MiB' }).waitFor();
+  assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts "keep"');
+  assert.equal(await page.locator('#file-path').textContent(), currentPath);
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '一致');
+  await runAndWait();
+  assert.equal(await page.getByTestId('stdout').textContent(), 'keep\n');
+});
+
 test('M09: cancel close/new confirmation, then create and save a document', async () => {
   await page.getByTestId('code-editor').fill('puts "保持"');
   await fileOperation(() => page.getByRole('button', { name: '新規', exact: true }).click(), [discard(false)]);
-  await fileOperation(() => page.evaluate(() => window.__TAURI__.window.getCurrentWindow().close()), [discard(false)]);
+  await fileOperation(() => requestClose(app), [discard(false)]);
   assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts "保持"');
   await newDocument();
   await page.getByTestId('code-editor').fill('puts "新規保存"');
@@ -302,6 +369,7 @@ test('R01: a CRLF document opens clean and remains unchanged on disk', async () 
 });
 
 test('M11: open/new reset the previous comparison', async () => {
+  await page.getByTestId('code-editor').fill('puts 1; puts 2');
   await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
   await page.getByTestId('expected-output').fill('1\n2\n');
   await runAndWait();
@@ -386,6 +454,7 @@ test('R06: overwrite during execution preserves the eventual comparison', async 
 });
 
 test('M07/M12: JSON and saved-directory files work with the configured Ruby runtime', async () => {
+  await saveAs(path.join(root, 'JSON 解答.rb'));
   await writeFile(path.join(root, '入力.json'), '{"message":"日本語"}', 'utf8');
   await page.getByTestId('code-editor').fill('require "json"; puts JSON.parse(File.read("入力.json"))["message"]');
   await runAndWait();
@@ -517,6 +586,8 @@ async function loadCases(file) {
 }
 
 test('M14: JSON roundtrip preserves case data and leaves the source and cwd unchanged', async () => {
+  await page.getByTestId('code-editor').fill('puts STDIN.read');
+  await saveAs(path.join(root, 'ケース往復.rb'));
   await page.getByTestId('stdin').fill('日本語\n');
   await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
   await page.getByTestId('expected-output').fill('');
@@ -546,6 +617,7 @@ test('M14: JSON roundtrip preserves case data and leaves the source and cwd unch
 });
 
 test('M14: canceling and invalid JSON preserve cases and unsaved edits', async () => {
+  await addCase('second');
   await page.getByTestId('stdin').fill('keep this');
   await fileOperation(() => page.getByRole('button', { name: 'ケース読込', exact: true }).click(), [discard(false)]);
   await fileOperation(() => page.getByRole('button', { name: 'ケース読込', exact: true }).click(), [discard(true), { title: 'サンプルを開く', buttonId: '2' }]);
@@ -562,9 +634,10 @@ test('M14: canceling and invalid JSON preserve cases and unsaved edits', async (
 });
 
 test('M14: closing protects case-only edits and a new source keeps cases', async () => {
+  await page.getByTestId('stdin').fill('keep this');
   await saveAs(path.join(root, '保存済みソース.rb'));
   assert.equal(await page.getByTestId('save-state').textContent(), '保存済み');
-  await fileOperation(() => page.evaluate(() => window.__TAURI__.window.getCurrentWindow().close()), [discard(false)]);
+  await fileOperation(() => requestClose(app), [discard(false)]);
   assert.equal(await page.getByTestId('stdin').inputValue(), 'keep this');
   await newDocument();
   assert.equal(await page.getByTestId('stdin').inputValue(), 'keep this');
@@ -730,7 +803,7 @@ test('M06/M09: accepting close stops Ruby descendants and exits', async () => {
   await page.getByRole('button', { name: '実行', exact: true }).click();
   await page.getByTestId('stdout').filter({ hasText: 'ready' }).waitFor();
   const exited = once(app.child, 'exit', { signal: AbortSignal.timeout(30000) });
-  await Promise.all([exited, dialogs(app, () => page.evaluate(() => window.__TAURI__.window.getCurrentWindow().close()), [discard(true)], true)]);
+  await Promise.all([exited, dialogs(app, () => requestClose(app), [discard(true)], true)]);
   await pause(2200);
   await assert.rejects(access(marker), { code: 'ENOENT' });
 });

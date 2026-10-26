@@ -487,3 +487,60 @@ fn m06_descendants_are_stopped_even_after_parent_exit() {
     std::thread::sleep(Duration::from_millis(2700));
     assert!(!marker.exists());
 }
+
+#[test]
+fn m08_source_open_and_save_enforce_utf8_byte_limit_without_changing_current_document() {
+    let root = tempfile::tempdir().unwrap();
+    let current = root.path().join("current.rb");
+    let candidate = root.path().join("candidate.rb");
+    let mut store = DocumentStore::default();
+    store.save("original", Some(current.clone())).unwrap();
+    let at_limit = "あ".repeat(349525) + "a";
+    assert_eq!(at_limit.len(), 1048576);
+    std::fs::write(&candidate, &at_limit).unwrap();
+    assert_eq!(
+        store.open(Some(candidate.clone())).unwrap().code.as_deref(),
+        Some(at_limit.as_str())
+    );
+    store.save(&at_limit, Some(current.clone())).unwrap();
+    assert_eq!(std::fs::read_to_string(&current).unwrap(), at_limit);
+
+    // Count bytes on disk, including an optional UTF-8 BOM.
+    std::fs::write(&candidate, format!("\u{feff}{at_limit}")).unwrap();
+    assert!(store
+        .open(Some(candidate.clone()))
+        .err()
+        .unwrap()
+        .contains("1 MiB"));
+    assert_eq!(store.path(), Some(current.as_path()));
+    assert!(store
+        .save(&(at_limit.clone() + "a"), Some(current.clone()))
+        .err()
+        .unwrap()
+        .contains("1 MiB"));
+    assert_eq!(std::fs::read_to_string(&current).unwrap(), at_limit);
+    assert_eq!(store.path(), Some(current.as_path()));
+
+    std::fs::write(&candidate, [0xff]).unwrap();
+    assert!(store.open(Some(candidate)).is_err());
+    assert_eq!(store.path(), Some(current.as_path()));
+}
+
+#[test]
+fn m03_atomic_source_save_failure_preserves_target_and_removes_temporary_files() {
+    let root = tempfile::tempdir().unwrap();
+    let current = root.path().join("current.rb");
+    let target = root.path().join("occupied.rb");
+    std::fs::create_dir(&target).unwrap();
+    std::fs::write(target.join("keep"), "keep").unwrap();
+    let mut store = DocumentStore::default();
+    store.save("original", Some(current.clone())).unwrap();
+    assert!(store.save("replacement", Some(target.clone())).is_err());
+    assert_eq!(std::fs::read_to_string(&current).unwrap(), "original");
+    assert_eq!(
+        std::fs::read_to_string(target.join("keep")).unwrap(),
+        "keep"
+    );
+    assert_eq!(store.path(), Some(current.as_path()));
+    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
+}

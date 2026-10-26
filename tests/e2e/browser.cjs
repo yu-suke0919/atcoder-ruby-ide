@@ -25,7 +25,7 @@ async function launch(root) {
   const started = performance.now();
   const binary = await ensureUiTestHostBinary();
   const prepared = performance.now();
-  const child = spawn(binary, [], { cwd: root, stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(binary, [], { cwd: root, env: { ...process.env, ATCODER_IDE_UI_TIMEOUT_MS: process.env.ATCODER_IDE_UI_TIMEOUT_MS || '4000' }, stdio: ['pipe', 'pipe', 'pipe'] });
   const pending = new Map();
   let sequence = 0;
   let stderr = '';
@@ -72,11 +72,11 @@ async function launch(root) {
     return step;
   }
   try {
-    const assets = new Map([['/', 'index.html'], ...['index.html', 'renderer.js', 'bridge.js', 'styles.css'].map(name => [`/${name}`, name])]);
+    const assets = new Map([['/', 'index.html'], ...['index.html', 'renderer.js', 'bridge.js', 'sample-cases.mjs', 'styles.css'].map(name => [`/${name}`, name])]);
     app.server = http.createServer(async (req, res) => {
       const name = assets.get(new URL(req.url, 'http://localhost').pathname);
       if (!name) { res.writeHead(404).end(); return; }
-      res.setHeader('Content-Type', name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : 'text/html');
+      res.setHeader('Content-Type', /\.m?js$/.test(name) ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : 'text/html');
       res.setHeader('Content-Security-Policy', require('../../src-tauri/tauri.conf.json').app.security.csp);
       res.end(await readFile(path.join(repo, 'src', name)));
     });
@@ -167,4 +167,6 @@ async function close(app) {
   await app.browser?.close();
   if (app.server) await new Promise(resolve => app.server.close(resolve));
 }
-module.exports = { ...native, ensureUiTestHostBinary, launch, dialogs, close };
+const requestClose = app => app.page.evaluate(() => window.__TAURI__.window.getCurrentWindow().close());
+
+module.exports = { ...native, requestClose, ensureUiTestHostBinary, launch, dialogs, close };

@@ -1,3 +1,4 @@
+use crate::files::{read_limited, write_atomic, MAX_TEXT_BYTES};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -29,8 +30,10 @@ impl DocumentStore {
                 ..Default::default()
             });
         };
-        let code =
-            std::fs::read_to_string(&path).map_err(|e| format!("ファイルを読み込めません: {e}"))?;
+        let data = read_limited(&path, MAX_TEXT_BYTES)
+            .map_err(|e| format!("ファイルを読み込めません（上限 1 MiB）: {e}"))?;
+        let code = String::from_utf8(data)
+            .map_err(|e| format!("ファイルは UTF-8 で保存してください: {e}"))?;
         let code = code.strip_prefix('\u{feff}').unwrap_or(&code).to_owned();
         self.file_path = Some(path.clone());
         Ok(DocumentResult {
@@ -51,7 +54,11 @@ impl DocumentStore {
                 ..Default::default()
             });
         };
-        std::fs::write(&path, code).map_err(|e| format!("ファイルを保存できません: {e}"))?;
+        if code.len() > MAX_TEXT_BYTES {
+            return Err("コードは 1 MiB 以下にしてください。".into());
+        }
+        write_atomic(&path, code.as_bytes())
+            .map_err(|e| format!("ファイルを保存できません: {e}"))?;
         self.file_path = Some(path.clone());
         Ok(DocumentResult {
             canceled: false,

@@ -91,4 +91,11 @@ async function close(app) {
   if (app.child.exitCode === null) await execute(system('taskkill.exe'), ['/PID', String(app.child.pid), '/T', '/F']).catch(() => {});
   await app.browser.close().catch(() => {});
 }
-module.exports = { launch, dialogs, discard, open, save, cancelSave, overwrite, close, pause };
+async function requestClose(app) {
+  await execute(system('WindowsPowerShell/v1.0/powershell.exe'), [
+    '-NoProfile', '-NonInteractive', '-Command',
+    `$appProcess = [System.Diagnostics.Process]::GetProcessById(${app.child.pid}); if (!$appProcess.CloseMainWindow()) { throw 'Cannot close the app window' }`
+  ]);
+}
+
+module.exports = { requestClose, launch, dialogs, discard, open, save, cancelSave, overwrite, close, pause };

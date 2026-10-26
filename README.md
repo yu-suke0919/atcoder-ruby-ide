@@ -9,6 +9,7 @@ Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使
 - [検証記録](docs/verification.md)
 - [レビューで維持する修正](docs/review.md)
 - [複数サンプルと JSON の仕様](docs/multi-sample.md)
+- [問題ライブラリの保存方針と準備](docs/problem-library.md)
 
 ## 機能
 
@@ -62,7 +63,8 @@ cargo fmt --all --check
 npm run test:e2e
 ```
 
-共通テストは Rust による実際の Ruby プロセス・ファイル操作と、Node によるアーカイブ検証です。
+共通テストは Rust による実際の Ruby プロセス・ファイル操作と、Node によるケース状態・アーカイブ検証です。
+ケース状態だけなら `node --test --test-isolation=none tests/unit/sample-cases.test.cjs` で Ruby・ブラウザーなしで確認できます。
 Linux では `npm run test:e2e` がテスト専用 Rust ホストをビルドし、HTTP 配信した本番画面を headless Chromium で操作します。
 実 Ruby・ファイル I/O・実行制御・比較は本番の Rust ライブラリを共有し、Tauri 通信・ウィンドウ操作・ダイアログ応答だけをテスト用に差し替えます。
 Windows は同じ受入ケースを実際の WebView2 / ネイティブダイアログで確認します。テスト専用ホストは配布しません。

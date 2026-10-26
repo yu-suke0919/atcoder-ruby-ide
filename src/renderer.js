@@ -1,4 +1,5 @@
 import { ide } from './bridge.js';
+import { SampleCases, MAX_CASES } from './sample-cases.mjs';
 
 const $ = (id) => document.getElementById(id);
 const editor = $('code-editor');
@@ -8,16 +9,8 @@ const compareOutput = $('compare-output');
 const differenceDialog = $('difference-dialog');
 const sample = 'a = gets.to_i\nb, c = gets.split.map(&:to_i)\ns = gets.chomp\n\nputs "#{a + b + c} #{s}"\n';
 editor.value = sample;
-function newCase(stdin = '', expectedOutput = '', compare = true) {
-  return { stdin, expectedOutput, compare, revision: 0, comparison: compare ? 'pending' : 'none', difference: null, stdout: '', stderr: '', status: null, durationMs: null };
-}
-let cases = [newCase('1\n2 3\ntest\n', '6 test\n', false)];
-const caseData = () => cases.map(({ stdin, expectedOutput, compare }) => ({ stdin, expectedOutput, compare }));
-let savedCases = JSON.stringify(caseData());
-const casesDirty = () => JSON.stringify(caseData()) !== savedCases;
-let selectedCase = 0;
+const cases = new SampleCases([{ stdin: '1\n2 3\ntest\n', expectedOutput: '6 test\n', compare: false }]);
 let canceled = false;
-const currentCase = () => cases[selectedCase];
 const comparisonLabels = { none: '比較なし', pending: '未比較', running: '比較中…', matched: '一致', mismatched: '不一致', unavailable: '判定なし' };
 const statusLabel = (status, exitCode) => ({ completed: '正常終了', failed: `エラー終了${exitCode == null ? '' : ` (${exitCode})`}`, stopped: '停止しました', timeout: '時間制限で停止（5 秒）', 'output-limit': '出力上限で停止（1 MiB）', running: '実行中…', canceled: '未実行（中止）', error: '実行できませんでした' })[status] || '実行する準備ができています';
 let savedCode = sample;
@@ -25,18 +18,19 @@ let filePath = null;
 let running = false;
 let fileBusy = false;
 let rubyAvailable = false;
+let rubyChecking = false;
 let currentRun = null;
 let closing = false;
 let scrollFrame = null;
 
 async function confirmDiscard(includeCases = false) {
-  return (editor.value === savedCode && (!includeCases || !casesDirty())) || await ide.confirmDiscard();
+  return (editor.value === savedCode && (!includeCases || !cases.dirty)) || await ide.confirmDiscard();
 }
 
 function showComparison(state) {
   $('comparison-status').textContent = comparisonLabels[state];
   $('comparison-status').dataset.state = state;
-  const available = state === 'mismatched' && currentCase().difference !== null;
+  const available = state === 'mismatched' && cases.current.difference !== null;
   $('comparison-status').disabled = !available;
   $('comparison-status').setAttribute('aria-label', available ? '不一致の詳細を表示' : comparisonLabels[state]);
   $('comparison-status').title = available ? 'クリックして最初の不一致を確認' : '';
@@ -69,8 +63,8 @@ function showDifferenceLine(target, value, column) {
 }
 
 function openDifference() {
-  const detail = currentCase().difference;
-  if (currentCase().comparison !== 'mismatched' || !detail) return;
+  const detail = cases.current.difference;
+  if (cases.current.comparison !== 'mismatched' || !detail) return;
   $('difference-position').textContent = `最初の不一致：${detail.line} 行 ${detail.column} 列`;
   showDifferenceLine($('difference-expected'), detail.expectedLine, detail.column);
   showDifferenceLine($('difference-actual'), detail.actualLine, detail.column);
@@ -80,22 +74,22 @@ $('comparison-status').addEventListener('click', openDifference);
 $('difference-close').addEventListener('click', () => differenceDialog.close());
 
 function updateCaseList() {
-  $('case-select').replaceChildren(...cases.map((item, index) => {
+  $('case-select').replaceChildren(...cases.items.map((item, index) => {
     const option = document.createElement('option');
     option.value = String(index);
     option.textContent = `ケース ${index + 1} · ${item.status === 'running' ? '実行中' : item.status && item.status !== 'completed' ? statusLabel(item.status, item.exitCode) : comparisonLabels[item.comparison]}`;
     return option;
   }));
-  $('case-select').value = String(selectedCase);
-  $('case-count').textContent = `${cases.length} ケース${casesDirty() ? ' · 未保存' : ''}`;
-  const done = cases.filter(item => item.status && !['running', 'canceled'].includes(item.status)).length;
-  const count = state => cases.filter(item => item.comparison === state).length;
-  const errors = cases.filter(item => ['failed', 'timeout', 'output-limit', 'error'].includes(item.status)).length;
-  $('cases-summary').textContent = `完了 ${done} / ${cases.length} · 一致 ${count('matched')} · 不一致 ${count('mismatched')} · エラー ${errors}`;
+  $('case-select').value = String(cases.selected);
+  $('case-count').textContent = `${cases.items.length} ケース${cases.dirty ? ' · 未保存' : ''}`;
+  const done = cases.items.filter(item => item.status && !['running', 'canceled'].includes(item.status)).length;
+  const count = state => cases.items.filter(item => item.comparison === state).length;
+  const errors = cases.items.filter(item => ['failed', 'timeout', 'output-limit', 'error'].includes(item.status)).length;
+  $('cases-summary').textContent = `完了 ${done} / ${cases.items.length} · 一致 ${count('matched')} · 不一致 ${count('mismatched')} · エラー ${errors}`;
 }
 
 function showResult() {
-  const item = currentCase();
+  const item = cases.current;
   for (const stream of ['stdout', 'stderr']) $(stream).textContent = item[stream];
   $('run-status').textContent = statusLabel(item.status, item.exitCode);
   $('run-duration').textContent = item.durationMs === null ? '— ms' : `${item.durationMs} ms`;
@@ -105,7 +99,7 @@ function showResult() {
 
 function showCase() {
   differenceDialog.close();
-  const item = currentCase();
+  const item = cases.current;
   input.value = item.stdin;
   expectedOutput.value = item.expectedOutput;
   compareOutput.checked = item.compare;
@@ -115,13 +109,9 @@ function showCase() {
 }
 
 function resetComparison(all = false) {
-  for (const item of all ? cases : [currentCase()]) {
-    item.revision++;
-    item.comparison = item.compare ? 'pending' : 'none';
-    item.difference = null;
-  }
-  expectedOutput.disabled = !currentCase().compare;
-  showComparison(currentCase().comparison);
+  cases.invalidate(all);
+  expectedOutput.disabled = !cases.current.compare;
+  showComparison(cases.current.comparison);
   updateCaseList();
 }
 
@@ -147,9 +137,10 @@ function updateCursor() {
 }
 
 function updateButtons() {
+  $('ruby-recheck').disabled = rubyChecking || running || closing;
   for (const id of ['run', 'run-all']) $(id).disabled = running || !rubyAvailable || fileBusy || closing;
-  $('case-add').disabled = running || fileBusy || closing || cases.length >= 100;
-  $('case-remove').disabled = running || fileBusy || closing || cases.length === 1;
+  $('case-add').disabled = running || fileBusy || closing || cases.items.length >= MAX_CASES;
+  $('case-remove').disabled = running || fileBusy || closing || cases.items.length === 1;
   $('case-select').disabled = fileBusy || closing;
   $('stop').disabled = !running;
   $('clear-output').disabled = running;
@@ -202,36 +193,27 @@ function saveFile(saveAs = false) {
 async function run(all = false) {
   if (running || fileBusy || closing || !rubyAvailable) return;
   const code = editor.value;
-  const queue = (all ? cases : [currentCase()]).map(item => ({ item, stdin: item.stdin, expectedOutput: item.expectedOutput, compare: item.compare, revision: item.revision }));
-  for (const { item } of queue) {
-    Object.assign(item, { stdout: '', stderr: '', status: null, durationMs: null, comparison: item.compare ? 'pending' : 'none', difference: null });
-  }
+  cases.clear(all);
+  const queue = cases.snapshot(all);
   canceled = false;
   running = true;
   updateButtons();
   const pending = (async () => {
     for (const snapshot of queue) {
       const { item } = snapshot;
-      if (canceled) { item.status = 'canceled'; item.comparison = item.compare ? 'pending' : 'none'; continue; }
-      Object.assign(item, { stdout: '', stderr: '', status: 'running', durationMs: null });
-      if (item.revision === snapshot.revision) item.comparison = snapshot.compare ? 'running' : 'none';
+      if (canceled) { cases.cancel(snapshot); continue; }
+      cases.begin(snapshot);
       showResult();
       message('Ruby を実行しています。');
       try {
         const result = await ide.run(code, snapshot.stdin, snapshot.compare ? snapshot.expectedOutput : null, ({ stream, text }) => {
           item[stream] += text;
-          if (item === currentCase()) appendOutput(stream, text);
+          if (item === cases.current) appendOutput(stream, text);
         });
-        Object.assign(item, { stdout: result.stdout, stderr: result.stderr, status: result.status, exitCode: result.exitCode, durationMs: result.durationMs });
-        if (item.revision === snapshot.revision && snapshot.compare) {
-          item.comparison = result.comparison === null ? 'unavailable' : result.comparison ? 'matched' : 'mismatched';
-          item.difference = result.difference;
-        }
+        cases.finish(snapshot, result);
         message(result.status === 'completed' ? '実行が完了しました。' : statusLabel(result.status, result.exitCode), ['failed', 'timeout', 'output-limit'].includes(result.status));
       } catch (error) {
-        item.status = 'error';
-        item.stderr = error.message;
-        if (item.revision === snapshot.revision && snapshot.compare) item.comparison = 'unavailable';
+        cases.fail(snapshot, error.message);
         message(error.message, true);
       }
       showResult();
@@ -258,31 +240,29 @@ async function stop() {
 $('run').addEventListener('click', () => run());
 $('run-all').addEventListener('click', () => run(true));
 $('stop').addEventListener('click', stop);
-$('case-select').addEventListener('change', () => { selectedCase = Number($('case-select').value); showCase(); });
+$('case-select').addEventListener('change', () => { cases.selected = Number($('case-select').value); showCase(); });
 $('case-add').addEventListener('click', () => {
-  if (cases.length >= 100) return;
-  cases.push(newCase()); selectedCase = cases.length - 1; showCase();
+  cases.add();
+  showCase();
 });
 $('case-remove').addEventListener('click', () => {
-  if (cases.length === 1) return;
-  cases.splice(selectedCase, 1); selectedCase = Math.min(selectedCase, cases.length - 1); showCase();
+  cases.remove();
+  showCase();
 });
 $('cases-open').addEventListener('click', () => fileAction(async () => {
-  if (running || (casesDirty() && !await ide.confirmDiscard())) return;
+  if (running || (cases.dirty && !await ide.confirmDiscard())) return;
   const result = await ide.openCases();
   if (result.canceled) return;
-  cases = result.cases.map(item => newCase(item.stdin, item.expectedOutput, item.compare));
-  selectedCase = 0;
-  savedCases = JSON.stringify(caseData());
+  cases.replace(result.cases, { saved: true });
   showCase();
   message('サンプルを読み込みました。');
 }));
 $('cases-save').addEventListener('click', () => fileAction(async () => {
   if (running) return;
-  const data = caseData();
+  const data = cases.data();
   const result = await ide.saveCases(data);
   if (result.canceled) return;
-  savedCases = JSON.stringify(data);
+  cases.markSaved(data);
   updateCaseList();
   message('サンプルを保存しました。');
 }));
@@ -301,11 +281,11 @@ $('new').addEventListener('click', () => fileAction(async () => {
   message('新しいファイルを作成しました。');
 }));
 $('clear-output').addEventListener('click', () => {
-  Object.assign(currentCase(), { stdout: '', stderr: '', status: null, durationMs: null });
-  resetComparison(); showResult();
+  cases.clear();
+  showResult();
 });
 function editCase() {
-  Object.assign(currentCase(), { stdin: input.value, expectedOutput: expectedOutput.value, compare: compareOutput.checked });
+  Object.assign(cases.current, { stdin: input.value, expectedOutput: expectedOutput.value, compare: compareOutput.checked });
   resetComparison();
 }
 input.addEventListener('input', editCase);
@@ -349,10 +329,26 @@ ide.onCloseRequested(async event => {
   } finally { closing = false; updateButtons(); }
 }).catch(error => message(String(error), true));
 
-ide.rubyInfo().then((info) => {
-  rubyAvailable = info.available;
-  $('ruby-version').textContent = info.version;
-  $('ruby-version').title = info.version;
-  if (!info.available) message('Ruby を起動できません。インストール状態を確認してください。', true);
+async function checkRuby() {
+  if (rubyChecking || running || closing) return;
+  rubyChecking = true;
+  rubyAvailable = false;
+  $('ruby-version').textContent = 'Ruby を確認中…';
   updateButtons();
-}).catch((error) => { $('ruby-version').textContent = 'Ruby を起動できません'; message(String(error), true); });
+  try {
+    const info = await ide.rubyInfo();
+    rubyAvailable = info.available;
+    $('ruby-version').textContent = info.version;
+    $('ruby-version').title = info.version;
+    message(info.available ? 'Ruby を確認しました。' : 'Ruby を起動できません。インストール状態を確認して再確認してください。', !info.available);
+  } catch (error) {
+    $('ruby-version').textContent = 'Ruby を起動できません';
+    $('ruby-version').title = error.message;
+    message(error.message, true);
+  } finally {
+    rubyChecking = false;
+    updateButtons();
+  }
+}
+$('ruby-recheck').addEventListener('click', checkRuby);
+checkRuby();

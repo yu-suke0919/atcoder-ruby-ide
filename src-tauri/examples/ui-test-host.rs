@@ -50,7 +50,18 @@ fn main() {
     let ruby: PathBuf = std::env::var_os("RUBY_PATH")
         .unwrap_or_else(|| "ruby".into())
         .into();
-    let runner = Runner::new(Duration::from_secs(5), 1048576);
+    let timeout_ms = std::env::var("ATCODER_IDE_UI_TIMEOUT_MS")
+        .map(|value| {
+            value
+                .parse::<u64>()
+                .expect("ATCODER_IDE_UI_TIMEOUT_MS must be 1..=5000")
+        })
+        .unwrap_or(5000);
+    assert!(
+        (1..=5000).contains(&timeout_ms),
+        "ATCODER_IDE_UI_TIMEOUT_MS must be 1..=5000"
+    );
+    let runner = Runner::new(Duration::from_millis(timeout_ms), 1048576);
     let mut cleanup = RunnerCleanup {
         runner: &runner,
         worker: None,
@@ -62,7 +73,7 @@ fn main() {
         let args = request.args;
         let result: Result<Value, String> = (|| match request.command.as_str() {
             "ruby_info" => {
-                let result = Runner::new(Duration::from_secs(3), 16384)
+                let result = Runner::new(Duration::from_secs(5), 16384)
                     .prepare(RunRequest {
                         code: "puts RUBY_DESCRIPTION".into(),
                         ..Default::default()
