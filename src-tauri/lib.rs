@@ -2,10 +2,12 @@ mod comparison;
 mod document;
 mod process;
 mod runner;
+mod samples;
 
 pub use comparison::{compare_output, decode_output};
 pub use document::{DocumentResult, DocumentStore};
 pub use runner::{Output, PreparedRun, RunRequest, RunResult, Runner};
+pub use samples::{load_samples, save_samples, SampleCase, SampleResult};
 
 use serde::Serialize;
 

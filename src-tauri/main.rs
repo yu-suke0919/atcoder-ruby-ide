@@ -1,6 +1,9 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
-use atcoder_ruby_ide::{DocumentResult, DocumentStore, RunEvent, RunRequest, Runner};
+use atcoder_ruby_ide::{
+    load_samples, save_samples, DocumentResult, DocumentStore, RunEvent, RunRequest, Runner,
+    SampleCase, SampleResult,
+};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -178,6 +181,48 @@ fn document_new(state: tauri::State<'_, AppState>) {
 }
 
 #[tauri::command]
+async fn samples_open(window: tauri::WebviewWindow) -> Result<SampleResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let selected = window
+            .app_handle()
+            .dialog()
+            .file()
+            .set_parent(&window)
+            .set_title("サンプルを開く")
+            .add_filter("JSON", &["json"])
+            .blocking_pick_file()
+            .map(|file| file.into_path().map_err(|e| e.to_string()))
+            .transpose()?;
+        load_samples(selected)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn samples_save(
+    window: tauri::WebviewWindow,
+    cases: Vec<SampleCase>,
+) -> Result<SampleResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let selected = window
+            .app_handle()
+            .dialog()
+            .file()
+            .set_parent(&window)
+            .set_title("サンプルを保存")
+            .add_filter("JSON", &["json"])
+            .set_file_name("samples.cases.json")
+            .blocking_save_file()
+            .map(|file| file.into_path().map_err(|e| e.to_string()))
+            .transpose()?;
+        save_samples(cases, selected)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn confirm_discard(window: tauri::WebviewWindow) -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(move || {
         window
@@ -221,6 +266,8 @@ fn main() {
             document_open,
             document_save,
             document_new,
+            samples_open,
+            samples_save,
             confirm_discard
         ])
         .build(context)

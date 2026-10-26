@@ -37,7 +37,7 @@ async function launch(root) {
     pending.set(id, { resolve, reject });
     child.stdin.write(`${JSON.stringify({ id, command, args })}\n`);
   });
-  child.on('exit', () => {
+  child.on('close', () => {
     for (const request of pending.values()) request.reject(new Error(`UI test host exited: ${stderr}`));
     pending.clear();
   });
@@ -89,6 +89,11 @@ async function launch(root) {
     await app.page.exposeBinding('__testInvoke', async (_, command, args) => {
       if (command === 'confirm_discard') return take('未保存の変更').buttonName === '破棄して続ける';
       if (command === 'document_open') args.selected = take('Ruby ファイルを開く').path || null;
+      if (command === 'samples_open') args.selected = take('サンプルを開く').path || null;
+      if (command === 'samples_save') {
+        args.selected = take('サンプルを保存').path || null;
+        if (args.selected && await access(args.selected).then(() => true, () => false)) take('Confirm Save As');
+      }
       if (command === 'document_save' && app.steps[0]?.title === 'Ruby ファイルを保存') {
         const step = take('Ruby ファイルを保存');
         args.selected = step.path || null;
@@ -154,7 +159,7 @@ async function dialogs(app, trigger, steps, closesApp = false) {
 }
 async function close(app) {
   if (app.child.exitCode === null) {
-    const exited = once(app.child, 'exit', { signal: AbortSignal.timeout(5000) });
+    const exited = once(app.child, 'close', { signal: AbortSignal.timeout(5000) });
     app.child.stdin.end();
     await exited.catch(() => app.child.kill());
   }

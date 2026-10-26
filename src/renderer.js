@@ -11,6 +11,9 @@ function newCase(stdin = '', expectedOutput = '', compare = true) {
   return { stdin, expectedOutput, compare, revision: 0, comparison: compare ? 'pending' : 'none', stdout: '', stderr: '', status: null, durationMs: null };
 }
 let cases = [newCase('1\n2 3\ntest\n', '6 test\n', false)];
+const caseData = () => cases.map(({ stdin, expectedOutput, compare }) => ({ stdin, expectedOutput, compare }));
+let savedCases = JSON.stringify(caseData());
+const casesDirty = () => JSON.stringify(caseData()) !== savedCases;
 let selectedCase = 0;
 let canceled = false;
 const currentCase = () => cases[selectedCase];
@@ -25,8 +28,8 @@ let currentRun = null;
 let closing = false;
 let scrollFrame = null;
 
-async function confirmDiscard() {
-  return editor.value === savedCode || await ide.confirmDiscard();
+async function confirmDiscard(includeCases = false) {
+  return (editor.value === savedCode && (!includeCases || !casesDirty())) || await ide.confirmDiscard();
 }
 
 function showComparison(state) {
@@ -42,7 +45,7 @@ function updateCaseList() {
     return option;
   }));
   $('case-select').value = String(selectedCase);
-  $('case-count').textContent = `${cases.length} ケース`;
+  $('case-count').textContent = `${cases.length} ケース${casesDirty() ? ' · 未保存' : ''}`;
   const done = cases.filter(item => item.status && !['running', 'canceled'].includes(item.status)).length;
   const count = state => cases.filter(item => item.comparison === state).length;
   const errors = cases.filter(item => ['failed', 'timeout', 'output-limit', 'error'].includes(item.status)).length;
@@ -101,7 +104,7 @@ function updateCursor() {
 
 function updateButtons() {
   for (const id of ['run', 'run-all']) $(id).disabled = running || !rubyAvailable || fileBusy || closing;
-  $('case-add').disabled = running || fileBusy || closing;
+  $('case-add').disabled = running || fileBusy || closing || cases.length >= 100;
   $('case-remove').disabled = running || fileBusy || closing || cases.length === 1;
   $('case-select').disabled = fileBusy || closing;
   $('stop').disabled = !running;
@@ -109,6 +112,9 @@ function updateButtons() {
   for (const id of ['new', 'open', 'save-as']) $(id).disabled = running || fileBusy || closing;
   $('save').disabled = fileBusy || closing || (running && !filePath);
   editor.readOnly = fileBusy || closing;
+  input.readOnly = expectedOutput.readOnly = fileBusy || closing;
+  compareOutput.disabled = fileBusy || closing;
+  for (const id of ['cases-open', 'cases-save']) $(id).disabled = running || fileBusy || closing;
 }
 
 async function fileAction(action) {
@@ -177,6 +183,7 @@ async function run(all = false) {
         message(result.status === 'completed' ? '実行が完了しました。' : statusLabel(result.status, result.exitCode), ['failed', 'timeout', 'output-limit'].includes(result.status));
       } catch (error) {
         item.status = 'error';
+        item.stderr = error.message;
         if (item.revision === snapshot.revision && snapshot.compare) item.comparison = 'unavailable';
         message(error.message, true);
       }
@@ -206,12 +213,32 @@ $('run-all').addEventListener('click', () => run(true));
 $('stop').addEventListener('click', stop);
 $('case-select').addEventListener('change', () => { selectedCase = Number($('case-select').value); showCase(); });
 $('case-add').addEventListener('click', () => {
+  if (cases.length >= 100) return;
   cases.push(newCase()); selectedCase = cases.length - 1; showCase();
 });
 $('case-remove').addEventListener('click', () => {
   if (cases.length === 1) return;
   cases.splice(selectedCase, 1); selectedCase = Math.min(selectedCase, cases.length - 1); showCase();
 });
+$('cases-open').addEventListener('click', () => fileAction(async () => {
+  if (running || (casesDirty() && !await ide.confirmDiscard())) return;
+  const result = await ide.openCases();
+  if (result.canceled) return;
+  cases = result.cases.map(item => newCase(item.stdin, item.expectedOutput, item.compare));
+  selectedCase = 0;
+  savedCases = JSON.stringify(caseData());
+  showCase();
+  message('サンプルを読み込みました。');
+}));
+$('cases-save').addEventListener('click', () => fileAction(async () => {
+  if (running) return;
+  const data = caseData();
+  const result = await ide.saveCases(data);
+  if (result.canceled) return;
+  savedCases = JSON.stringify(data);
+  updateCaseList();
+  message('サンプルを保存しました。');
+}));
 $('open').addEventListener('click', openFile);
 $('save').addEventListener('click', () => saveFile());
 $('save-as').addEventListener('click', () => saveFile(true));
@@ -267,7 +294,7 @@ ide.onCloseRequested(async event => {
   closing = true;
   updateButtons();
   try {
-    if (!await confirmDiscard()) return;
+    if (!await confirmDiscard(true)) return;
     await stop();
     await currentRun?.catch(() => {});
     await ide.destroy();
