@@ -1,5 +1,4 @@
 const { cp, mkdir, readFile, rm, stat, writeFile } = require('node:fs/promises');
-const { createHash } = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const path = require('node:path');
@@ -27,8 +26,6 @@ async function main() {
     await cp(path.join(root, 'target/release/bundle/nsis', installer), path.join(artifacts, `${baseName}-setup.exe`));
     await mkdir(path.join(artifacts, 'reports'), { recursive: true });
     await writeFile(path.join(artifacts, 'reports/ruby-manifest.json'), JSON.stringify(source, null, 2));
-    const executable = await readFile(path.join(portable, 'atcoder-ruby-ide.exe'));
-    await writeFile(path.join(artifacts, 'reports/app-manifest.json'), JSON.stringify({ bytes: executable.length, sha256: createHash('sha256').update(executable).digest('hex') }));
     return;
   }
   const source = JSON.parse(await readFile(path.join(artifacts, 'reports/ruby-manifest.json'), 'utf8'));
