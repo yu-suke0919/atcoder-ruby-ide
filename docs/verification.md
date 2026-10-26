@@ -64,7 +64,7 @@ Electron 版での過去の検証は各 PR とコミット履歴を参照する�
 2026-10-26、Linux Cloud（Node.js 24、Rust 1.99.1、Ruby 3.4.12、Chromium 154）で確認した。
 
 - `cargo fmt --all --check`、Rust 31 件、Node 24 件（サブテスト含む）が成功。
-- 共通 GUI 40 件が約 28.9 秒で成功。各テストの状態リセットと Ruby 再確認・ソースサイズ超過の回帰を含む。ブラウザー用ホストの上限は 2 秒、本番の上限は 5 秒。
+- 共通 GUI 40 件が約 32.2 秒で成功。各テストの状態リセットと Ruby 再確認・ソースサイズ超過の回帰を含む。ブラウザー用ホストの上限は 4 秒、本番の上限は 5 秒。
 - 初期画面のスクリーンショットを確認した。
 
-Windows の CDP・実時間 5 秒の停止・OS の終了要求・NSIS・配布前照合は、この変更の CI で確認する。
+Windows は [run 40315438846 の Windows ジョブ](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/40315438846/job/121546745132) で Rust 30 件・Node 24 件・GUI 40 件が成功した。devtools feature なしの CDP 接続、実時間 5 秒の停止、OS の終了要求、NSIS スモーク、配布前照合を含む。最終コミットの両 OS の結果は [PR #10 の Checks](https://github.com/yu-suke0919/atcoder-ruby-ide/pull/10/checks) を参照する。

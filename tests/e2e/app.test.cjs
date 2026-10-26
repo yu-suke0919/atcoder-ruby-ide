@@ -300,7 +300,8 @@ test('M06/M08: show timeout and output-limit reasons in the UI', async () => {
   assert.equal(await page.getByTestId('comparison-status').isDisabled(), true);
   await page.getByTestId('code-editor').fill('loop { puts "x" * 8192 }');
   await page.getByRole('button', { name: '実行', exact: true }).click();
-  await page.getByTestId('run-status').filter({ hasText: '出力上限で停止' }).waitFor();
+  await page.waitForFunction(() => document.getElementById('stop').disabled);
+  assert.match(await page.getByTestId('run-status').textContent(), /出力上限で停止/);
   assert.equal(await page.getByTestId('comparison-status').textContent(), '判定なし');
   assert.equal(await page.getByTestId('comparison-status').isDisabled(), true);
   assert.ok(Buffer.byteLength(await page.getByTestId('stdout').textContent()) <= 1048576);
