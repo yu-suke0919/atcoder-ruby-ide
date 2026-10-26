@@ -256,7 +256,7 @@ test('M06/M08: show timeout and output-limit reasons in the UI', async () => {
 });
 
 
-test('M02/M03/M09: native open/save preserve Japanese paths and canceled edits', async () => {
+test('M02/M03/M09: open/save preserve Japanese paths and canceled edits', async () => {
   const file = path.join(root, '解答.rb');
   await writeFile(file, '\uFEFFputs "ファイル"\n', 'utf8');
   await openDocument(file);
@@ -274,7 +274,7 @@ test('M02/M03/M09: native open/save preserve Japanese paths and canceled edits',
   assert.equal(await readFile(file, 'utf8'), 'puts "変更済み"\n');
 });
 
-test('M09: cancel native close/new confirmation, then create and save a document', async () => {
+test('M09: cancel close/new confirmation, then create and save a document', async () => {
   await page.getByTestId('code-editor').fill('puts "保持"');
   await fileOperation(() => page.getByRole('button', { name: '新規', exact: true }).click(), [discard(false)]);
   await fileOperation(() => page.evaluate(() => window.__TAURI__.window.getCurrentWindow().close()), [discard(false)]);
@@ -296,7 +296,7 @@ test('R01: a CRLF document opens clean and remains unchanged on disk', async () 
   assert.equal(await readFile(file, 'utf8'), 'puts 1\r\nputs 2\r\n');
 });
 
-test('M11: native open/new reset the previous comparison', async () => {
+test('M11: open/new reset the previous comparison', async () => {
   await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
   await page.getByTestId('expected-output').fill('1\n2\n');
   await runAndWait();
@@ -312,7 +312,7 @@ test('M11: native open/new reset the previous comparison', async () => {
   await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
 });
 
-test('R06: native overwrite and same-path Save As preserve comparison results', async () => {
+test('R06: overwrite and same-path Save As preserve comparison results', async () => {
   const file = path.join(root, '上書き保存.rb');
   await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
   await page.getByTestId('code-editor').fill('puts "same"');
@@ -380,14 +380,14 @@ test('R06: overwrite during execution preserves the eventual comparison', async 
   }
 });
 
-test('M07/M12: bundled Ruby loads JSON and saved-directory files without Ruby on PATH', async () => {
+test('M07/M12: JSON and saved-directory files work with the configured Ruby runtime', async () => {
   await writeFile(path.join(root, '入力.json'), '{"message":"日本語"}', 'utf8');
   await page.getByTestId('code-editor').fill('require "json"; puts JSON.parse(File.read("入力.json"))["message"]');
   await runAndWait();
   assert.equal(await page.getByTestId('stdout').textContent(), '日本語\n');
 });
 
-test('M06/M09: accepting native close stops Ruby descendants and exits', async () => {
+test('M06/M09: accepting close stops Ruby descendants and exits', async () => {
   const marker = path.join(root, 'orphan.txt').replaceAll('\\', '/');
   await page.getByTestId('code-editor').fill(`require 'rbconfig'; spawn(RbConfig.ruby, '-e', 'sleep 2; File.write(${JSON.stringify(marker)}, "survived")'); puts 'ready'; sleep 30`);
   await page.getByRole('button', { name: '実行', exact: true }).click();
