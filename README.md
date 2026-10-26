@@ -66,7 +66,7 @@ Linux では `npm run test:e2e` がテスト専用 Rust ホストをビルドし
 Windows は同じ受入ケースを実際の WebView2 / ネイティブダイアログで確認します。テスト専用ホストは配布しません。
 
 Linux の初回セットアップでは、Node.js 24・Rust・Ruby に加えて Chromium を用意してください。
-`/usr/bin/chromium` があればそれを使い、`CHROMIUM_PATH` で実行ファイルを指定することもできます。
+`CHROMIUM_PATH` で実行ファイルを指定でき、未指定なら導入済みの Playwright 版、次に `/usr/bin/chromium` を使います。
 システム版がなければ `npx playwright install --with-deps chromium` で Playwright 版を導入します。
 この Cloud の既存ツールを使う場合は、最初に次を設定します。
 

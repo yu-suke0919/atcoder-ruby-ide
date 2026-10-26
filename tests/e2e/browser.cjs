@@ -13,7 +13,9 @@ const execute = promisify(execFile);
 const repo = path.resolve(__dirname, '../..');
 
 async function launch(root) {
+  const started = performance.now();
   await execute('cargo', ['build', '--locked', '--example', 'ui-test-host'], { cwd: repo });
+  const prepared = performance.now();
   const target = path.resolve(repo, process.env.CARGO_TARGET_DIR || 'target');
   const child = spawn(path.join(target, 'debug/examples/ui-test-host'), [], { cwd: root, stdio: ['pipe', 'pipe', 'pipe'] });
   const pending = new Map();
@@ -71,8 +73,8 @@ async function launch(root) {
       res.end(await readFile(path.join(repo, 'src', name)));
     });
     await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
-    const executablePath = process.env.CHROMIUM_PATH || (existsSync('/usr/bin/chromium') ? '/usr/bin/chromium' : undefined);
-    app.browser = await chromium.launch({ headless: true, executablePath });
+    const executablePath = process.env.CHROMIUM_PATH || (!existsSync(chromium.executablePath()) && existsSync('/usr/bin/chromium') ? '/usr/bin/chromium' : undefined);
+    app.browser = await chromium.launch({ headless: true, executablePath, timeout: 15000 });
     app.page = await app.browser.newPage({ viewport: { width: 1280, height: 850 } });
     app.page.setDefaultTimeout(15000);
     app.page.on('pageerror', error => console.error('Browser UI error:', error));
@@ -120,6 +122,7 @@ async function launch(root) {
     });
     await app.page.goto(`http://127.0.0.1:${app.server.address().port}/`);
     await app.page.getByTestId('ruby-version').filter({ hasText: /ruby 3\./i }).waitFor();
+    console.log(JSON.stringify({ uiHostBuildMs: Math.round(prepared - started), browserSetupMs: Math.round(performance.now() - prepared), browserVersion: app.browser.version() }));
     return app;
   } catch (error) {
     if (app.page) console.error(await app.page.locator('body').textContent().catch(() => ''));

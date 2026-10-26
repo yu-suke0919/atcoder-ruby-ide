@@ -1,6 +1,6 @@
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { mkdtemp, readFile, access, rm } = require('node:fs/promises');
+const { mkdtemp, readFile, access, rm, writeFile, copyFile } = require('node:fs/promises');
 const { createHash } = require('node:crypto');
 const path = require('node:path');
 const { tmpdir } = require('node:os');
@@ -17,7 +17,20 @@ async function main() {
   await execute(installer, ['/S', `/D=${directory}`], { timeout: 120000, windowsVerbatimArguments: true });
   const executable = path.join(directory, 'atcoder-ruby-ide.exe');
   const expected = JSON.parse(await readFile(path.join(root, 'artifacts/reports/app-manifest.json'), 'utf8'));
-  assert.equal(createHash('sha256').update(await readFile(executable)).digest('hex'), expected.sha256, 'Installed exe must equal the tested portable exe');
+  const installed = await readFile(executable);
+  const installedHash = createHash('sha256').update(installed).digest('hex');
+  if (installedHash !== expected.sha256) {
+    const portable = await readFile(path.join(root, 'artifacts/portable/atcoder-ruby-ide.exe'));
+    const differences = [];
+    for (let i = 0; i < Math.min(installed.length, portable.length) && differences.length < 24; i++) {
+      if (installed[i] !== portable[i]) differences.push({ offset: i, installed: installed[i], portable: portable[i] });
+    }
+    console.log(JSON.stringify({ installedBytes: installed.length, expectedBytes: expected.bytes, differences }));
+    await writeFile(path.join(root, 'artifacts/reports/installed-debug.exe'), installed);
+    await writeFile(path.join(root, 'artifacts/reports/portable-debug.exe'), portable);
+    await copyFile(installer, path.join(root, 'artifacts/reports/setup-debug.exe'));
+  }
+  assert.equal(installedHash, expected.sha256, 'Installed exe must equal the tested portable exe');
   const runtime = JSON.parse(await readFile(path.join(root, 'artifacts/reports/ruby-manifest.json'), 'utf8'));
   const required = ['bin/ruby.exe', 'lib/ruby', 'LICENSE.txt', 'licenses/ruby/COPYING.html', 'licenses/ruby/LEGAL.html', ...Object.keys(runtime).filter(name => name.startsWith('bin/') && name.endsWith('.dll'))];
   for (const name of required) await access(path.join(directory, 'ruby', name));
