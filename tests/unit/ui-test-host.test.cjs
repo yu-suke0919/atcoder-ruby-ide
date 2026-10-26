@@ -25,10 +25,11 @@ test('UI runner selection preserves OS defaults, supports overrides and rejects 
   assert.throws(() => select('brower'), error => /E2E_RUNNER/.test(error.stderr));
 });
 
-async function startHost(t) {
+async function startHost(t, largeOutput = false) {
   const binary = await ensureUiTestHostBinary();
   const host = spawn(binary, [], { stdio: ['pipe', 'pipe', 'pipe'] });
-  const exited = once(host, 'exit');
+  const exited = once(host, 'close');
+  const messages = [];
   let stderr = '';
   host.stderr.on('data', chunk => { stderr += chunk; });
   t.after(async () => {
@@ -38,29 +39,32 @@ async function startHost(t) {
   const lines = createInterface({ input: host.stdout });
   let output = '';
   const ready = new Promise(resolve => lines.on('line', line => {
-    const event = JSON.parse(line).event;
+    const message = JSON.parse(line);
+    messages.push(message);
+    const event = message.event;
     if (event?.type === 'output') {
       output += Buffer.from(event.bytes).toString('utf8');
-      if (output.includes('\n')) resolve(output.trim());
+      if (output.includes(largeOutput ? 'payload-ready\n' : '\n')) resolve(output.split('\n')[0].trim());
     }
   }));
   host.stdin.write(`${JSON.stringify({ id: 1, command: 'run_ruby', args: {
-    code: 'puts __dir__; sleep 30', stdin: '', onEvent: 1,
+    code: `puts __dir__; ${largeOutput ? 'print "x" * 262144; puts "payload-ready";' : ''} sleep 30`, stdin: '', onEvent: 1,
   } })}\n`);
   const directory = await Promise.race([ready, exited.then(() => { throw new Error(`UI test host exited before Ruby output: ${stderr}`); })]);
   await access(directory);
-  return { host, exited, directory, stderr: () => stderr };
+  return { host, exited, directory, messages, stderr: () => stderr };
 }
 
 test('stdio host stops Ruby and removes its temp directory when stdin closes or panics', { timeout: 15000 }, async t => {
-  for (const malformed of [false, true]) {
-    await t.test(malformed ? 'malformed input' : 'EOF', async t => {
-      const { host, exited, directory } = await startHost(t);
+  for (const [name, malformed, largeOutput] of [['EOF', false, false], ['EOF with a large final event', false, true], ['malformed input', true, false]]) {
+    await t.test(name, async t => {
+      const { host, exited, directory, messages } = await startHost(t, largeOutput);
       host.stdin.end(malformed ? 'invalid JSON\n' : undefined);
       const [code, signal] = await exited;
       assert.equal(signal, null);
       assert.equal(code, malformed ? 101 : 0);
       await assert.rejects(access(directory), { code: 'ENOENT' });
+      assert.ok(messages.some(message => message.event?.type === 'completed'), 'The final event must finish before the host exits');
     });
   }
 });

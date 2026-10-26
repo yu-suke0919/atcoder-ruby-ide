@@ -3,6 +3,73 @@ use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
+#[test]
+fn m14_sample_json_roundtrip_cancel_and_failed_writes_preserve_files() {
+    use atcoder_ruby_ide::{load_samples, save_samples, SampleCase};
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join("サンプル 空白.json");
+    let cases = || {
+        vec![
+            SampleCase {
+                stdin: "日本語\r\n".into(),
+                expected_output: "".into(),
+                compare: true,
+            },
+            SampleCase {
+                stdin: "two".into(),
+                expected_output: "ignored".into(),
+                compare: false,
+            },
+        ]
+    };
+    assert!(load_samples(None).unwrap().canceled);
+    assert!(save_samples(cases(), None).unwrap().canceled);
+    save_samples(cases(), Some(file.clone())).unwrap();
+    assert_eq!(
+        load_samples(Some(file.clone())).unwrap().cases.unwrap(),
+        cases()
+    );
+    let original = std::fs::read(&file).unwrap();
+    assert!(save_samples(vec![], Some(file.clone())).is_err());
+    assert_eq!(std::fs::read(&file).unwrap(), original);
+    let protected = root.path().join("directory.json");
+    std::fs::create_dir(&protected).unwrap();
+    std::fs::write(protected.join("keep"), "preserved").unwrap();
+    assert!(save_samples(cases(), Some(protected.clone())).is_err());
+    assert_eq!(
+        std::fs::read_to_string(protected.join("keep")).unwrap(),
+        "preserved"
+    );
+    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
+    save_samples(cases(), Some(file.clone())).unwrap();
+    assert_eq!(load_samples(Some(file)).unwrap().cases.unwrap(), cases());
+}
+
+#[test]
+fn m14_sample_json_rejects_invalid_types_counts_and_utf8_byte_limits() {
+    use atcoder_ruby_ide::load_samples;
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join("invalid.json");
+    for invalid in [
+        "not JSON".to_string(), "[]".into(), r#"{"cases":[]}"#.into(),
+        r#"{"cases":[{"stdin":1,"expectedOutput":"","compare":true}]}"#.into(),
+        r#"{"cases":[{"stdin":"","compare":true}]}"#.into(),
+        serde_json::json!({"cases":vec![serde_json::json!({"stdin":"", "expectedOutput":"", "compare":true}); 101]}).to_string(),
+        serde_json::json!({"cases":[{"stdin":"あ".repeat(349526), "expectedOutput":"", "compare":true}]}).to_string(),
+        serde_json::json!({"cases":[{"stdin":"", "expectedOutput":"x".repeat(1048577), "compare":false}]}).to_string(),
+        " ".repeat(16 * 1024 * 1024 + 1),
+    ] {
+        std::fs::write(&file, invalid).unwrap();
+        assert!(load_samples(Some(file.clone())).is_err());
+    }
+    std::fs::write(
+        &file,
+        "\u{feff}{\"cases\":[{\"stdin\":\"\",\"expectedOutput\":\"\",\"compare\":true}]}",
+    )
+    .unwrap();
+    assert_eq!(load_samples(Some(file)).unwrap().cases.unwrap().len(), 1);
+}
+
 fn ruby() -> PathBuf {
     std::env::var_os("RUBY_PATH")
         .unwrap_or_else(|| "ruby".into())

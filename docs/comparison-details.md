@@ -1,6 +1,6 @@
 # 最初の不一致箇所
 
-PR #6・#7 のレビューと並行して、main を基点に比較処理だけを追加する。画面・IPC・RunResult への接続は、その後の変更で行う。
+比較処理の API を提供する。画面・IPC・RunResult への接続は後続の変更で行う。
 
 ## API と比較ルール
 
@@ -31,8 +31,24 @@ PR #6・#7 のレビューと並行して、main を基点に比較処理だけ�
 - 既存の一致判定と詳細の有無が一致し、1 MiB の長い行でも最初の位置を特定できる。
 - 共通テスト・既存 UI テストと、Windows の配布検証を通す。
 
-## ローカル検証
+## UI・IPC 接続時の扱い
+
+現在の Runner は `compare_output` だけを 1 回呼ぶため、二重正規化は発生していない。
+真偽値判定を `first_difference(...).is_none()` へ委譲すると、不一致行のコピーも発生するため、詳細を使わない現在の経路は維持する。
+
+詳細を RunResult に含める変更では、以下をまとめて実装する。
+
+- `OutputDifference` に `Clone`・`serde::Serialize` と `#[serde(rename_all = "camelCase")]` を付け、`actualLine`・`expectedLine` として送る。
+- 正常終了・比較有効のときだけ `first_difference` を 1 回呼び、その結果から一致判定も導く。`compare_output` と別々には呼ばない。
+- 比較無効・エラー・停止時の `comparison: None` を維持し、空の期待出力と比較無効を区別する。
+
+## 単独実装時の検証
 
 2026-10-26 の Linux Cloud で `cargo fmt --all --check`、Rust 25 件（追加 8 件・既存 17 件）、Node 11 件（サブテスト含む）、既存 GUI 23 件が成功。
 追加の比較テストは約 0.03 秒、GUI 全件は準備後約 18.4 秒。Rust・npm の依存追加はない。
-PR #6・#7 の各ブランチとの仮マージも競合なし。PR のブランチとメタデータは変更しない。
+PR #6・#7 の各ブランチとの仮マージも競合なし。
+
+## マージ前の統合検証
+
+PR #6・#7 を取り込んだ main を統合し、Linux Cloud で Rust 27 件・Node 12 件（サブテスト含む）・GUI 32 件が成功した。GUI 全件は約 27.5 秒。
+Linux・Windows の配布検証も、この統合コミットの CI で確認する。

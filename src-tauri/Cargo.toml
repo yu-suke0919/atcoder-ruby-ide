@@ -17,6 +17,7 @@ desktop = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-dialog"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 tempfile = "3"
 tauri = { version = "2", features = ["devtools"], optional = true }
 tauri-plugin-dialog = { version = "2", optional = true }
@@ -34,6 +35,3 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Securit
 [[test]]
 name = "contract"
 path = "../tests/contract.rs"
-
-[dev-dependencies]
-serde_json = "1"
