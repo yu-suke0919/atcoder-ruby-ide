@@ -72,11 +72,11 @@ async function launch(root) {
     return step;
   }
   try {
-    const assets = new Map([['/', 'index.html'], ...['index.html', 'renderer.js', 'bridge.js', 'styles.css'].map(name => [`/${name}`, name])]);
+    const assets = new Map([['/', 'index.html'], ...['index.html', 'renderer.js', 'bridge.js', 'sample-cases.mjs', 'styles.css'].map(name => [`/${name}`, name])]);
     app.server = http.createServer(async (req, res) => {
       const name = assets.get(new URL(req.url, 'http://localhost').pathname);
       if (!name) { res.writeHead(404).end(); return; }
-      res.setHeader('Content-Type', name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : 'text/html');
+      res.setHeader('Content-Type', /\.m?js$/.test(name) ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : 'text/html');
       res.setHeader('Content-Security-Policy', require('../../src-tauri/tauri.conf.json').app.security.csp);
       res.end(await readFile(path.join(repo, 'src', name)));
     });
