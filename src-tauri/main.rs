@@ -43,7 +43,7 @@ struct RubyInfo {
 async fn ruby_info(app: tauri::AppHandle) -> Result<RubyInfo, String> {
     let path = ruby_path(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let probe = Runner::new(Duration::from_secs(3), 16384);
+        let probe = Runner::new(Duration::from_secs(5), 16384);
         let result = probe
             .prepare(RunRequest {
                 code: "puts RUBY_DESCRIPTION".into(),

@@ -25,7 +25,7 @@ async function launch(root) {
   const started = performance.now();
   const binary = await ensureUiTestHostBinary();
   const prepared = performance.now();
-  const child = spawn(binary, [], { cwd: root, stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(binary, [], { cwd: root, env: { ...process.env, ATCODER_IDE_UI_TIMEOUT_MS: process.env.ATCODER_IDE_UI_TIMEOUT_MS || '2000' }, stdio: ['pipe', 'pipe', 'pipe'] });
   const pending = new Map();
   let sequence = 0;
   let stderr = '';
@@ -167,4 +167,6 @@ async function close(app) {
   await app.browser?.close();
   if (app.server) await new Promise(resolve => app.server.close(resolve));
 }
-module.exports = { ...native, ensureUiTestHostBinary, launch, dialogs, close };
+const requestClose = app => app.page.evaluate(() => window.__TAURI__.window.getCurrentWindow().close());
+
+module.exports = { ...native, requestClose, ensureUiTestHostBinary, launch, dialogs, close };

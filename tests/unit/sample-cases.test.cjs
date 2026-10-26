@@ -130,3 +130,93 @@ test('case limits and replacement errors preserve valid state and checkpoints', 
     assert.equal(cases.dirty, false);
   }
 });
+
+test('begin and finish manage results and comparisons independently of saved inputs', async () => {
+  const { SampleCases } = await load();
+  const cases = new SampleCases([sample(), sample('two', '', false)]);
+  const [first, second] = cases.snapshot(true);
+  Object.assign(first.item, { stdout: 'old', stderr: 'old error', durationMs: 99, difference: { line: 2 } });
+  cases.begin(first);
+  assert.equal(first.item.status, 'running');
+  assert.equal(first.item.comparison, 'running');
+  assert.equal(first.item.stdout, '');
+  assert.equal(first.item.stderr, '');
+  assert.equal(first.item.durationMs, null);
+  assert.equal(first.item.difference, null);
+  const difference = { line: 1, column: 2, actualLine: 'ab', expectedLine: 'ac' };
+  cases.finish(first, { status: 'completed', stdout: 'ab', stderr: '', exitCode: 0, durationMs: 7, comparison: false, difference });
+  assert.equal(first.item.comparison, 'mismatched');
+  assert.equal(first.item.difference, difference);
+  assert.equal(first.item.stdout, 'ab');
+  assert.equal(first.item.durationMs, 7);
+  cases.begin(first);
+  cases.finish(first, { status: 'completed', stdout: 'ac', stderr: '', exitCode: 0, durationMs: 8, comparison: true, difference: null });
+  assert.equal(first.item.comparison, 'matched');
+  assert.equal(first.item.difference, null);
+  cases.begin(second);
+  assert.equal(second.item.comparison, 'none');
+  cases.finish(second, { status: 'completed', stdout: 'two', stderr: '', exitCode: 0, durationMs: 1, comparison: null, difference: null });
+  assert.equal(second.item.comparison, 'none');
+  assert.equal(cases.dirty, false);
+});
+
+test('stale snapshots cannot restore verdicts on begin, finish or validation failure', async () => {
+  const { SampleCases } = await load();
+  for (const phase of ['before begin', 'before finish', 'before fail']) {
+    const cases = new SampleCases([sample()]);
+    const [snapshot] = cases.snapshot();
+    if (phase !== 'before begin') cases.begin(snapshot);
+    cases.current.expectedOutput = 'edited';
+    cases.invalidate();
+    if (phase === 'before begin') cases.begin(snapshot);
+    if (phase === 'before fail') cases.fail(snapshot, 'input exceeds 1 MiB');
+    else cases.finish(snapshot, { status: 'completed', stdout: 'old run', stderr: '', durationMs: 3, exitCode: 0, comparison: false, difference: { line: 1 } });
+    assert.equal(cases.current.comparison, 'pending', phase);
+    assert.equal(cases.current.difference, null, phase);
+    assert.equal(cases.current.expectedOutput, 'edited', phase);
+    assert.equal(cases.current.stderr, phase === 'before fail' ? 'input exceeds 1 MiB' : '', phase);
+  }
+});
+
+test('validation errors and abnormal exits retain errors and have no comparison detail', async () => {
+  const { SampleCases } = await load();
+  const cases = new SampleCases([sample(), sample('two', '', false)]);
+  for (const snapshot of cases.snapshot(true)) {
+    cases.begin(snapshot);
+    cases.fail(snapshot, '標準入力は 1 MiB 以下にしてください。');
+    assert.equal(snapshot.item.status, 'error');
+    assert.match(snapshot.item.stderr, /標準入力.*1 MiB/);
+    assert.equal(snapshot.item.comparison, snapshot.compare ? 'unavailable' : 'none');
+    assert.equal(snapshot.item.difference, null);
+  }
+  for (const status of ['failed', 'stopped', 'timeout', 'output-limit']) {
+    const [snapshot] = cases.snapshot();
+    cases.begin(snapshot);
+    cases.finish(snapshot, { status, stdout: 'partial', stderr: 'error', exitCode: null, durationMs: 5, comparison: null, difference: null });
+    assert.equal(cases.current.status, status);
+    assert.equal(cases.current.comparison, 'unavailable');
+    assert.equal(cases.current.difference, null);
+  }
+});
+
+test('cancel and clearing results use the current comparison setting and remove old output', async () => {
+  const { SampleCases } = await load();
+  const cases = new SampleCases([sample(), sample('two', '', false)]);
+  const snapshots = cases.snapshot(true);
+  for (const snapshot of snapshots) {
+    Object.assign(snapshot.item, { stdout: 'old', stderr: 'old error', status: 'completed', durationMs: 2, exitCode: 0, comparison: 'mismatched', difference: { line: 1 } });
+    snapshot.item.compare = !snapshot.compare;
+    cases.selected = cases.items.indexOf(snapshot.item);
+    cases.invalidate();
+    cases.cancel(snapshot);
+    assert.equal(snapshot.item.status, 'canceled');
+    assert.equal(snapshot.item.comparison, snapshot.item.compare ? 'pending' : 'none');
+    assert.equal(snapshot.item.stdout, '');
+    assert.equal(snapshot.item.stderr, '');
+    assert.equal(snapshot.item.durationMs, null);
+    assert.equal(snapshot.item.exitCode, null);
+    assert.equal(snapshot.item.difference, null);
+  }
+  cases.clear(true);
+  for (const item of cases.items) assert.equal(item.status, null);
+});

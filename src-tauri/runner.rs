@@ -1,3 +1,4 @@
+use crate::files::MAX_TEXT_BYTES;
 use crate::{decode_output, first_difference, process::ProcessTree, OutputDifference};
 use serde::Serialize;
 use std::io::{Read, Write};
@@ -82,7 +83,7 @@ impl Runner {
             ("標準入力", Some(request.stdin.as_str())),
             ("期待出力", request.expected_output.as_deref()),
         ] {
-            if text.is_some_and(|text| text.len() > 1048576) {
+            if text.is_some_and(|text| text.len() > MAX_TEXT_BYTES) {
                 return Err(format!("{name}は 1 MiB 以下にしてください。"));
             }
         }

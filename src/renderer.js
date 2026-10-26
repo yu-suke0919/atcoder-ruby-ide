@@ -18,6 +18,7 @@ let filePath = null;
 let running = false;
 let fileBusy = false;
 let rubyAvailable = false;
+let rubyChecking = false;
 let currentRun = null;
 let closing = false;
 let scrollFrame = null;
@@ -136,6 +137,7 @@ function updateCursor() {
 }
 
 function updateButtons() {
+  $('ruby-recheck').disabled = rubyChecking || running || closing;
   for (const id of ['run', 'run-all']) $(id).disabled = running || !rubyAvailable || fileBusy || closing;
   $('case-add').disabled = running || fileBusy || closing || cases.items.length >= MAX_CASES;
   $('case-remove').disabled = running || fileBusy || closing || cases.items.length === 1;
@@ -191,19 +193,16 @@ function saveFile(saveAs = false) {
 async function run(all = false) {
   if (running || fileBusy || closing || !rubyAvailable) return;
   const code = editor.value;
+  cases.clear(all);
   const queue = cases.snapshot(all);
-  for (const { item } of queue) {
-    Object.assign(item, { stdout: '', stderr: '', status: null, durationMs: null, comparison: item.compare ? 'pending' : 'none', difference: null });
-  }
   canceled = false;
   running = true;
   updateButtons();
   const pending = (async () => {
     for (const snapshot of queue) {
       const { item } = snapshot;
-      if (canceled) { item.status = 'canceled'; item.comparison = item.compare ? 'pending' : 'none'; continue; }
-      Object.assign(item, { stdout: '', stderr: '', status: 'running', durationMs: null });
-      if (item.revision === snapshot.revision) item.comparison = snapshot.compare ? 'running' : 'none';
+      if (canceled) { cases.cancel(snapshot); continue; }
+      cases.begin(snapshot);
       showResult();
       message('Ruby を実行しています。');
       try {
@@ -211,16 +210,10 @@ async function run(all = false) {
           item[stream] += text;
           if (item === cases.current) appendOutput(stream, text);
         });
-        Object.assign(item, { stdout: result.stdout, stderr: result.stderr, status: result.status, exitCode: result.exitCode, durationMs: result.durationMs });
-        if (item.revision === snapshot.revision && snapshot.compare) {
-          item.comparison = result.comparison === null ? 'unavailable' : result.comparison ? 'matched' : 'mismatched';
-          item.difference = result.difference;
-        }
+        cases.finish(snapshot, result);
         message(result.status === 'completed' ? '実行が完了しました。' : statusLabel(result.status, result.exitCode), ['failed', 'timeout', 'output-limit'].includes(result.status));
       } catch (error) {
-        item.status = 'error';
-        item.stderr = error.message;
-        if (item.revision === snapshot.revision && snapshot.compare) item.comparison = 'unavailable';
+        cases.fail(snapshot, error.message);
         message(error.message, true);
       }
       showResult();
@@ -288,8 +281,8 @@ $('new').addEventListener('click', () => fileAction(async () => {
   message('新しいファイルを作成しました。');
 }));
 $('clear-output').addEventListener('click', () => {
-  Object.assign(cases.current, { stdout: '', stderr: '', status: null, durationMs: null });
-  resetComparison(); showResult();
+  cases.clear();
+  showResult();
 });
 function editCase() {
   Object.assign(cases.current, { stdin: input.value, expectedOutput: expectedOutput.value, compare: compareOutput.checked });
@@ -336,10 +329,26 @@ ide.onCloseRequested(async event => {
   } finally { closing = false; updateButtons(); }
 }).catch(error => message(String(error), true));
 
-ide.rubyInfo().then((info) => {
-  rubyAvailable = info.available;
-  $('ruby-version').textContent = info.version;
-  $('ruby-version').title = info.version;
-  if (!info.available) message('Ruby を起動できません。インストール状態を確認してください。', true);
+async function checkRuby() {
+  if (rubyChecking || running || closing) return;
+  rubyChecking = true;
+  rubyAvailable = false;
+  $('ruby-version').textContent = 'Ruby を確認中…';
   updateButtons();
-}).catch((error) => { $('ruby-version').textContent = 'Ruby を起動できません'; message(String(error), true); });
+  try {
+    const info = await ide.rubyInfo();
+    rubyAvailable = info.available;
+    $('ruby-version').textContent = info.version;
+    $('ruby-version').title = info.version;
+    message(info.available ? 'Ruby を確認しました。' : 'Ruby を起動できません。インストール状態を確認して再確認してください。', !info.available);
+  } catch (error) {
+    $('ruby-version').textContent = 'Ruby を起動できません';
+    $('ruby-version').title = error.message;
+    message(error.message, true);
+  } finally {
+    rubyChecking = false;
+    updateButtons();
+  }
+}
+$('ruby-recheck').addEventListener('click', checkRuby);
+checkRuby();

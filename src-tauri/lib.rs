@@ -1,5 +1,6 @@
 mod comparison;
 mod document;
+mod files;
 mod process;
 mod runner;
 mod samples;
