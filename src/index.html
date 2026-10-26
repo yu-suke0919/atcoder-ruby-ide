@@ -50,12 +50,19 @@
           <pre id="stdout" data-testid="stdout" aria-label="標準出力" tabindex="0"></pre>
           <div class="output-heading error-heading"><span><span class="output-dot stderr-dot"></span>標準エラー</span><span>stderr</span></div>
           <pre id="stderr" data-testid="stderr" aria-label="標準エラー" tabindex="0"></pre>
-          <div class="run-summary" role="status"><span id="run-status" data-testid="run-status">実行する準備ができています</span><span id="comparison-status" data-testid="comparison-status" data-state="none">比較なし</span><span id="run-duration">— ms</span></div>
+          <div class="run-summary" role="status"><span id="run-status" data-testid="run-status">実行する準備ができています</span><button id="comparison-status" data-testid="comparison-status" class="comparison-button" data-state="none" disabled>比較なし</button><span id="run-duration">— ms</span></div>
         </section>
       </div>
     </div>
     <div class="run-toolbar"><div id="message" role="status">ヒント：Ctrl + Enter でも実行できます。</div><div class="run-actions"><button id="stop" class="stop-button" disabled><span aria-hidden="true">■</span> 停止</button><button id="run-all" class="stop-button">全件実行</button><button id="run" class="run-button"><span aria-hidden="true">&#9654;&#65038;</span> 実行</button></div></div>
   </main>
   <footer class="statusbar"><span><span class="status-dot"></span>ローカル実行</span><span>実行上限 5 秒 <span class="separator">·</span> 入力・出力上限 各 1 MiB</span></footer>
+  <dialog id="difference-dialog" aria-labelledby="difference-position" aria-describedby="difference-help">
+    <div class="difference-heading"><h2 id="difference-position" data-testid="difference-position"></h2><button id="difference-close">閉じる</button></div>
+    <p id="difference-help">改行を揃えた出力の、最初に異なる箇所です。色の付いた文字を確認してください。</p>
+    <h3>期待値</h3><pre id="difference-expected" data-testid="difference-expected" aria-label="不一致の期待値" tabindex="0"></pre>
+    <h3>実際値</h3><pre id="difference-actual" data-testid="difference-actual" aria-label="不一致の実際値" tabindex="0"></pre>
+    <p class="difference-legend">␠ 半角空白 · □ 全角空白 · ⇥ タブ<br>（空行）空の行 · （行なし）対応する行がない · （行末）行の終わり<br>差の前後最大40文字を表示し、省略部分は … で示します。列は文字単位で、タブも1列として数えます。</p>
+  </dialog>
 </body>
 </html>

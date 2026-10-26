@@ -9,7 +9,8 @@ pub fn compare_output(actual: &str, expected: &str) -> bool {
 
 /// A 1-based position and normalized lines. Columns count Unicode scalar values;
 /// a missing line is None, while an empty line is Some("").
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OutputDifference {
     pub line: usize,
     pub column: usize,
