@@ -16,7 +16,7 @@ const statusLabel = (status, exitCode) => ({ completed: '正常終了', failed: 
 let savedCode = sample;
 let filePath = null;
 let running = false;
-let fileBusy = false;
+let fileBusy = true;
 let rubyAvailable = false;
 let rubyChecking = false;
 let currentRun = null;
@@ -137,13 +137,13 @@ function updateCursor() {
 }
 
 function updateButtons() {
-  $('ruby-recheck').disabled = rubyChecking || running || closing;
+  $('ruby-recheck').disabled = rubyChecking || running || fileBusy || closing;
   for (const id of ['run', 'run-all']) $(id).disabled = running || !rubyAvailable || fileBusy || closing;
   $('case-add').disabled = running || fileBusy || closing || cases.items.length >= MAX_CASES;
   $('case-remove').disabled = running || fileBusy || closing || cases.items.length === 1;
   $('case-select').disabled = fileBusy || closing;
   $('stop').disabled = !running;
-  $('clear-output').disabled = running;
+  $('clear-output').disabled = running || fileBusy || closing;
   for (const id of ['new', 'open', 'save-as']) $(id).disabled = running || fileBusy || closing;
   $('save').disabled = fileBusy || closing || (running && !filePath);
   editor.readOnly = fileBusy || closing;
@@ -284,13 +284,13 @@ $('clear-output').addEventListener('click', () => {
   cases.clear();
   showResult();
 });
-function editCase() {
-  Object.assign(cases.current, { stdin: input.value, expectedOutput: expectedOutput.value, compare: compareOutput.checked });
+function editCase(field, value) {
+  cases.current[field] = value;
   resetComparison();
 }
-input.addEventListener('input', editCase);
-expectedOutput.addEventListener('input', editCase);
-compareOutput.addEventListener('change', editCase);
+input.addEventListener('input', () => editCase('stdin', input.value));
+expectedOutput.addEventListener('input', () => editCase('expectedOutput', expectedOutput.value));
+compareOutput.addEventListener('change', () => editCase('compare', compareOutput.checked));
 editor.addEventListener('input', () => { resetComparison(true); updateEditor(); });
 editor.addEventListener('click', updateCursor);
 editor.addEventListener('keyup', updateCursor);
@@ -313,6 +313,12 @@ document.addEventListener('keydown', (event) => {
   if (key === 'enter') run();
 });
 
+window.addEventListener('beforeunload', event => {
+  if (closing || (!fileBusy && !running && editor.value === savedCode && !cases.dirty)) return;
+  event.preventDefault();
+  event.returnValue = '';
+});
+
 showCase();
 updateEditor();
 updateButtons();
@@ -320,17 +326,21 @@ ide.onCloseRequested(async event => {
   event.preventDefault();
   if (closing) return;
   closing = true;
+  let destroyed = false;
   updateButtons();
   try {
     if (!await confirmDiscard(true)) return;
     await stop();
     await currentRun?.catch(() => {});
     await ide.destroy();
-  } finally { closing = false; updateButtons(); }
+    destroyed = true;
+  } finally {
+    if (!destroyed) { closing = false; updateButtons(); }
+  }
 }).catch(error => message(String(error), true));
 
 async function checkRuby() {
-  if (rubyChecking || running || closing) return;
+  if (rubyChecking || running || fileBusy || closing) return;
   rubyChecking = true;
   rubyAvailable = false;
   $('ruby-version').textContent = 'Ruby を確認中…';
@@ -351,4 +361,15 @@ async function checkRuby() {
   }
 }
 $('ruby-recheck').addEventListener('click', checkRuby);
-checkRuby();
+async function initialize() {
+  try {
+    await ide.newFile();
+    fileBusy = false;
+    updateButtons();
+    await checkRuby();
+  } catch (error) {
+    $('ruby-version').textContent = '初期化できません';
+    message(`初期化に失敗しました：${error.message}`, true);
+  }
+}
+initialize();

@@ -176,8 +176,16 @@ async fn document_save(
 }
 
 #[tauri::command]
-fn document_new(state: tauri::State<'_, AppState>) {
-    state.documents.lock().unwrap().reset();
+async fn document_new(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let runner = Arc::clone(&state.runner);
+    let documents = Arc::clone(&state.documents);
+    tauri::async_runtime::spawn_blocking(move || {
+        runner.stop();
+        runner.wait_idle();
+        documents.lock().unwrap().reset();
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

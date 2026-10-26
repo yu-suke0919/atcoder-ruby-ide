@@ -20,8 +20,10 @@ async function resetWorkspace() {
     await page.waitForFunction(() => document.getElementById('stop').disabled);
   }
   if (app.steps) app.steps.length = 0;
-  await page.evaluate(() => window.__TAURI__.core.invoke('document_new'));
-  await page.reload();
+  const acceptReload = dialog => dialog.accept();
+  page.on('dialog', acceptReload);
+  try { await page.reload(); }
+  finally { page.off('dialog', acceptReload); }
   await page.setViewportSize({ width: 1280, height: 850 });
   await page.waitForFunction(() => !document.getElementById('run').disabled);
 }
@@ -82,6 +84,96 @@ async function assertWorkspaceFits() {
     assert.ok(area.contentHeight >= area.lineHeight, `at least one complete line must fit in ${area.id}: ${details}`);
   }
 }
+
+async function confirmReload(accept) {
+  const prompt = page.waitForEvent('dialog');
+  await page.evaluate(() => { setTimeout(() => location.reload(), 0); });
+  const dialog = await prompt;
+  assert.equal(dialog.type(), 'beforeunload');
+  if (accept) {
+    const navigation = page.waitForEvent('load');
+    await dialog.accept();
+    await navigation;
+    await page.waitForFunction(() => !document.getElementById('run').disabled);
+  } else {
+    await dialog.dismiss();
+  }
+}
+
+test('R07: reloading a saved source makes Save choose a new path', async () => {
+  const original = path.join(root, 'reload-original.rb');
+  await writeFile(original, 'puts "original"');
+  await openDocument(original);
+  await page.reload();
+  await page.waitForFunction(() => !document.getElementById('run').disabled);
+  assert.equal(await page.locator('#file-path').textContent(), '無題.rb');
+  await fileOperation(() => page.locator('#save').click(), [cancelSave()]);
+  assert.equal(await readFile(original, 'utf8'), 'puts "original"');
+  const saved = path.join(root, 'reload-new.rb');
+  await fileOperation(() => page.locator('#save').click(), [save(saved)]);
+  assert.equal(await readFile(saved, 'utf8'), await page.locator('#code-editor').inputValue());
+  assert.equal(await readFile(original, 'utf8'), 'puts "original"');
+});
+
+test('R07: reload protects source edits and accepted reload starts clean', async () => {
+  await page.locator('#code-editor').click();
+  await page.locator('#code-editor').fill('puts "unsaved source"');
+  await confirmReload(false);
+  assert.equal(await page.locator('#code-editor').inputValue(), 'puts "unsaved source"');
+  await confirmReload(true);
+  await runAndWait();
+  assert.equal(await page.locator('#stdout').textContent(), '6 test\n');
+});
+
+test('R07: reload protects case-only edits', async () => {
+  await page.locator('#stdin').click();
+  await page.locator('#stdin').fill('unsaved case');
+  await confirmReload(false);
+  assert.equal(await page.locator('#stdin').inputValue(), 'unsaved case');
+  assert.equal(await page.locator('#code-editor').inputValue().then(code => code.includes('gets.to_i')), true);
+});
+
+test('R07: accepting reload stops an active run before enabling a new run', async () => {
+  await page.locator('#code-editor').fill('puts "ready"; loop { puts "streaming"; sleep 0.01 }');
+  await saveAs(path.join(root, 'reload-running.rb'));
+  await page.locator('#run').click();
+  await page.locator('#stdout').filter({ hasText: 'ready' }).waitFor();
+  await confirmReload(true);
+  assert.equal(await page.locator('#file-path').textContent(), '無題.rb');
+  await runAndWait();
+  assert.equal(await page.locator('#stdout').textContent(), '6 test\n');
+});
+
+test('R08: editing one case field preserves raw newlines in the other fields', async () => {
+  await page.locator('#code-editor').fill("puts STDIN.read.bytes.join(',')");
+  for (const [name, newline] of [['crlf', '\r\n'], ['cr', '\r']]) {
+    const input = `A${newline}B${newline}`;
+    const bytes = [...Buffer.from(input)].join(',');
+    const expected = bytes + newline;
+    const source = path.join(root, `raw-${name}.json`);
+    await writeFile(source, JSON.stringify({ cases: [{ stdin: input, expectedOutput: expected, compare: true }] }));
+    for (const field of ['expected-output', 'stdin', 'compare-output']) {
+      await loadCases(source);
+      if (field === 'compare-output') {
+        await page.locator('#compare-output').uncheck();
+        await page.locator('#compare-output').check();
+        assert.equal(await casesDirty(), false);
+      } else {
+        await page.locator(`#${field}`).fill('edited');
+      }
+      if (field !== 'stdin') {
+        await runAndWait();
+        assert.equal(await page.locator('#stdout').textContent(), bytes + '\n');
+      }
+      const saved = path.join(root, `raw-${name}-${field}.json`);
+      await saveCases(saved);
+      const [item] = JSON.parse(await readFile(saved, 'utf8')).cases;
+      assert.equal(item.stdin, field === 'stdin' ? 'edited' : input);
+      assert.equal(item.expectedOutput, field === 'expected-output' ? 'edited' : expected);
+      assert.equal(item.compare, true);
+    }
+  }
+});
 
 test('M12: Ruby detection can fail and recover without losing edits', async () => {
   await page.getByTestId('code-editor').fill('puts "recovered"');

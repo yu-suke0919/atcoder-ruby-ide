@@ -20,14 +20,19 @@ struct RunnerCleanup<'a> {
     worker: Option<std::thread::JoinHandle<()>>,
 }
 
-impl Drop for RunnerCleanup<'_> {
-    fn drop(&mut self) {
+impl RunnerCleanup<'_> {
+    fn stop_and_wait(&mut self) {
         self.runner.stop();
         self.runner.wait_idle();
         // The reservation is released before the terminal event is sent.
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
         }
+    }
+}
+impl Drop for RunnerCleanup<'_> {
+    fn drop(&mut self) {
+        self.stop_and_wait();
     }
 }
 #[derive(Deserialize)]
@@ -132,6 +137,7 @@ fn main() {
                 )?))
             }
             "document_new" => {
+                cleanup.stop_and_wait();
                 documents.reset();
                 Ok(Value::Null)
             }
@@ -143,8 +149,7 @@ fn main() {
                 serde_json::from_value(args["selected"].clone()).map_err(|e| e.to_string())?
             )?)),
             "shutdown" => {
-                runner.stop();
-                runner.wait_idle();
+                cleanup.stop_and_wait();
                 Ok(Value::Null)
             }
             other => Err(format!("Unknown test command: {other}")),

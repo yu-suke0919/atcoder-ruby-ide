@@ -112,6 +112,7 @@ async function launch(root) {
       class Channel { constructor() { this.id = ++id; channels.set(this.id, this); } }
       window.__testDispatch = (id, event) => {
         const channel = channels.get(id);
+        if (!channel) return; // A reload discards channels from the previous page.
         channel.onmessage(event);
         if (event.type !== 'output') channels.delete(id);
       };

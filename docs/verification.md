@@ -68,3 +68,10 @@ Electron 版での過去の検証は各 PR とコミット履歴を参照する�
 - 初期画面のスクリーンショットを確認した。
 
 Windows は [run 40315438846 の Windows ジョブ](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/40315438846/job/121546745132) で Rust 30 件・Node 24 件・GUI 40 件が成功した。devtools feature なしの CDP 接続、実時間 5 秒の停止、OS の終了要求、NSIS スモーク、配布前照合を含む。最終コミットの両 OS の結果は [PR #10 の Checks](https://github.com/yu-suke0919/atcoder-ruby-ide/pull/10/checks) を参照する。
+
+
+## 再読み込み・ケース改行の保護
+
+2026-10-26 の Linux Cloud で `cargo fmt --all --check`、Rust 31 件、Node 24 件（サブテスト含む）、GUI 45 件が成功した。GUI 全件は準備後約 35.6 秒。
+追加した回帰テストで再読み込み後の新しい保存先選択、ソース／ケースの離脱確認、実行中の再読み込みと再実行、CRLF / CR の実行バイト列と JSON 保存を確認した。逐次出力が続く最中の再読み込みも個別に確認した。
+Windows の離脱確認・実ダイアログ・NSIS・配布前照合は PR の CI/Checks を参照する。
