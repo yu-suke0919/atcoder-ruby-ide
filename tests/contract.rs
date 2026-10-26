@@ -75,6 +75,84 @@ fn ruby() -> PathBuf {
         .unwrap_or_else(|| "ruby".into())
         .into()
 }
+
+#[test]
+fn m15_run_result_serializes_the_same_comparison_and_difference() {
+    for (code, expected, comparison, difference) in [
+        (
+            "print '日😀A'",
+            Some("日😀B"),
+            Some(false),
+            serde_json::json!({"line":1,"column":3,"actualLine":"日😀A","expectedLine":"日😀B"}),
+        ),
+        (
+            "print 'ok'",
+            Some("ok\n\n"),
+            Some(false),
+            serde_json::json!({"line":2,"column":1,"actualLine":null,"expectedLine":""}),
+        ),
+        (
+            "",
+            Some("x"),
+            Some(false),
+            serde_json::json!({"line":1,"column":1,"actualLine":"","expectedLine":"x"}),
+        ),
+        ("puts 'ok'", Some("ok"), Some(true), serde_json::Value::Null),
+        ("print 'actual'", None, None, serde_json::Value::Null),
+        (
+            "print 'actual'; exit 1",
+            Some("expected"),
+            None,
+            serde_json::Value::Null,
+        ),
+    ] {
+        let mut req = request(code, "");
+        req.expected_output = expected.map(str::to_owned);
+        let result = Runner::new(Duration::from_secs(5), 1048576)
+            .prepare(req)
+            .unwrap()
+            .execute(&ruby(), |_| {})
+            .unwrap();
+        assert_eq!(result.comparison, comparison);
+        assert_eq!(result.clone().difference, result.difference);
+        let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(json["difference"], difference);
+        assert_eq!(json["comparison"], serde_json::json!(comparison));
+    }
+}
+
+#[test]
+fn m15_stopped_and_limited_runs_have_no_comparison_details() {
+    let mut req = request("loop {}", "");
+    req.expected_output = Some("expected".into());
+    let runner = Runner::new(Duration::from_secs(5), 1048576);
+    let prepared = runner.prepare(req).unwrap();
+    runner.stop();
+    let result = prepared.execute(&ruby(), |_| {}).unwrap();
+    assert_eq!(result.status, "stopped");
+    assert_eq!(result.comparison, None);
+    assert_eq!(result.difference, None);
+    for (code, timeout, limit, status) in [
+        ("loop {}", Duration::from_millis(200), 1048576, "timeout"),
+        (
+            "loop { print 'x' * 128 }",
+            Duration::from_secs(5),
+            32,
+            "output-limit",
+        ),
+    ] {
+        let mut req = request(code, "");
+        req.expected_output = Some("expected".into());
+        let result = Runner::new(timeout, limit)
+            .prepare(req)
+            .unwrap()
+            .execute(&ruby(), |_| {})
+            .unwrap();
+        assert_eq!(result.status, status);
+        assert_eq!(result.comparison, None);
+        assert_eq!(result.difference, None);
+    }
+}
 fn request(code: &str, stdin: &str) -> RunRequest {
     RunRequest {
         code: code.into(),

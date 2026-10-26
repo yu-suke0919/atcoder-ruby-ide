@@ -5,10 +5,11 @@ const editor = $('code-editor');
 const input = $('stdin');
 const expectedOutput = $('expected-output');
 const compareOutput = $('compare-output');
+const differenceDialog = $('difference-dialog');
 const sample = 'a = gets.to_i\nb, c = gets.split.map(&:to_i)\ns = gets.chomp\n\nputs "#{a + b + c} #{s}"\n';
 editor.value = sample;
 function newCase(stdin = '', expectedOutput = '', compare = true) {
-  return { stdin, expectedOutput, compare, revision: 0, comparison: compare ? 'pending' : 'none', stdout: '', stderr: '', status: null, durationMs: null };
+  return { stdin, expectedOutput, compare, revision: 0, comparison: compare ? 'pending' : 'none', difference: null, stdout: '', stderr: '', status: null, durationMs: null };
 }
 let cases = [newCase('1\n2 3\ntest\n', '6 test\n', false)];
 const caseData = () => cases.map(({ stdin, expectedOutput, compare }) => ({ stdin, expectedOutput, compare }));
@@ -35,7 +36,48 @@ async function confirmDiscard(includeCases = false) {
 function showComparison(state) {
   $('comparison-status').textContent = comparisonLabels[state];
   $('comparison-status').dataset.state = state;
+  const available = state === 'mismatched' && currentCase().difference !== null;
+  $('comparison-status').disabled = !available;
+  $('comparison-status').setAttribute('aria-label', available ? '不一致の詳細を表示' : comparisonLabels[state]);
+  $('comparison-status').title = available ? 'クリックして最初の不一致を確認' : '';
+  if (!available) {
+    differenceDialog.close();
+    for (const id of ['difference-position', 'difference-actual', 'difference-expected']) $(id).replaceChildren();
+  }
 }
+
+function showDifferenceLine(target, value, column) {
+  const mark = document.createElement('mark');
+  if (value === null || value === '') {
+    mark.textContent = value === null ? '（行なし）' : '（空行）';
+    target.replaceChildren(mark);
+    return;
+  }
+  const characters = Array.from(value);
+  const index = column - 1;
+  const start = Math.max(0, index - 40);
+  const end = Math.min(characters.length, index + 41);
+  const visible = text => text.replaceAll(' ', '␠').replaceAll('　', '□').replaceAll('\t', '⇥');
+  const whitespace = { ' ': '␠（半角空白）', '　': '□（全角空白）', '\t': '⇥（タブ）' };
+  mark.textContent = index < characters.length ? whitespace[characters[index]] || characters[index] : '（行末）';
+  if (index < characters.length) mark.title = `U+${characters[index].codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
+  target.replaceChildren(
+    document.createTextNode((start > 0 ? '…' : '') + visible(characters.slice(start, index).join(''))),
+    mark,
+    document.createTextNode(visible(characters.slice(index + 1, end).join('')) + (end < characters.length ? '…' : '')),
+  );
+}
+
+function openDifference() {
+  const detail = currentCase().difference;
+  if (currentCase().comparison !== 'mismatched' || !detail) return;
+  $('difference-position').textContent = `最初の不一致：${detail.line} 行 ${detail.column} 列`;
+  showDifferenceLine($('difference-expected'), detail.expectedLine, detail.column);
+  showDifferenceLine($('difference-actual'), detail.actualLine, detail.column);
+  differenceDialog.showModal();
+}
+$('comparison-status').addEventListener('click', openDifference);
+$('difference-close').addEventListener('click', () => differenceDialog.close());
 
 function updateCaseList() {
   $('case-select').replaceChildren(...cases.map((item, index) => {
@@ -62,6 +104,7 @@ function showResult() {
 }
 
 function showCase() {
+  differenceDialog.close();
   const item = currentCase();
   input.value = item.stdin;
   expectedOutput.value = item.expectedOutput;
@@ -75,6 +118,7 @@ function resetComparison(all = false) {
   for (const item of all ? cases : [currentCase()]) {
     item.revision++;
     item.comparison = item.compare ? 'pending' : 'none';
+    item.difference = null;
   }
   expectedOutput.disabled = !currentCase().compare;
   showComparison(currentCase().comparison);
@@ -160,7 +204,7 @@ async function run(all = false) {
   const code = editor.value;
   const queue = (all ? cases : [currentCase()]).map(item => ({ item, stdin: item.stdin, expectedOutput: item.expectedOutput, compare: item.compare, revision: item.revision }));
   for (const { item } of queue) {
-    Object.assign(item, { stdout: '', stderr: '', status: null, durationMs: null, comparison: item.compare ? 'pending' : 'none' });
+    Object.assign(item, { stdout: '', stderr: '', status: null, durationMs: null, comparison: item.compare ? 'pending' : 'none', difference: null });
   }
   canceled = false;
   running = true;
@@ -179,7 +223,10 @@ async function run(all = false) {
           if (item === currentCase()) appendOutput(stream, text);
         });
         Object.assign(item, { stdout: result.stdout, stderr: result.stderr, status: result.status, exitCode: result.exitCode, durationMs: result.durationMs });
-        if (item.revision === snapshot.revision && snapshot.compare) item.comparison = result.comparison === null ? 'unavailable' : result.comparison ? 'matched' : 'mismatched';
+        if (item.revision === snapshot.revision && snapshot.compare) {
+          item.comparison = result.comparison === null ? 'unavailable' : result.comparison ? 'matched' : 'mismatched';
+          item.difference = result.difference;
+        }
         message(result.status === 'completed' ? '実行が完了しました。' : statusLabel(result.status, result.exitCode), ['failed', 'timeout', 'output-limit'].includes(result.status));
       } catch (error) {
         item.status = 'error';
@@ -280,6 +327,7 @@ document.addEventListener('keydown', (event) => {
   if (!event.ctrlKey && !event.metaKey) return;
   const key = event.key.toLowerCase();
   if (['s', 'o', 'enter'].includes(key)) event.preventDefault();
+  if (differenceDialog.open) return;
   if (key === 's') saveFile(event.shiftKey);
   if (key === 'o') openFile();
   if (key === 'enter') run();

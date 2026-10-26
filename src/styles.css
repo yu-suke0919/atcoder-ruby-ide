@@ -74,6 +74,18 @@ pre:empty::before { content: "実行結果がここに表示されます"; color
 #comparison-status { white-space: nowrap; }
 #comparison-status[data-state="matched"] { color: #b9ebd7; }
 #comparison-status[data-state="mismatched"] { color: #f5a3b2; }
+.comparison-button { padding: 0; border: 0; font: inherit; color: inherit; }
+.comparison-button:disabled { opacity: 1; }
+.comparison-button:enabled { text-decoration: underline; text-underline-offset: 3px; }
+#difference-dialog { width: min(720px, calc(100vw - 36px)); max-height: calc(100vh - 36px); padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); overflow: auto; }
+#difference-dialog::backdrop { background: #000a; }
+.difference-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.difference-heading h2 { margin: 0; font-size: 16px; }
+#difference-close { border-color: var(--border); }
+#difference-dialog h3 { margin: 16px 0 6px; }
+#difference-dialog pre { max-height: 144px; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: #10141c; }
+#difference-dialog mark { background: #744653; color: #fff1f4; border-radius: 2px; }
+#difference-help, .difference-legend { font-size: 11px; line-height: 1.7; color: var(--muted); }
 #run-duration { white-space: nowrap; font-family: Consolas, monospace; }
 .run-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 77px; flex-shrink: 0; }
 #message { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }

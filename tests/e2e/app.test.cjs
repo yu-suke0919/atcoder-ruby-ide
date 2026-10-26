@@ -160,13 +160,14 @@ test('M11: edits and clearing results reset the comparison', async () => {
 test('M11: do not show a stale comparison when expectations change during a run', async () => {
   await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
   await page.getByTestId('code-editor').fill('puts "ready"; sleep 0.5');
-  await page.getByTestId('expected-output').fill('ready');
+  await page.getByTestId('expected-output').fill('old expectation');
   await page.getByRole('button', { name: '実行', exact: true }).click();
   await page.getByTestId('stdout').filter({ hasText: 'ready' }).waitFor();
   assert.equal(await page.getByTestId('comparison-status').textContent(), '比較中…');
   await page.getByTestId('expected-output').fill('changed');
   await page.getByTestId('run-status').filter({ hasText: '正常終了' }).waitFor();
   assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
+  assert.equal(await page.getByTestId('comparison-status').isDisabled(), true);
   await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
 });
 
@@ -178,6 +179,7 @@ test('M11: matching stdout from a failed process is not a passing comparison', a
   await page.getByTestId('run-status').filter({ hasText: 'エラー終了' }).waitFor();
   assert.equal(await page.getByTestId('stdout').textContent(), 'same');
   assert.equal(await page.getByTestId('comparison-status').textContent(), '判定なし');
+  assert.equal(await page.getByTestId('comparison-status').isDisabled(), true);
   await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
 });
 
@@ -225,6 +227,7 @@ test('M06: stop a running program from the UI', async () => {
   await page.getByRole('button', { name: '停止', exact: true }).click();
   await page.getByTestId('run-status').filter({ hasText: '停止しました' }).waitFor();
   assert.equal(await page.getByTestId('comparison-status').textContent(), '判定なし');
+  assert.equal(await page.getByTestId('comparison-status').isDisabled(), true);
   assert.equal(await page.getByRole('button', { name: '実行', exact: true }).isEnabled(), true);
   await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
 });
@@ -247,10 +250,12 @@ test('M06/M08: show timeout and output-limit reasons in the UI', async () => {
   await page.getByRole('button', { name: '実行', exact: true }).click();
   await page.getByTestId('run-status').filter({ hasText: '時間制限で停止' }).waitFor({ timeout: 10000 });
   assert.equal(await page.getByTestId('comparison-status').textContent(), '判定なし');
+  assert.equal(await page.getByTestId('comparison-status').isDisabled(), true);
   await page.getByTestId('code-editor').fill('loop { puts "x" * 8192 }');
   await page.getByRole('button', { name: '実行', exact: true }).click();
   await page.getByTestId('run-status').filter({ hasText: '出力上限で停止' }).waitFor();
   assert.equal(await page.getByTestId('comparison-status').textContent(), '判定なし');
+  assert.equal(await page.getByTestId('comparison-status').isDisabled(), true);
   assert.ok(Buffer.byteLength(await page.getByTestId('stdout').textContent()) <= 1048576);
   await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
 });
@@ -461,8 +466,8 @@ test('M13: a batch uses starting code and inputs without restoring stale compari
   await page.getByTestId('code-editor').fill(`puts "ready"; sleep 0.01 until File.exist?(${JSON.stringify(gate.replaceAll('\\', '/'))}); puts STDIN.read.upcase`);
   await page.getByTestId('stdin').fill('one');
   await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
-  await page.getByTestId('expected-output').fill('ready\nONE');
-  await addCase('two', 'ready\nTWO');
+  await page.getByTestId('expected-output').fill('wrong first');
+  await addCase('two', 'wrong second');
   await selectCase(1);
   try {
     await page.getByRole('button', { name: '全件実行', exact: true }).click();
@@ -476,8 +481,10 @@ test('M13: a batch uses starting code and inputs without restoring stale compari
     await page.getByTestId('cases-summary').filter({ hasText: '完了 2 / 2' }).waitFor();
     assert.equal(await page.getByTestId('stdout').textContent(), 'ready\nTWO\n');
     assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
+    assert.equal(await page.getByTestId('comparison-status').isDisabled(), true);
     await selectCase(1);
     assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
+    assert.equal(await page.getByTestId('comparison-status').isDisabled(), true);
   } finally { await writeFile(gate, 'go'); }
   await resetCases();
 });
@@ -576,6 +583,144 @@ test('M13: validation errors remain visible after a later case succeeds', async 
   await selectCase(2);
   assert.equal(await page.getByTestId('stdout').textContent(), 'valid\n');
   await resetCases();
+  await page.getByTestId('stdin').fill('');
+});
+
+async function mismatch(actual, expected) {
+  await page.getByTestId('code-editor').fill('print STDIN.read');
+  await page.getByTestId('stdin').fill(actual);
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
+  await page.getByTestId('expected-output').fill(expected);
+  await runAndWait();
+  await page.getByTestId('comparison-status').filter({ hasText: /^不一致$/ }).waitFor();
+}
+async function openDifference() {
+  await page.getByTestId('comparison-status').click();
+  await page.getByRole('dialog').waitFor();
+}
+async function closeDifference() {
+  await page.getByRole('button', { name: '閉じる', exact: true }).click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+}
+
+test('M15: show Unicode positions and render output safely as text', async () => {
+  await mismatch('ok\n日😀A', 'ok\n日😀B');
+  await openDifference();
+  assert.equal(await page.getByTestId('difference-position').textContent(), '最初の不一致：2 行 3 列');
+  assert.equal(await page.getByTestId('difference-actual').locator('mark').textContent(), 'A');
+  assert.equal(await page.getByTestId('difference-expected').locator('mark').textContent(), 'B');
+  await closeDifference();
+  await mismatch('👩‍💻A', '👩‍💻B');
+  await openDifference();
+  assert.equal(await page.getByTestId('difference-position').textContent(), '最初の不一致：1 行 4 列');
+  assert.equal(await page.getByTestId('difference-actual').locator('mark').textContent(), 'A');
+  await closeDifference();
+  await mismatch('<img><script>alert(1)</script>', '<img><script>alert(2)</script>');
+  await openDifference();
+  assert.match(await page.getByTestId('difference-actual').textContent(), /<img/);
+  assert.equal(await page.getByRole('dialog').locator('img, script').count(), 0);
+  await closeDifference();
+});
+
+test('M15: whitespace, empty lines and missing lines have distinct labels', async () => {
+  for (const [actual, expected, actualMark, expectedMark] of [
+    ['a ', 'a', '␠（半角空白）', '（行末）'],
+    ['\t', ' ', '⇥（タブ）', '␠（半角空白）'],
+    ['　', ' ', '□（全角空白）', '␠（半角空白）'],
+    ['␠', ' ', '␠', '␠（半角空白）'],
+    ['ok', 'ok\n\n', '（行なし）', '（空行）'],
+    ['\n\n', '', '（空行）', '（行なし）'],
+    ['', 'x', '（空行）', 'x'],
+  ]) {
+    await mismatch(actual, expected);
+    await openDifference();
+    assert.equal(await page.getByTestId('difference-actual').locator('mark').textContent(), actualMark);
+    assert.equal(await page.getByTestId('difference-expected').locator('mark').textContent(), expectedMark);
+    await closeDifference();
+  }
+});
+
+test('M15: case details survive selection and saving, then invalidate independently', async () => {
+  await page.getByTestId('code-editor').fill('print STDIN.read');
+  await saveAs(path.join(root, '不一致の詳細.rb'));
+  await mismatch('one', 'ONE');
+  await addCase('two', 'TWO');
+  await runAndWait();
+  await selectCase(1);
+  await page.keyboard.press('Control+s');
+  await page.waitForFunction(() => !document.getElementById('save').disabled);
+  const caseFile = path.join(root, 'detail-cases.json');
+  await saveCases(caseFile);
+  assert.ok(JSON.parse(await readFile(caseFile, 'utf8')).cases.every(item => !('difference' in item)));
+  assert.equal(await casesDirty(), false);
+  await openDifference();
+  assert.equal(await page.getByTestId('difference-actual').textContent(), 'one');
+  await closeDifference();
+  assert.equal(await casesDirty(), false);
+  await page.getByTestId('expected-output').fill('edited');
+  assert.equal(await page.getByTestId('comparison-status').isDisabled(), true);
+  await selectCase(2);
+  await openDifference();
+  assert.equal(await page.getByTestId('difference-actual').textContent(), 'two');
+  await closeDifference();
+  await page.getByTestId('code-editor').fill('print "changed"');
+  assert.equal(await page.getByTestId('comparison-status').isDisabled(), true);
+  await selectCase(1);
+  assert.equal(await page.getByTestId('comparison-status').isDisabled(), true);
+  await resetCases();
+});
+
+test('M15: edits, clearing and a later matching run remove old details', async () => {
+  for (const change of [
+    () => page.getByTestId('stdin').fill('changed'),
+    () => page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck(),
+    () => page.getByRole('button', { name: 'クリア', exact: true }).click(),
+  ]) {
+    await mismatch('actual', 'expected');
+    await change();
+    assert.equal(await page.getByTestId('comparison-status').isDisabled(), true);
+    assert.equal(await page.getByRole('dialog').isVisible(), false);
+  }
+  await mismatch('actual', 'expected');
+  await page.getByTestId('expected-output').fill('actual');
+  await runAndWait();
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '一致');
+  assert.equal(await page.getByTestId('comparison-status').isDisabled(), true);
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
+});
+
+test('M15: keyboard details fit the minimum window and larger line boxes', async () => {
+  await mismatch('日😀A', '日😀B');
+  await page.setViewportSize({ width: 900, height: 650 });
+  try {
+    await page.evaluate(() => { document.body.style.lineHeight = '1.8'; });
+    await page.getByTestId('comparison-status').focus();
+    await page.getByTestId('comparison-status').press('Enter');
+    await page.getByRole('dialog').waitFor();
+    const bounds = await page.getByRole('dialog').boundingBox();
+    assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 900 && bounds.y + bounds.height <= 650);
+    await assertWorkspaceFits();
+    await page.keyboard.press('Escape');
+    await page.getByRole('dialog').waitFor({ state: 'hidden' });
+    assert.equal(await page.getByTestId('comparison-status').isEnabled(), true);
+  } finally {
+    await page.evaluate(() => { document.getElementById('difference-dialog').close(); document.body.style.lineHeight = ''; });
+    await page.setViewportSize({ width: 1280, height: 850 });
+  }
+});
+
+test('M15: long lines show bounded context around the correct Unicode column', async () => {
+  const prefix = 'あ'.repeat(65536);
+  await mismatch(`${prefix}A`, `${prefix}B`);
+  await openDifference();
+  assert.equal(await page.getByTestId('difference-position').textContent(), '最初の不一致：1 行 65537 列');
+  for (const id of ['difference-actual', 'difference-expected']) {
+    assert.ok((await page.getByTestId(id).textContent()).length < 150);
+    assert.match(await page.getByTestId(id).textContent(), /^…/);
+  }
+  assert.equal(await page.getByTestId('difference-actual').locator('mark').textContent(), 'A');
+  await closeDifference();
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
   await page.getByTestId('stdin').fill('');
 });
 

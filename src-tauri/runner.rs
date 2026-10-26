@@ -1,4 +1,4 @@
-use crate::{compare_output, decode_output, process::ProcessTree};
+use crate::{decode_output, first_difference, process::ProcessTree, OutputDifference};
 use serde::Serialize;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -29,6 +29,7 @@ pub struct RunResult {
     pub exit_code: Option<i32>,
     pub duration_ms: u64,
     pub comparison: Option<bool>,
+    pub difference: Option<OutputDifference>,
     pub output_limit_reached: bool,
 }
 
@@ -145,6 +146,7 @@ impl PreparedRun {
                 exit_code: None,
                 duration_ms: 0,
                 comparison: None,
+                difference: None,
                 output_limit_reached: false,
             });
         }
@@ -250,13 +252,12 @@ impl PreparedRun {
         } else {
             "failed"
         });
-        let comparison = if status == "completed" {
-            self.request
-                .expected_output
-                .as_deref()
-                .map(|expected| compare_output(&stdout, expected))
-        } else {
-            None
+        let (comparison, difference) = match (status, self.request.expected_output.as_deref()) {
+            ("completed", Some(expected)) => {
+                let difference = first_difference(&stdout, expected);
+                (Some(difference.is_none()), difference)
+            }
+            _ => (None, None),
         };
         Ok(RunResult {
             status: status.into(),
@@ -265,6 +266,7 @@ impl PreparedRun {
             exit_code: exit.code(),
             duration_ms: started.elapsed().as_millis() as u64,
             comparison,
+            difference,
             output_limit_reached: capped,
         })
     }
