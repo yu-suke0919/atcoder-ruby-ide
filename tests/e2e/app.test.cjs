@@ -22,6 +22,7 @@ async function resetWorkspace() {
   if (app.steps) app.steps.length = 0;
   await page.evaluate(() => window.__TAURI__.core.invoke('document_new'));
   await page.reload();
+  await page.setViewportSize({ width: 1280, height: 850 });
   await page.waitForFunction(() => !document.getElementById('run').disabled);
 }
 beforeEach(resetWorkspace);
