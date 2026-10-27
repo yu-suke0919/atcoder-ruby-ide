@@ -57,7 +57,7 @@ async function newDocument() {
   const dirty = await page.evaluate(() => document.getElementById('save-state').textContent.includes('変更'));
   if (dirty) await fileOperation(() => page.getByRole('button', { name: '新規', exact: true }).click(), [discard(true)]);
   else await page.getByRole('button', { name: '新規', exact: true }).click();
-  await page.waitForFunction(() => document.getElementById('code-editor').value === '');
+  await page.waitForFunction(() => !document.getElementById('new').disabled && document.getElementById('code-editor').value === '');
 }
 async function runAndWait(label = '正常終了') {
   await page.getByRole('button', { name: '実行', exact: true }).click();
