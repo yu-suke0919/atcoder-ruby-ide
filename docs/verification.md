@@ -140,4 +140,15 @@ Windows CI の初回では、HTML固定データがCRLFでチェックアウト�
 - GUIで数式、原文へのフォールバック、画像の幅調整・拡大とEsc・キーボード操作、再読み込み後の復元、非表示中の再取得後の本文スクロールと編集状態の保持を確認した。900×650と1,440×900を含む。
 - 最初の全GUI 60件では58件が成功し、既存の出力上限テストが以前と同じCloud現象で時間制限になった。追加の画像テストがアプリ終了テストの後に並んでいたため順序を修正し、画像テストと終了テストの2件を再実行して成功した。両OSの全GUI・Windows配布検証はPRの最終CIを参照する。
 - 許可済みのAtCoder本体では、公開3問の全7サンプルの実Ruby比較、再取得と保存復元、tessoku-bookの一覧と先頭2問の固定保存・修復が成功した。GUIでABC001 Aの取得・全サンプル実行・保存と復元も成功した。
-- `img.atcoder.jp` はCloudの許可先に含まれず、画像配信先へのHTTPS接続がプロキシから403で拒否された。この環境での実画像ダウンロードは未検証。ローカルHTTP・実画像データのテストは成功し、明示実行用の `live_atcoder_media_snapshot` を追加した。画像の実サイト検証には `atcoder.jp` と `img.atcoder.jp` の両方の許可が必要。
+- 初回は `img.atcoder.jp` がCloudの許可先に含まれず、プロキシから403で拒否されたため、実画像ダウンロードを検証できなかった。その後、両接続先を許可した環境で下記の確認を完了した。
+
+## 実画像の取得と通信遮断後の復元
+
+2026-10-27（日本時間）、`atcoder.jp` と `img.atcoder.jp` を許可したLinux Cloud（Rust 1.99.1、Node.js 24.19.0、Ruby 3.4.12、Chromium 154）で確認した。
+
+- 既存の `live_atcoder_media_snapshot` が成功した。ABC243 C「Collision 2」の実画像 `https://img.atcoder.jp/ghi/f33104f8bc05a920f2b74ead8ad1e3d2.png`（PNG、14,660 bytes、585×573）を取得し、本文と同じJSONへの保存・キャッシュ読込・再取得が成功した。画像取得の本番実装に追加修正は不要だった。
+- `tests/e2e/atcoder-live.cjs` に実画像のGUIテストを追加した。保存JSONと画面のデータ・実寸が一致し、数式と画像の表示、900×650・1,440×900での幅調整・拡大・Esc、再取得後の解答・編集済みケースの保持が成功した。
+- 別のRustホストをローカルの拒否専用プロキシで起動し、ブラウザーもオフラインにした。保存済み本文・画像・解答・ケースを通信試行0件で開き、画像のデコードと拡大も成功した。再取得の接続1件はプロキシが拒否し、問題JSON・解答・ケースの保存内容と表示中の画像を保持した。
+- テスト用ホストへの環境変数指定を実装する前に、拒否専用プロキシが使われないことを新テストの失敗で確認した。指定をテスト用Rustホストだけに渡す最小変更後、`npm run test:atcoder-live` のRust 3件・GUI 2件が成功した。通常のテスト・CIは実サイトへ接続しない。
+- `npm test` のRust 56件・Node 24件、`npm run test:e2e` の全GUI 60件（約59.7秒）、`cargo fmt --all --check` が成功した。既存の出力上限テストも成功した。Windowsの実画像GUI確認はこのLinux環境では行っていない。
+- 画面は `test-results/atcoder-media-live-1440.png`、`test-results/atcoder-media-live-900.png`、`test-results/atcoder-media-live-preview-1440.png`、`test-results/atcoder-media-live-preview-900.png`、`test-results/atcoder-media-offline-preview.png` に保存した。

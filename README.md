@@ -87,7 +87,7 @@ npm run test:e2e
 
 共通テストは Rust による実際の Ruby プロセス・ファイル操作と、Node によるケース状態・アーカイブ検証です。
 ケース状態だけなら `node --test --test-isolation=none tests/unit/sample-cases.test.cjs` で Ruby・ブラウザーなしで確認できます。
-AtCoder の実サイトとの連携は、通信できる開発環境で `npm run test:atcoder-live` を明示実行します。公開3問の取得・再取得と実Rubyでの全サンプル比較に加え、tessoku-bookの151問の一覧と先頭2問の固定保存・復元・破損原本の個別取り直しを確認します。画像付きのABC243 Cでは本文・画像の保存、オフライン読込・再取得を確認します。全151問の取得は `ATCODER_COLLECTION_LIVE_ALL=1 cargo test --locked --test library live_atcoder_collection -- --ignored --nocapture` で明示実行できます。CIを含む通常の自動テストではAtCoderへ接続しません。依存パッケージ・Ruby・ブラウザーなどの初回取得には通信が必要です。画像を含む実サイトテストには `atcoder.jp` と `img.atcoder.jp` の通信許可が必要です。画面の実サイトテストは開発用RubyとChromiumを使います。
+AtCoder の実サイトとの連携は、通信できる開発環境で `npm run test:atcoder-live` を明示実行します。公開3問の取得・再取得と実Rubyでの全サンプル比較に加え、tessoku-bookの151問の一覧と先頭2問の固定保存・復元・破損原本の個別取り直しを確認します。画像付きのABC243 Cでは実画像の取得・保存・再取得、900×650と1,440×900での表示・拡大を確認します。再起動したRustホストとブラウザーの通信を遮断し、保存済み本文・画像・解答・ケースの復元と、再取得失敗時の原本保持も確認します。全151問の取得は `ATCODER_COLLECTION_LIVE_ALL=1 cargo test --locked --test library live_atcoder_collection -- --ignored --nocapture` で明示実行できます。CIを含む通常の自動テストではAtCoderへ接続しません。依存パッケージ・Ruby・ブラウザーなどの初回取得には通信が必要です。画像を含む実サイトテストには `atcoder.jp` と `img.atcoder.jp` の通信許可が必要です。画面の実サイトテストは開発用RubyとChromiumを使います。
 Linux では `npm run test:e2e` がテスト専用 Rust ホストをビルドし、HTTP 配信した本番画面を headless Chromium で操作します。
 実 Ruby・ソースとケースのファイル I/O・実行制御・比較は本番の Rust ライブラリを共有し、Tauri 通信・ウィンドウ操作・ダイアログ応答をテスト用に差し替えます。
 通常の GUI テストでは、問題・問題集の登録・取得・再取得・個別取り直しの成功／失敗も、必要に応じてブリッジの応答と保存データをテスト側で用意します。HTTP・HTML解析・原本保存の処理は Rust テストで検証します。
