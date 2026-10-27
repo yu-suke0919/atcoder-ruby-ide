@@ -152,3 +152,13 @@ Windows CI の初回では、HTML固定データがCRLFでチェックアウト�
 - テスト用ホストへの環境変数指定を実装する前に、拒否専用プロキシが使われないことを新テストの失敗で確認した。指定をテスト用Rustホストだけに渡す最小変更後、`npm run test:atcoder-live` のRust 3件・GUI 2件が成功した。通常のテスト・CIは実サイトへ接続しない。
 - `npm test` のRust 56件・Node 24件、`npm run test:e2e` の全GUI 60件（約59.7秒）、`cargo fmt --all --check` が成功した。既存の出力上限テストも成功した。Windowsの実画像GUI確認はこのLinux環境では行っていない。
 - 画面は `test-results/atcoder-media-live-1440.png`、`test-results/atcoder-media-live-900.png`、`test-results/atcoder-media-live-preview-1440.png`、`test-results/atcoder-media-live-preview-900.png`、`test-results/atcoder-media-offline-preview.png` に保存した。
+
+## SVGの内部参照・内部CSSと入力形式・旧形式の数式
+
+2026-10-28（日本時間）、Linux Cloudで確認した。
+
+- 内部参照・内部CSSを持つSVG、`<pre>` 内の `<var>`、旧形式の `<sub>`・`<sup>` のテストが実装前に失敗することを確認した。入力形式のGUIテストも、表示処理を追加する前に数式が0件となって失敗することを確認した。
+- SVGのマーカー・クリップ・グラデーションの内部参照と `<style>`・style属性を許可した。既存依存に含まれるcssparser 0.38.0を直接利用し、引用符・CSSエスケープ・XML文字参照・CDATA・コメントを処理して外部URLと `@import` を拒否する。SVGの保存後の検証、外部参照・スクリプト・イベント属性・基準URL変更の拒否も成功した。
+- 入力形式を改行・空白と数式に分けて保存し、旧HTMLの添字・指数をTeXへ変換した。積雪深とProductの実ページ由来HTMLでも抽出を確認した。`<var>` のないコード例は数式として解釈しない。入力形式内への画像・コード・多重ブロックの混入や、要素数・容量の上限超過も拒否した。
+- GUIで内部CSS付きSVGのデコード・拡大、入力形式の改行・空白、添字・指数、通常のコード例、保存後の再表示を確認した。1,440×900と900×650の画面を `test-results/problem-internal-svg-1440.png`、`test-results/problem-internal-svg-900.png` に保存した。
+- `npm test` のRust 61件・Node 24件、通常GUI 61件（約63.7秒）、実サイトのRust 3件・GUI 2件が成功した。実サイトでは実画像の取得・再取得、通信遮断後の復元と失敗時の原本保持も再確認した。rustfmt・JavaScript構文・差分の空白検査が成功した。

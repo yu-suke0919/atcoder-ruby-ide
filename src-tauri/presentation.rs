@@ -23,6 +23,9 @@ pub enum StatementPart {
     Code {
         text: String,
     },
+    Preformatted {
+        parts: Vec<StatementPart>,
+    },
     Image {
         url: String,
         alt: String,
@@ -55,6 +58,52 @@ fn text(parts: &mut Vec<StatementPart>, value: &str) {
         parts.push(StatementPart::Text { text: value.into() });
     }
 }
+fn math_source(element: ElementRef<'_>) -> String {
+    let mut source = String::new();
+    for child in element.children() {
+        match child.value() {
+            Node::Text(value) => source.push_str(value),
+            Node::Element(_) => {
+                let child = ElementRef::wrap(child).unwrap();
+                match child.value().name() {
+                    "sub" | "sup" => {
+                        source.push_str(if child.value().name() == "sub" {
+                            "_{"
+                        } else {
+                            "^{"
+                        });
+                        source.push_str(&math_source(child));
+                        source.push('}');
+                    }
+                    "script" | "style" | "noscript" => {}
+                    _ => source.push_str(&math_source(child)),
+                }
+            }
+            _ => {}
+        }
+    }
+    source
+}
+fn preformatted_parts(element: ElementRef<'_>, parts: &mut Vec<StatementPart>) {
+    for child in element.children() {
+        match child.value() {
+            Node::Text(value) => text(parts, value),
+            Node::Element(_) => {
+                let child = ElementRef::wrap(child).unwrap();
+                match child.value().name() {
+                    "var" => parts.push(StatementPart::Math {
+                        text: math_source(child),
+                        display: false,
+                    }),
+                    "br" => text(parts, "\n"),
+                    "script" | "style" | "noscript" | "iframe" | "object" => {}
+                    _ => preformatted_parts(child, parts),
+                }
+            }
+            _ => {}
+        }
+    }
+}
 fn walk(element: ElementRef<'_>, base: &str, parts: &mut Vec<StatementPart>) -> Result<(), String> {
     let name = element.value().name();
     if matches!(name, "script" | "style" | "noscript" | "iframe" | "object") {
@@ -77,15 +126,24 @@ fn walk(element: ElementRef<'_>, base: &str, parts: &mut Vec<StatementPart>) -> 
         }
         "var" => {
             parts.push(StatementPart::Math {
-                text: element.text().collect(),
+                text: math_source(element),
                 display: false,
             });
             return Ok(());
         }
         "pre" => {
-            parts.push(StatementPart::Code {
-                text: element.text().collect(),
-            });
+            if element
+                .descendants()
+                .any(|node| matches!(node.value(), Node::Element(e) if e.name() == "var"))
+            {
+                let mut inline = Vec::new();
+                preformatted_parts(element, &mut inline);
+                parts.push(StatementPart::Preformatted { parts: inline });
+            } else {
+                parts.push(StatementPart::Code {
+                    text: element.text().collect(),
+                });
+            }
             return Ok(());
         }
         _ => {}
@@ -242,6 +300,59 @@ fn svg_dimensions(value: &str) -> Result<(u32, u32), String> {
         }
     }
 }
+fn validate_css(value: &str) -> Result<(), String> {
+    use cssparser::{ParseError, Parser, Token};
+    fn tokens<'i>(input: &mut Parser<'i>, depth: usize) -> Result<(), ParseError<()>> {
+        if depth > 64 {
+            return Err(ParseError::custom(()));
+        }
+        while !input.is_exhausted() {
+            let token = input.next()?.clone();
+            match token {
+                Token::UnquotedUrl(ref url) if !url.starts_with('#') || url.len() < 2 => {
+                    return Err(ParseError::custom(()));
+                }
+                Token::Function(ref name) if name.eq_ignore_ascii_case("url") => {
+                    input.parse_nested_block(|input| {
+                        let url = input.expect_string_cloned()?;
+                        if !url.starts_with('#') || url.len() < 2 {
+                            return Err(ParseError::custom(()));
+                        }
+                        Ok(())
+                    })?;
+                }
+                Token::AtKeyword(ref name) if name.eq_ignore_ascii_case("import") => {
+                    return Err(ParseError::custom(()));
+                }
+                // These functions can interpret bare strings or computed values as URLs.
+                Token::Function(ref name)
+                    if [
+                        "image-set",
+                        "-webkit-image-set",
+                        "image",
+                        "src",
+                        "expression",
+                    ]
+                    .iter()
+                    .any(|blocked| name.eq_ignore_ascii_case(blocked)) =>
+                {
+                    return Err(ParseError::custom(()));
+                }
+                Token::Function(_)
+                | Token::ParenthesisBlock
+                | Token::SquareBracketBlock
+                | Token::CurlyBracketBlock => {
+                    input.parse_nested_block(|input| tokens(input, depth + 1))?;
+                }
+                token if token.is_parse_error() => return Err(ParseError::custom(())),
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+    tokens(&mut Parser::new(value), 0)
+        .map_err(|_| "SVGのCSSが不正か、外部参照を含んでいます。".into())
+}
 fn validate_svg(value: &str) -> Result<(), String> {
     use quick_xml::events::Event;
     let mut reader = quick_xml::Reader::from_str(value);
@@ -249,12 +360,17 @@ fn validate_svg(value: &str) -> Result<(), String> {
     let mut depth = 0usize;
     let mut elements = 0usize;
     let mut root = false;
+    let mut style = None;
+    let mut css = String::new();
     loop {
         match reader
             .read_event()
             .map_err(|e| format!("SVGが不正です: {e}"))?
         {
             Event::Start(e) => {
+                if style.is_some() {
+                    return Err("SVGのstyle要素に子要素は使用できません。".into());
+                }
                 let name = e.name();
                 let name = name.as_ref();
                 if root && depth == 0 {
@@ -268,7 +384,7 @@ fn validate_svg(value: &str) -> Result<(), String> {
                 }
                 if matches!(
                     name.rsplit(':').next().unwrap_or(name),
-                    "script" | "foreignObject" | "style" | "image" | "animate" | "set"
+                    "script" | "foreignObject" | "image" | "animate" | "set"
                 ) {
                     return Err("SVGのスクリプト・外部参照には対応していません。".into());
                 }
@@ -280,19 +396,34 @@ fn validate_svg(value: &str) -> Result<(), String> {
                         .map_err(|e| e.to_string())?;
                     if key.starts_with("on")
                         || (key.ends_with("href") && !v.starts_with('#'))
-                        || v.to_ascii_lowercase().contains("url(")
+                        || key == "xml:base"
                     {
                         return Err("SVGの外部参照には対応していません。".into());
                     }
+                    validate_css(&v)?;
                 }
                 depth += 1;
+                if name.rsplit(':').next() == Some("style") {
+                    style = Some(depth);
+                    css.clear();
+                }
                 elements += 1;
                 if depth > 256 || elements > 10000 {
                     return Err("SVGの要素数が多すぎます。".into());
                 }
             }
             Event::End(_) => {
+                if style == Some(depth) {
+                    validate_css(&css)?;
+                    style = None;
+                }
                 depth = depth.checked_sub(1).ok_or("SVGの要素が不正です。")?;
+            }
+            Event::Text(t) if style.is_some() => css.push_str(&t.xml10_content()),
+            Event::CData(t) if style.is_some() => css.push_str(&t.xml10_content()),
+            Event::GeneralRef(reference) if style.is_some() => {
+                let value = format!("&{};", reference.as_ref());
+                css.push_str(&quick_xml::escape::unescape(&value).map_err(|e| e.to_string())?);
             }
             Event::Text(t) if depth == 0 && !t.as_ref().trim().is_empty() => {
                 return Err("SVGの外側にテキストがあります。".into());
@@ -381,6 +512,7 @@ pub(crate) fn validate_statement(
     let mut text_bytes = 0;
     let mut images = 0;
     let mut image_bytes = 0;
+    let mut elements = parts.len();
     if parts.is_empty() || parts.len() > 10000 {
         return Err("問題文の要素数が不正です。".into());
     }
@@ -389,6 +521,26 @@ pub(crate) fn validate_statement(
             StatementPart::Text { text }
             | StatementPart::Math { text, .. }
             | StatementPart::Code { text } => text_bytes += text.len(),
+            StatementPart::Preformatted { parts } => {
+                elements += parts.len();
+                if parts.is_empty() {
+                    return Err("入力形式が空です。".into());
+                }
+                for part in parts {
+                    match part {
+                        StatementPart::Text { text }
+                        | StatementPart::Math {
+                            text,
+                            display: false,
+                        } => text_bytes += text.len(),
+                        _ => {
+                            return Err(
+                                "入力形式にはテキストとインライン数式を使用してください。".into()
+                            )
+                        }
+                    }
+                }
+            }
             StatementPart::Image {
                 url,
                 alt,
@@ -422,6 +574,9 @@ pub(crate) fn validate_statement(
                 image_bytes += bytes.len();
             }
         }
+    }
+    if elements > 10000 {
+        return Err("問題文の要素数が不正です。".into());
     }
     if text_bytes == 0 || text_bytes > 1024 * 1024 || images > 20 || image_bytes > MAX_IMAGES_BYTES
     {
@@ -467,6 +622,82 @@ mod tests {
             r#"{"type":"text","text":"a","onclick":"evil"}"#
         )
         .is_err());
+    }
+    #[test]
+    fn preformatted_cache_accepts_only_bounded_inline_content() {
+        let inline = vec![
+            StatementPart::Text { text: "  ".into() },
+            StatementPart::Math {
+                text: "H_{1}".into(),
+                display: false,
+            },
+            StatementPart::Text { text: "\n".into() },
+        ];
+        validate_statement(&[StatementPart::Preformatted { parts: inline }], BASE, true).unwrap();
+        for parts in [
+            vec![],
+            vec![StatementPart::Code {
+                text: "code".into(),
+            }],
+            vec![image()],
+            vec![StatementPart::Math {
+                text: "x".into(),
+                display: true,
+            }],
+            vec![StatementPart::Preformatted { parts: vec![] }],
+            vec![StatementPart::Text {
+                text: "x".repeat(1024 * 1024 + 1),
+            }],
+            vec![StatementPart::Text { text: "x".into() }; 10000],
+        ] {
+            assert!(
+                validate_statement(&[StatementPart::Preformatted { parts }], BASE, true).is_err()
+            );
+        }
+    }
+    #[test]
+    fn svg_internal_references_and_styles_roundtrip() {
+        let svg = include_bytes!("../tests/fixtures/internal-diagram.svg");
+        assert_eq!(image_info(svg).unwrap(), ("image/svg+xml", 240, 120));
+        let mut parts = vec![StatementPart::Text { text: "図".into() }, image()];
+        fill_images(&mut parts, |_| Ok(svg.to_vec())).unwrap();
+        let saved = serde_json::to_vec(&parts).unwrap();
+        let restored = serde_json::from_slice::<Vec<StatementPart>>(&saved).unwrap();
+        validate_statement(&restored, BASE, true).unwrap();
+        assert_eq!(restored, parts);
+        for body in [
+            r##"<rect fill="url( '#grad' )"/>"##,
+            r##"<rect style="fill: URL('#grad'); clip-path: url(#clip)"/>"##,
+            r##"<rect fill="u\72l(\23 grad)"/>"##,
+            r##"<use xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#shape"/>"##,
+            r##"<style>.shape { fill: url("#grad"); font-family: "Times New Roman"; }</style>"##,
+            r##"<style><![CDATA[.shape { fill: u\72l("\23 grad"); }]]></style>"##,
+            r##"<style>.shape { fill: url(&quot;&#35;grad&quot;); }</style>"##,
+            r##"<style>.shape { color: red; } /* @import "ignored"; url(https://ignored.invalid) */</style>"##,
+        ] {
+            let svg = format!(r#"<svg xmlns="http://www.w3.org/2000/svg">{body}</svg>"#);
+            validate_svg(&svg).unwrap_or_else(|e| panic!("{body}: {e}"));
+        }
+    }
+    #[test]
+    fn svg_styles_reject_external_resources_and_scripts() {
+        for body in [
+            r#"<rect fill="url(https://external.invalid/a.svg#grad)"/>"#,
+            r#"<rect style="fill: u\72l('https://external.invalid/a.svg#grad')"/>"#,
+            r#"<style>.a { fill: url(//external.invalid/a.svg#grad); }</style>"#,
+            r#"<style><![CDATA[@import "https://external.invalid/a.css";]]></style>"#,
+            r#"<style>@\69mport/**/"https://external.invalid/a.css";</style>"#,
+            r#"<style>@im<!-- split -->port "https://external.invalid/a.css";</style>"#,
+            r#"<style>.a { fill: u&#114;l('https://external.invalid/a.svg'); }</style>"#,
+            r#"<style>.a { background: image-set("https://external.invalid/a.png" 1x); }</style>"#,
+            r#"<style>.a { width: expression(alert(1)); }</style>"#,
+            r##"<g xml:base="https://external.invalid/a.svg"><use href="#shape"/></g>"##,
+            r#"<g onclick="alert(1)"/>"#,
+            r#"<script>alert(1)</script>"#,
+        ] {
+            let svg = format!(r#"<svg xmlns="http://www.w3.org/2000/svg">{body}</svg>"#);
+            assert!(validate_svg(&svg).is_err(), "{body}");
+        }
     }
     #[test]
     fn images_are_validated_deduplicated_and_bounded() {

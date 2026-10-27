@@ -1483,6 +1483,50 @@ test('P10: formulas and saved images render offline and enlarge without changing
   assert.equal(await page.locator('#code-editor').inputValue(), 'puts "keep edits"');
 });
 
+test('P11: SVG styles and internal references render with preformatted and legacy math offline', async () => {
+  const problem = await seedProblem('internal-svg');
+  const svg = await readFile(path.join(__dirname, '../fixtures/internal-diagram.svg'));
+  const data = 'data:image/svg+xml;base64,' + svg.toString('base64');
+  problem.statement = [
+    { type: 'text', text: '入力形式と旧形式の数式\n' },
+    { type: 'math', text: '10^{9}', display: false },
+    { type: 'preformatted', parts: [
+      { type: 'text', text: '  ' }, { type: 'math', text: 'H_{1}', display: false },
+      { type: 'text', text: '\n  ' }, { type: 'math', text: 'H_{2}', display: false },
+      { type: 'text', text: '\n$literal$ <script>\n' }
+    ] },
+    { type: 'code', text: '$literal$ <script>' },
+    { type: 'image', url: 'https://img.atcoder.jp/test/internal.svg', alt: '内部CSSの矢印とグラデーション', data, width: 240, height: 120 }
+  ];
+  await writeFile(path.join(app.dataDir, 'library/problems', libraryContest, 'internal-svg', 'problem.json'), JSON.stringify(problem));
+  async function verify() {
+    await openProblemDialog(problem.url); await page.locator('#problem-open').click(); await waitProblem();
+    assert.equal(await page.locator('#problem-title').textContent(), problem.title, await page.locator('#message').textContent());
+    const input = page.locator('#problem-statement pre').first();
+    assert.equal(await input.locator('.katex').count(), 2);
+    assert.deepEqual(await input.evaluate(el => [...el.childNodes].filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent)), ['  ', '\n  ', '\n$literal$ <script>\n']);
+    assert.equal(await input.locator('msub').count(), 2);
+    assert.equal(await page.locator('#problem-statement msup').count(), 1);
+    assert.equal(await page.locator('#problem-statement pre').nth(1).textContent(), '$literal$ <script>');
+    assert.equal(await page.locator('#problem-statement pre').nth(1).locator('.katex').count(), 0);
+    assert.equal(await page.locator('#problem-statement script, #problem-statement style').count(), 0);
+    await page.locator('#problem-statement img').evaluate(image => image.decode());
+    assert.equal(await page.locator('#problem-statement img').getAttribute('src'), data);
+    await page.locator('.statement-image').click();
+    await page.locator('#image-preview').evaluate(image => image.decode());
+    await page.keyboard.press('Escape');
+  }
+  await verify();
+  await mkdir('test-results', { recursive: true });
+  for (const [width, height] of [[1440, 900], [900, 650]]) {
+    await page.setViewportSize({ width, height });
+    await assertWorkspaceFits();
+    await page.screenshot({ path: `test-results/problem-internal-svg-${width}.png` });
+  }
+  await page.reload(); await page.waitForFunction(() => !document.getElementById('run').disabled);
+  await verify();
+});
+
 test('M06/M09: accepting close stops Ruby descendants and exits', async () => {
   const marker = path.join(root, 'orphan.txt').replaceAll('\\', '/');
   await page.getByTestId('code-editor').fill(`require 'rbconfig'; spawn(RbConfig.ruby, '-e', 'sleep 2; File.write(${JSON.stringify(marker)}, "survived")'); puts 'ready'; sleep 30`);

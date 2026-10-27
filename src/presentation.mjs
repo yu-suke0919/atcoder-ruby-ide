@@ -6,6 +6,9 @@ export function renderStatement(target, parts) {
     if (part.type === 'code') {
       const pre = document.createElement('pre'); pre.textContent = part.text; return pre;
     }
+    if (part.type === 'preformatted') {
+      const pre = document.createElement('pre'); renderStatement(pre, part.parts); return pre;
+    }
     if (part.type === 'math') {
       const span = document.createElement(part.display ? 'div' : 'span');
       try {

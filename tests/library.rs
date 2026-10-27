@@ -2,16 +2,19 @@ use atcoder_ruby_ide::{parse_problem, DocumentStore, ProblemLibrary, SampleCase}
 use std::path::Path;
 const URL: &str = "https://atcoder.jp/contests/abs/tasks/practice_1";
 fn statement_text(problem: &atcoder_ruby_ide::Problem) -> String {
-    problem
-        .statement
-        .iter()
-        .map(|part| match part {
-            atcoder_ruby_ide::StatementPart::Text { text }
-            | atcoder_ruby_ide::StatementPart::Math { text, .. }
-            | atcoder_ruby_ide::StatementPart::Code { text } => text.as_str(),
-            atcoder_ruby_ide::StatementPart::Image { alt, .. } => alt.as_str(),
-        })
-        .collect()
+    fn parts_text(parts: &[atcoder_ruby_ide::StatementPart]) -> String {
+        parts
+            .iter()
+            .map(|part| match part {
+                atcoder_ruby_ide::StatementPart::Text { text }
+                | atcoder_ruby_ide::StatementPart::Math { text, .. }
+                | atcoder_ruby_ide::StatementPart::Code { text } => text.clone(),
+                atcoder_ruby_ide::StatementPart::Image { alt, .. } => alt.clone(),
+                atcoder_ruby_ide::StatementPart::Preformatted { parts } => parts_text(parts),
+            })
+            .collect()
+    }
+    parts_text(&problem.statement)
 }
 const HTML: &str = include_str!("fixtures/atcoder-task.html");
 
@@ -414,6 +417,66 @@ fn live_atcoder_collection_import_and_fixed_workspace() {
         .open_task(url, task, documents.revision(), &mut documents)
         .unwrap();
     assert_eq!(reopened.document.code.as_deref(), Some("puts 'saved'"));
+}
+
+#[test]
+fn input_formats_and_legacy_math_preserve_structure_and_literal_code() {
+    let html = r#"<span class="h2">Input</span><div id="task-statement"><p><var>10<sup>9</sup></var> <var>a<sub>i<sub>j</sub></sub></var></p><pre>  <var>H_1</var>
+<var>H<sub>2</sub></var>  $literal$ &lt;script&gt;<br><var>x<sup>2</sup></var></pre><pre>$literal$ &lt;script&gt;</pre></div>"#;
+    let problem = serde_json::to_value(parse_problem(URL, html).unwrap()).unwrap();
+    let parts = problem["statement"].as_array().unwrap();
+    assert!(parts
+        .iter()
+        .any(|p| p["type"] == "math" && p["text"] == "10^{9}"));
+    assert!(parts
+        .iter()
+        .any(|p| p["type"] == "math" && p["text"] == "a_{i_{j}}"));
+    let input = parts.iter().find(|p| p["type"] == "preformatted").unwrap();
+    assert_eq!(
+        input["parts"],
+        serde_json::json!([
+            { "type": "text", "text": "  " },
+            { "type": "math", "text": "H_1", "display": false },
+            { "type": "text", "text": "\n" },
+            { "type": "math", "text": "H_{2}", "display": false },
+            { "type": "text", "text": "  $literal$ <script>\n" },
+            { "type": "math", "text": "x^{2}", "display": false }
+        ])
+    );
+    assert!(parts
+        .iter()
+        .any(|p| p["type"] == "code" && p["text"] == "$literal$ <script>"));
+}
+
+#[test]
+fn real_input_formats_keep_math_and_newlines_separate_from_samples() {
+    for (html, expected) in [
+        (
+            include_str!("fixtures/atcoder-snow.html"),
+            vec!["H_1", "H_2"],
+        ),
+        (
+            include_str!("fixtures/atcoder-product.html"),
+            vec!["a", "b"],
+        ),
+    ] {
+        let problem = serde_json::to_value(parse_problem(URL, html).unwrap()).unwrap();
+        let parts = problem["statement"].as_array().unwrap();
+        let input = parts.iter().find(|p| p["type"] == "preformatted").unwrap();
+        let inline = input["parts"].as_array().unwrap();
+        assert_eq!(
+            inline
+                .iter()
+                .filter(|p| p["type"] == "math")
+                .map(|p| p["text"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert!(inline
+            .iter()
+            .any(|p| p["type"] == "text" && p["text"].as_str().unwrap().contains('\n')));
+        assert!(parts.iter().any(|p| p["type"] == "code"));
+    }
 }
 
 #[test]
