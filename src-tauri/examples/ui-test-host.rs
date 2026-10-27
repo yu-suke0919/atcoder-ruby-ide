@@ -1,5 +1,7 @@
 //! Test-only stdio transport. All execution and document behavior comes from the app library.
-use atcoder_ruby_ide::{load_samples, save_samples, DocumentStore, RunEvent, RunRequest, Runner};
+use atcoder_ruby_ide::{
+    load_samples, save_samples, DocumentStore, ProblemLibrary, RunEvent, RunRequest, Runner,
+};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
@@ -72,6 +74,7 @@ fn main() {
         worker: None,
     };
     let mut documents = DocumentStore::default();
+    let library = ProblemLibrary::new(std::env::current_dir().unwrap().join("user-data"));
     let sink = Arc::new(Mutex::new(io::stdout()));
     for line in io::stdin().lock().lines() {
         let request: Request = serde_json::from_str(&line.unwrap()).unwrap();
@@ -147,6 +150,23 @@ fn main() {
             "samples_save" => Ok(json!(save_samples(
                 serde_json::from_value(args["cases"].clone()).map_err(|e| e.to_string())?,
                 serde_json::from_value(args["selected"].clone()).map_err(|e| e.to_string())?
+            )?)),
+            "problem_open" => {
+                let document_revision = documents.revision();
+                let problem =
+                    library.problem(args["url"].as_str().ok_or("URLを指定してください")?, false)?;
+                Ok(json!(library.open_workspace(
+                    problem,
+                    document_revision,
+                    &mut documents
+                )?))
+            }
+            "problem_refresh" => Ok(json!(
+                library.problem(args["url"].as_str().ok_or("URLを指定してください")?, true)?
+            )),
+            "problem_save_cases" => Ok(json!(library.save_cases(
+                args["url"].as_str().ok_or("URLを指定してください")?,
+                serde_json::from_value(args["cases"].clone()).map_err(|e| e.to_string())?
             )?)),
             "shutdown" => {
                 cleanup.stop_and_wait();

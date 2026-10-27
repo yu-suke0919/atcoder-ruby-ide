@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
 
-#[derive(Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SampleCase {
     pub stdin: String,
@@ -26,7 +26,7 @@ pub struct SampleResult {
     pub cases: Option<Vec<SampleCase>>,
 }
 
-fn validate(cases: &[SampleCase]) -> Result<(), String> {
+pub(crate) fn validate(cases: &[SampleCase]) -> Result<(), String> {
     if !(1..=100).contains(&cases.len()) {
         return Err("ケースは 1〜100 件にしてください。".into());
     }

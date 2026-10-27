@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 #[derive(Default)]
 pub struct DocumentStore {
     file_path: Option<PathBuf>,
+    revision: u64,
 }
 
 #[derive(Default, Serialize)]
@@ -19,8 +20,12 @@ impl DocumentStore {
     pub fn path(&self) -> Option<&Path> {
         self.file_path.as_deref()
     }
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
     pub fn reset(&mut self) {
         self.file_path = None;
+        self.revision = self.revision.wrapping_add(1);
     }
 
     pub fn open(&mut self, selected: Option<PathBuf>) -> Result<DocumentResult, String> {
@@ -36,6 +41,7 @@ impl DocumentStore {
             .map_err(|e| format!("ファイルは UTF-8 で保存してください: {e}"))?;
         let code = code.strip_prefix('\u{feff}').unwrap_or(&code).to_owned();
         self.file_path = Some(path.clone());
+        self.revision = self.revision.wrapping_add(1);
         Ok(DocumentResult {
             canceled: false,
             file_path: Some(path.to_string_lossy().into()),
@@ -60,6 +66,7 @@ impl DocumentStore {
         write_atomic(&path, code.as_bytes())
             .map_err(|e| format!("ファイルを保存できません: {e}"))?;
         self.file_path = Some(path.clone());
+        self.revision = self.revision.wrapping_add(1);
         Ok(DocumentResult {
             canceled: false,
             file_path: Some(path.to_string_lossy().into()),

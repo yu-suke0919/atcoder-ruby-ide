@@ -31,7 +31,7 @@ async function launch(root) {
   let stderr = '';
   child.stderr.on('data', data => { stderr += data; });
   child.stdin.on('error', () => {});
-  const app = { child, root, steps: [], browser: null, page: null, server: null, delivery: Promise.resolve() };
+  const app = { child, root, dataDir: path.join(root, 'user-data'), steps: [], browser: null, page: null, server: null, delivery: Promise.resolve() };
   app.request = (command, args = {}) => new Promise((resolve, reject) => {
     const id = ++sequence;
     pending.set(id, { resolve, reject });
