@@ -1,8 +1,9 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 use atcoder_ruby_ide::{
-    load_samples, save_samples, DocumentResult, DocumentStore, Problem, ProblemLibrary,
-    ProblemWorkspace, RunEvent, RunRequest, Runner, SampleCase, SampleResult,
+    load_samples, save_samples, CollectionLibrary, CollectionView, DocumentResult, DocumentStore,
+    Problem, ProblemLibrary, ProblemWorkspace, RegisteredCollection, RepairedCollectionTask,
+    RunEvent, RunRequest, Runner, SampleCase, SampleResult,
 };
 use serde::Serialize;
 use std::path::PathBuf;
@@ -14,6 +15,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 struct AppState {
     runner: Arc<Runner>,
     documents: Arc<Mutex<DocumentStore>>,
+    collection_lock: Arc<Mutex<()>>,
 }
 
 fn ruby_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -236,6 +238,87 @@ fn problem_library(app: &tauri::AppHandle) -> Result<ProblemLibrary, String> {
     ))
 }
 
+fn collection_library(app: &tauri::AppHandle) -> Result<CollectionLibrary, String> {
+    Ok(CollectionLibrary::new(
+        app.path().app_local_data_dir().map_err(|e| e.to_string())?,
+    ))
+}
+
+#[tauri::command]
+async fn collection_list(app: tauri::AppHandle) -> Result<Vec<CollectionView>, String> {
+    let library = collection_library(&app)?;
+    tauri::async_runtime::spawn_blocking(move || library.list())
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn collection_register(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    url: String,
+) -> Result<RegisteredCollection, String> {
+    let library = collection_library(&app)?;
+    let lock = Arc::clone(&state.collection_lock);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = lock.lock().unwrap();
+        library.register(&url)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn collection_fetch_task(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    url: String,
+    task: String,
+) -> Result<CollectionView, String> {
+    let library = collection_library(&app)?;
+    let lock = Arc::clone(&state.collection_lock);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = lock.lock().unwrap();
+        library.fetch_task(&url, &task)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn collection_repair_task(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    url: String,
+    task: String,
+) -> Result<RepairedCollectionTask, String> {
+    let library = collection_library(&app)?;
+    let lock = Arc::clone(&state.collection_lock);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = lock.lock().unwrap();
+        library.repair_task(&url, &task)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn collection_open_task(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    url: String,
+    task: String,
+) -> Result<ProblemWorkspace, String> {
+    let library = collection_library(&app)?;
+    let documents = Arc::clone(&state.documents);
+    let revision = documents.lock().unwrap().revision();
+    tauri::async_runtime::spawn_blocking(move || {
+        library.open_task(&url, &task, revision, &mut documents.lock().unwrap())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 async fn problem_open(
     app: tauri::AppHandle,
@@ -309,6 +392,7 @@ fn main() {
         .manage(AppState {
             runner: Runner::new(Duration::from_secs(5), 1048576),
             documents: Arc::new(Mutex::new(DocumentStore::default())),
+            collection_lock: Arc::new(Mutex::new(())),
         })
         .invoke_handler(tauri::generate_handler![
             ruby_info,
@@ -322,7 +406,12 @@ fn main() {
             confirm_discard,
             problem_open,
             problem_refresh,
-            problem_save_cases
+            problem_save_cases,
+            collection_list,
+            collection_register,
+            collection_fetch_task,
+            collection_repair_task,
+            collection_open_task
         ])
         .build(context)
         .expect("アプリを起動できませんでした")
