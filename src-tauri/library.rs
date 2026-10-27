@@ -144,42 +144,52 @@ pub fn parse_problem(url: &str, html: &str) -> Result<Problem, String> {
         .select(&selector("span.h2"))
         .next()
         .ok_or("問題のタイトルが見つかりません。")?
-        .text()
+        .children()
+        .filter_map(|node| node.value().as_text())
+        .map(|text| &**text)
         .collect::<String>()
-        .trim()
-        .to_owned();
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     let mut inputs = BTreeMap::new();
     let mut outputs = BTreeMap::new();
-    for section in body.select(&selector("section")) {
-        let Some(heading) = section.select(&selector("h3")).next() else {
+    let mut pending = None;
+    // Older tasks put h3 outside section. Pair each heading with its next pre
+    // in document order, without crossing another heading.
+    for element in body.select(&selector("h3, pre")) {
+        if element.value().name() == "h3" {
+            if pending.is_some() {
+                return Err("サンプル本文がありません。".into());
+            }
+            let heading = element.text().collect::<String>();
+            let heading = heading.trim();
+            let (number, is_input) = if let Some(n) = heading
+                .strip_prefix("入力例")
+                .or_else(|| heading.strip_prefix("Sample Input"))
+            {
+                (n, true)
+            } else if let Some(n) = heading
+                .strip_prefix("出力例")
+                .or_else(|| heading.strip_prefix("Sample Output"))
+            {
+                (n, false)
+            } else {
+                continue;
+            };
+            let number: usize = number
+                .trim()
+                .parse()
+                .map_err(|_| "サンプル番号が不正です。")?;
+            pending = Some((number, is_input));
+            continue;
+        }
+        let Some((number, is_input)) = pending.take() else {
             continue;
         };
-        let heading = heading.text().collect::<String>();
-        let heading = heading.trim();
-        let (number, target) = if let Some(n) = heading
-            .strip_prefix("入力例")
-            .or_else(|| heading.strip_prefix("Sample Input"))
-        {
-            (n, &mut inputs)
-        } else if let Some(n) = heading
-            .strip_prefix("出力例")
-            .or_else(|| heading.strip_prefix("Sample Output"))
-        {
-            (n, &mut outputs)
-        } else {
-            continue;
-        };
-        let number: usize = number
-            .trim()
-            .parse()
-            .map_err(|_| "サンプル番号が不正です。")?;
-        let pre = section
-            .select(&selector("pre"))
-            .next()
-            .ok_or("サンプル本文がありません。")?;
+        let target = if is_input { &mut inputs } else { &mut outputs };
         let mut value = String::new();
         // HTML entities are decoded by the parser; pre whitespace is retained.
-        for node in pre.descendants() {
+        for node in element.descendants() {
             match node.value() {
                 Node::Text(text) => value.push_str(text),
                 Node::Element(e) if e.name() == "br" => value.push('\n'),
@@ -189,6 +199,9 @@ pub fn parse_problem(url: &str, html: &str) -> Result<Problem, String> {
         if number == 0 || target.insert(number, value).is_some() {
             return Err("サンプル番号が不正または重複しています。".into());
         }
+    }
+    if pending.is_some() {
+        return Err("サンプル本文がありません。".into());
     }
     if inputs.is_empty() || inputs.keys().ne(outputs.keys()) {
         return Err("対応するサンプル入出力が見つかりません。".into());

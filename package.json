@@ -12,6 +12,7 @@
     "start": "tauri dev --features desktop",
     "test": "cargo test --locked --workspace && node --test --test-isolation=none tests/unit/*.test.cjs",
     "test:e2e": "node --test --test-isolation=none tests/e2e/*.test.cjs",
+    "test:atcoder-live": "cargo test --locked --test library live_atcoder -- --ignored --nocapture && node --test --test-isolation=none tests/e2e/atcoder-live.cjs",
     "prepare:ruby": "node --use-env-proxy scripts/prepare-ruby.cjs",
     "build:win": "npm run prepare:ruby && tauri build --features desktop",
     "package:win": "node scripts/package-windows.cjs"

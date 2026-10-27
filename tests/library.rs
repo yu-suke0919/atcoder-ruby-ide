@@ -37,6 +37,55 @@ fn parse_english_empty_output_entities_and_legacy_pages() {
 }
 
 #[test]
+fn real_product_page_excludes_editorial_link_and_prefers_japanese() {
+    let problem = parse_problem(
+        "https://atcoder.jp/contests/abc086/tasks/abc086_a",
+        include_str!("fixtures/atcoder-product.html"),
+    )
+    .unwrap();
+    assert_eq!(problem.title, "A - Product");
+    assert!(problem.statement.contains("シカのAtCoDeerくん"));
+    assert!(!problem.statement.contains("Problem Statement"));
+    assert_eq!(problem.samples.len(), 2);
+    assert_eq!(problem.samples[0].stdin, "3 4\n");
+    assert_eq!(problem.samples[0].expected_output, "Even\n");
+    assert_eq!(problem.samples[1].stdin, "1 21\n");
+    assert_eq!(problem.samples[1].expected_output, "Odd\n");
+}
+
+#[test]
+fn real_legacy_snow_page_pairs_headings_outside_sections() {
+    let problem = parse_problem(
+        "https://atcoder.jp/contests/abc001/tasks/abc001_1",
+        include_str!("fixtures/atcoder-snow.html"),
+    )
+    .unwrap();
+    assert_eq!(problem.title, "A - 積雪深差");
+    assert!(problem.statement.contains("積雪深"));
+    assert_eq!(problem.samples.len(), 3);
+    for (case, (stdin, expected)) in
+        problem
+            .samples
+            .iter()
+            .zip([("15\n10\n", "5\n"), ("0\n0\n", "0\n"), ("5\n20\n", "-15\n")])
+    {
+        assert_eq!(case.stdin, stdin);
+        assert_eq!(case.expected_output, expected);
+        assert!(case.compare);
+    }
+}
+
+#[test]
+fn missing_sample_body_cannot_use_the_next_headings_pre() {
+    let html = r#"<span class="h2">A - Test</span><div id="task-statement">
+<h3>入力例 1</h3><h3>説明</h3><pre>not an input</pre>
+<h3>出力例 1</h3><pre>answer</pre></div>"#;
+    assert!(parse_problem(URL, html)
+        .unwrap_err()
+        .contains("サンプル本文"));
+}
+
+#[test]
 fn reject_foreign_urls_credentials_paths_and_invalid_samples() {
     for url in [
         "http://atcoder.jp/contests/abs/tasks/practice_1",
@@ -126,4 +175,80 @@ fn corrupted_cache_and_workspace_fail_without_changing_the_active_document() {
     std::fs::write(&cache, vec![b' '; 8 * 1024 * 1024 + 1]).unwrap();
     assert!(library.problem(URL, false).is_err());
     assert_eq!(std::fs::read_to_string(current).unwrap(), "keep");
+}
+
+#[test]
+#[ignore = "AtCoderの公開ページへ接続する。npm run test:atcoder-live で明示実行"]
+fn live_atcoder_download_run_refresh_and_restore() {
+    use atcoder_ruby_ide::{RunRequest, Runner};
+    use std::time::Duration;
+
+    let root = tempfile::tempdir().unwrap();
+    let library = ProblemLibrary::new(root.path());
+    let ruby = std::env::var_os("RUBY_PATH").unwrap_or_else(|| "ruby".into());
+    for (contest, task, title, count, code) in [
+        (
+            "abs",
+            "practice_1",
+            "PracticeA - Welcome to AtCoder",
+            2,
+            "a = gets.to_i; b, c = gets.split.map(&:to_i); s = gets.chomp; puts \"#{a+b+c} #{s}\"",
+        ),
+        (
+            "abc086",
+            "abc086_a",
+            "A - Product",
+            2,
+            "a, b = gets.split.map(&:to_i); puts((a*b).even? ? 'Even' : 'Odd')",
+        ),
+        (
+            "abc001",
+            "abc001_1",
+            "A - 積雪深差",
+            3,
+            "puts gets.to_i - gets.to_i",
+        ),
+    ] {
+        let url = format!("https://atcoder.jp/contests/{contest}/tasks/{task}");
+        let problem = library
+            .problem(&url, false)
+            .unwrap_or_else(|e| panic!("{url}: {e}"));
+        assert_eq!(problem.title, title);
+        assert_eq!(problem.samples.len(), count);
+        let mut documents = DocumentStore::default();
+        let workspace = library.open_workspace(problem, &mut documents).unwrap();
+        for case in &workspace.cases {
+            let result = Runner::new(Duration::from_secs(5), 1048576)
+                .prepare(RunRequest {
+                    code: code.into(),
+                    stdin: case.stdin.clone(),
+                    expected_output: Some(case.expected_output.clone()),
+                    ..Default::default()
+                })
+                .unwrap()
+                .execute(Path::new(&ruby), |_| {})
+                .unwrap();
+            assert_eq!(result.status, "completed", "{url}: {}", result.stderr);
+            assert_eq!(result.comparison, Some(true), "{url}: {}", result.stdout);
+        }
+        documents
+            .save(code, documents.path().map(Path::to_owned))
+            .unwrap();
+        let edited = vec![SampleCase {
+            stdin: "custom input\n".into(),
+            expected_output: "custom output\n".into(),
+            compare: false,
+        }];
+        library.save_cases(&url, edited.clone()).unwrap();
+        let refreshed = library.problem(&url, true).unwrap();
+        assert_eq!(refreshed.title, title);
+        assert_eq!(refreshed.samples, workspace.problem.samples);
+        let cached = library.problem(&url, false).unwrap();
+        let reopened = library.open_workspace(cached, &mut documents).unwrap();
+        assert_eq!(reopened.document.code.as_deref(), Some(code));
+        assert_eq!(reopened.cases, edited);
+        println!(
+            "{task}: fetched, {count} Ruby samples passed, refreshed, saved workspace restored"
+        );
+    }
 }
