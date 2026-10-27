@@ -20,7 +20,7 @@ test('AtCoder live: import legacy problem, run every sample, save, refresh and r
       await page.waitForFunction(() => !document.getElementById('problem-open').disabled);
       assert.equal(await page.locator('#problem-title').textContent(), 'A - 積雪深差', await page.locator('#problem-message').textContent());
       assert.match(await page.locator('#problem-statement').textContent(), /積雪深/);
-      await page.locator('#problem-close').click();
+      assert.equal(await page.locator('#problem-dialog').isVisible(), false);
     }
     await openProblem();
     assert.equal(await page.locator('#case-count').textContent(), '3 ケース');

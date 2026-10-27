@@ -19,16 +19,19 @@ main { display: flex; flex-direction: column; padding: 24px 30px 0; flex: 1; min
 .eyebrow { font-size: 9px; letter-spacing: 2px; font-weight: 700; color: var(--accent); }
 h2 { font-weight: 500; font-size: 20px; margin: 7px 0 0; letter-spacing: .5px; }
 .workspace-note { color: var(--muted); font-size: 11px; padding-bottom: 2px; }
-.workspace { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(310px, 1fr); gap: 18px; flex: 1; min-height: 0; }
-.panel { border: 1px solid var(--border); border-radius: 10px; background: var(--panel); overflow: hidden; }
-.editor-panel { display: flex; flex-direction: column; }
+.workspace { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(310px, 1fr); grid-template-areas: "editor cases"; gap: 18px; flex: 1; min-height: 0; }
+.workspace.with-problem { grid-template-columns: minmax(250px, .95fr) minmax(350px, 1.3fr) minmax(310px, 1fr); grid-template-areas: "problem editor cases"; }
+.panel { border: 1px solid var(--border); border-radius: 10px; background: var(--panel); overflow: hidden; min-width: 0; min-height: 0; }
+.problem-panel { grid-area: problem; display: flex; flex-direction: column; }
+#problem-panel[hidden] { display: none; }
+.editor-panel { grid-area: editor; display: flex; flex-direction: column; }
 .panel-heading { display: flex; justify-content: space-between; align-items: center; height: 49px; padding: 0 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .panel-label { display: flex; align-items: center; gap: 9px; }
 h3 { font-weight: 500; font-size: 12px; margin: 0; }
 .file-icon { color: #bca4ff; font-size: 19px; }
 .language-pill { color: #e7a5b5; background: #382733; border-radius: 4px; padding: 3px 6px; font-size: 9px; }
 .subtle { font-size: 10px; color: var(--muted); }
-.editor-toolbar { padding: 8px 10px; border-bottom: 1px solid #232c39; display: flex; align-items: center; justify-content: space-between; }
+.editor-toolbar { padding: 8px 10px; border-bottom: 1px solid #232c39; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: space-between; flex-shrink: 0; }
 .file-actions { display: flex; gap: 1px; }
 .file-actions button { font-size: 11px; padding: 6px 8px; }
 .shortcut { font-size: 10px; color: #6f7d94; padding-right: 5px; }
@@ -39,7 +42,7 @@ textarea { resize: none; border: 0; border-radius: 0; color: #d5deed; background
 .editor-footer { display: flex; justify-content: space-between; align-items: center; height: 34px; padding: 0 13px; color: var(--muted); border-top: 1px solid var(--border); font-size: 10px; gap: 15px; }
 #file-path { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 #cursor-position { white-space: nowrap; }
-.right-column { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1.2fr); gap: 18px; min-height: 0; }
+.right-column { grid-area: cases; display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1.2fr); gap: 18px; min-width: 0; min-height: 0; }
 .case-toolbar { display: flex; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .case-toolbar select { min-width: 0; flex: 1; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; font-size: 11px; }
 .case-toolbar button { font-size: 10px; padding: 4px 6px; }
@@ -65,9 +68,9 @@ textarea { resize: none; border: 0; border-radius: 0; color: #d5deed; background
 .stdout-dot { background: #76c5ab; }
 .stderr-dot { background: #f08e9d; }
 pre { margin: 0; padding: 0 16px 12px; white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; font: 12px/21px Consolas, "Liberation Mono", monospace; }
-#stdout { flex: 1.4; min-height: 0; color: #b9ebd7; }
+#stdout { flex: 1.4; min-height: calc(1lh + 12px); color: #b9ebd7; }
 .error-heading { border-top: 1px solid #252d3c; }
-#stderr { flex: .8; min-height: 0; color: #f5a3b2; }
+#stderr { flex: .8; min-height: calc(1lh + 12px); color: #f5a3b2; }
 :is(#stdout, #stderr):empty::before { content: "実行結果がここに表示されます"; color: #53627a; font-family: "Segoe UI", sans-serif; font-size: 11px; }
 #stderr:empty::before { content: "エラーはありません"; }
 .run-summary { padding: 10px 15px; display: flex; flex-wrap: wrap; flex-shrink: 0; justify-content: space-between; gap: 6px 10px; border-top: 1px solid var(--border); color: #8799b1; font-size: 10px; }
@@ -103,6 +106,10 @@ pre { margin: 0; padding: 0 16px 12px; white-space: pre-wrap; overflow-wrap: any
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: #394356; border-radius: 5px; }
 @media (max-width: 1050px) { main { padding: 18px 18px 0; } .topbar { padding-inline: 18px; } .workspace-note { display: none; } .workspace { gap: 12px; } .file-actions button { padding: 6px; font-size: 10px; } }
+@media (max-width: 1199px) {
+  .workspace.with-problem { grid-template-columns: minmax(0, 1.3fr) minmax(310px, 1fr); grid-template-rows: minmax(0, .7fr) minmax(0, 1.3fr); grid-template-areas: "problem cases" "editor cases"; }
+  .problem-panel .panel-heading { height: 32px; }
+}
 @media (max-height: 720px) {
   .workspace-heading { display: none; }
   .right-column .panel-heading { height: 32px; }
@@ -118,8 +125,8 @@ pre { margin: 0; padding: 0 16px 12px; white-space: pre-wrap; overflow-wrap: any
 #problem-url { min-width: 0; flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 8px; font: inherit; }
 #problem-url:focus-visible { outline: 2px solid var(--accent); }
 .problem-help { color: var(--muted); font-size: 11px; line-height: 1.6; }
-#problem-title { overflow-wrap: anywhere; }
-#problem-statement { padding: 12px; max-height: 55vh; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; }
+#problem-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#problem-statement { flex: 1; min-height: 0; padding: 12px; background: var(--bg); }
 #problem-message { font-size: 12px; color: var(--muted); }
 #problem-message[data-error="true"] { color: #f5a3b2; }
 

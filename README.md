@@ -22,6 +22,7 @@ Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使
 - 未保存の変更を破棄する前の確認
 - AtCoder の問題URLから問題文・サンプルを取り込み、保存済みの問題と解答をオフラインで再表示
 - 問題集URLから名前と収録問題を自動取得し、本文・サンプルを固定保存。中断・未取得分の再開と一覧からの問題切替
+- 問題文を表示したままコードを編集・実行。問題文の表示切替と、画面幅に合わせた3列／上下配置
 
 初期サンプルをそのまま実行すると `6 test` を出力します。
 比較は改行コードと最後の改行 1 つの違いを無視し、その他の空白や数値表記は区別します。
@@ -30,6 +31,7 @@ Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使
 「ケース保存」「ケース読込」で入力・期待出力・比較設定をソースと別の JSON に保存できます。通常は保存時に保存先を選び、問題選択中はその問題の作業領域へ保存します。ケースは最大 100 件、JSON は最大 16 MiB です。全件実行は各ケースに 5 秒の上限を適用し、手動停止で残りも中止します。
 
 「AtCoder の問題」で公開問題のURLを入力して「開く」と、問題文とサンプルを取得します。保存済みなら通信せずに開きます。初回の解答は空で、通常の「保存」で解答を保存できます。「再取得」は入力URLの問題文・サンプル原本だけを更新し、自分の解答やケースを上書きしません。
+問題を開くと選択ダイアログが閉じ、問題文を読みながら編集・実行できます。「問題文を隠す／表示する」でコード欄を広く使えます。幅1,200px以上は問題文・コード・入出力の3列、狭い画面は左に問題文とコードを上下配置し、右に入出力を表示します。
 「問題集」で `https://atcoder.jp/contests/tessoku-book` のようなURLを1つ入力して「登録して取得」を押すと、名前と公式順の問題一覧を取得し、各問題の本文・サンプルを順番に保存します。「中断」後やアプリを再起動した後は「未取得分を取得」で続きから取得できます。取得失敗の理由も一覧に表示します。保存済みの問題集を選び、各行の「開く」で解答・ケースを復元できます。
 問題集は初回取得の内容を固定保存し、自動・一括で更新しません。同じURLの再登録や未取得分の再試行でも、取得済みの内容を保持します。単問向けの再取得からも問題集の原本を保護します。
 取得済みの問題に欠落・破損があった場合は、その行の「取り直す」を使えます。対象名・URLと上書き内容を確認し、「この問題を取り直す」で現在のAtCoderから1問だけ取り直します。保存時と内容が変わっている可能性があります。キャンセル・Escでは通信しません。失敗時は以前の原本を残し、成功しても解答・編集済みケース・他の問題は変更しません。
@@ -62,9 +64,19 @@ npm run prepare:ruby
 npm start
 ```
 
-Windows は開発時も常に同梱 Ruby を使います。`RUBY_PATH` や PATH の別の Ruby には切り替わりません。
-Linux の共通テストでは `RUBY_PATH`、未指定なら PATH の `ruby` を使います。
+Windows のデスクトップアプリは `npm start` による開発時も同梱 Ruby を使います。`RUBY_PATH` や PATH の別の Ruby には切り替わりません。
+共通テスト（`npm test`）とブラウザー用テストホストは、OS にかかわらず `RUBY_PATH`、未指定なら PATH の `ruby` を使います。Windows の共通テストでは、CI と同じく準備済みの同梱 Ruby を指定します。
+
+```powershell
+npm run prepare:ruby
+$env:RUBY_PATH = (Resolve-Path vendor/ruby/bin/ruby.exe).Path
+npm test
+cargo fmt --all --check
+```
+
+Windows のネイティブ GUI テストは、後述の「ビルドと検証」の手順で実行します。
 Linux の画面テストは headless Chromium と既存の Rust コアを使い、GTK / WebKitGTK は不要です。通常の Tauri デスクトップアプリ自体を Linux で起動する場合は、GTK / WebKitGTK 開発依存が別途必要です。
+Linux の共通・画面テストは次のコマンドで実行します。
 
 ```bash
 npm test
@@ -74,9 +86,10 @@ npm run test:e2e
 
 共通テストは Rust による実際の Ruby プロセス・ファイル操作と、Node によるケース状態・アーカイブ検証です。
 ケース状態だけなら `node --test --test-isolation=none tests/unit/sample-cases.test.cjs` で Ruby・ブラウザーなしで確認できます。
-AtCoder の実サイトとの連携は、通信できる開発環境で `npm run test:atcoder-live` を明示実行します。公開3問の取得・再取得と実Rubyでの全サンプル比較に加え、tessoku-bookの151問の一覧と先頭2問の固定保存・復元・破損原本の個別取り直しを確認します。全151問の取得は `ATCODER_COLLECTION_LIVE_ALL=1 cargo test --locked --test library live_atcoder_collection -- --ignored --nocapture` で明示実行できます。通常のテスト・CIは外部サービスへ接続しません。画面の実サイトテストは開発用RubyとChromiumを使います。
+AtCoder の実サイトとの連携は、通信できる開発環境で `npm run test:atcoder-live` を明示実行します。公開3問の取得・再取得と実Rubyでの全サンプル比較に加え、tessoku-bookの151問の一覧と先頭2問の固定保存・復元・破損原本の個別取り直しを確認します。全151問の取得は `ATCODER_COLLECTION_LIVE_ALL=1 cargo test --locked --test library live_atcoder_collection -- --ignored --nocapture` で明示実行できます。CIを含む通常の自動テストではAtCoderへ接続しません。依存パッケージ・Ruby・ブラウザーなどの初回取得には通信が必要です。画面の実サイトテストは開発用RubyとChromiumを使います。
 Linux では `npm run test:e2e` がテスト専用 Rust ホストをビルドし、HTTP 配信した本番画面を headless Chromium で操作します。
-実 Ruby・ファイル I/O・実行制御・比較は本番の Rust ライブラリを共有し、Tauri 通信・ウィンドウ操作・ダイアログ応答だけをテスト用に差し替えます。
+実 Ruby・ソースとケースのファイル I/O・実行制御・比較は本番の Rust ライブラリを共有し、Tauri 通信・ウィンドウ操作・ダイアログ応答をテスト用に差し替えます。
+通常の GUI テストでは、問題・問題集の登録・取得・再取得・個別取り直しの成功／失敗も、必要に応じてブリッジの応答と保存データをテスト側で用意します。HTTP・HTML解析・原本保存の処理は Rust テストで検証します。
 Windows は同じ受入ケースを実際の WebView2 / ネイティブダイアログで確認します。テスト専用ホストは配布しません。
 `E2E_RUNNER=browser` または `native` で明示選択でき、その他の値はエラーになります（native は Windows 専用）。
 Windows でも browser を選べますが、その場合は開発用の Ruby と Chromium を別途用意し、必要なら `RUBY_PATH` を指定してください。
@@ -99,7 +112,7 @@ npm run test:e2e
 初回導入・コンパイルと、準備後の画面テスト時間は分けて測定します。
 
 Windows ではアプリから Ruby の PATH を除去し、不正な `RUBY_PATH` でも同梱 Ruby を使うことを確認します。
-通常起動ではテスト用デバッグポートを開きません。検証範囲・実測値は [テスト速度の改善](docs/test-feedback.md) に記録します。
+通常起動ではテスト用デバッグポートを開きません。機能追加ごとの検証結果は [検証記録](docs/verification.md)、Ruby 削減時の速度・容量の測定は [テスト速度の改善](docs/test-feedback.md) を参照してください。
 
 ## ビルドと検証
 
