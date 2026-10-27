@@ -2,6 +2,7 @@ use crate::files::{read_limited, write_atomic};
 use crate::library::{
     create_if_missing, download, http_client, validate, ProblemKey, MAX_HTML_BYTES,
 };
+use crate::presentation::{download_image, fill_images, MAX_CACHE_BYTES};
 use crate::{parse_problem, DocumentStore, Problem, ProblemLibrary, ProblemWorkspace};
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
@@ -207,7 +208,7 @@ impl CollectionLibrary {
             .join(format!("{}.json", task.task)))
     }
     fn snapshot(&self, key: &CollectionKey, task: &str) -> Result<Problem, String> {
-        let bytes = read_limited(&self.snapshot_path(key, task)?, 8 * 1024 * 1024)
+        let bytes = read_limited(&self.snapshot_path(key, task)?, MAX_CACHE_BYTES)
             .map_err(|e| format!("保存済み問題を開けません: {e}"))?;
         let problem: Problem = serde_json::from_slice(&bytes)
             .map_err(|e| format!("固定保存した問題が不正です: {e}"))?;
@@ -306,8 +307,8 @@ impl CollectionLibrary {
             let problem = fetch(task)?;
             validate(&problem, &ProblemKey::parse(task)?)?;
             let bytes = serde_json::to_vec_pretty(&problem).map_err(|e| e.to_string())?;
-            if bytes.len() > 8 * 1024 * 1024 {
-                return Err("問題が8 MiBを超えています。".into());
+            if bytes.len() > MAX_CACHE_BYTES {
+                return Err("問題が32 MiBを超えています。".into());
             }
             std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
             create_if_missing(&path, &bytes)
@@ -333,13 +334,19 @@ impl CollectionLibrary {
     }
 
     pub fn repair_task(&self, url: &str, task: &str) -> Result<RepairedCollectionTask, String> {
-        self.repair_with(url, task, |url| download(&http_client()?, url))
+        self.repair_with(url, task, |url| {
+            let client = http_client()?;
+            let html = download(&client, &format!("{url}?lang=ja"))?;
+            let mut problem = parse_problem(url, &html)?;
+            fill_images(&mut problem.statement, |url| download_image(&client, url))?;
+            Ok(problem)
+        })
     }
     fn repair_with(
         &self,
         url: &str,
         task: &str,
-        fetch: impl FnOnce(&str) -> Result<String, String>,
+        fetch: impl FnOnce(&str) -> Result<Problem, String>,
     ) -> Result<RepairedCollectionTask, String> {
         let key = CollectionKey::parse(url)?;
         let view = self.view(url)?;
@@ -351,10 +358,11 @@ impl CollectionLibrary {
         }
         // Explicit repairs bypass both caches. Do every fallible read/validation
         // before the atomic replacement so failure leaves the old bytes intact.
-        let problem = parse_problem(task, &fetch(&format!("{task}?lang=ja"))?)?;
+        let problem = fetch(task)?;
+        validate(&problem, &ProblemKey::parse(task)?)?;
         let bytes = serde_json::to_vec_pretty(&problem).map_err(|e| e.to_string())?;
-        if bytes.len() > 8 * 1024 * 1024 {
-            return Err("問題が8 MiBを超えています。".into());
+        if bytes.len() > MAX_CACHE_BYTES {
+            return Err("問題が32 MiBを超えています。".into());
         }
         write_atomic(&self.snapshot_path(&key, task)?, &bytes)
             .map_err(|e| format!("問題原本を置き換えられません: {e}"))?;
@@ -491,7 +499,9 @@ mod tests {
             .join("library/problems/tessoku-book/tessoku_book_a");
         std::fs::create_dir_all(&cache).unwrap();
         let mut newer = problem(a);
-        newer.statement = "new edition".into();
+        newer.statement = vec![crate::StatementPart::Text {
+            text: "new edition".into(),
+        }];
         std::fs::write(
             cache.join("problem.json"),
             serde_json::to_vec(&newer).unwrap(),
@@ -566,8 +576,8 @@ mod tests {
             .replace("<pre>3", "<pre>17");
         let repaired = library
             .repair_with(URL, a, |url| {
-                assert_eq!(url, format!("{a}?lang=ja"));
-                Ok(html)
+                assert_eq!(url, a);
+                parse_problem(url, &html)
             })
             .unwrap();
         assert!(repaired.problem.title.contains("Repaired"));
@@ -610,12 +620,12 @@ mod tests {
             .is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "corrupt original");
         assert!(library
-            .repair_with(URL, a, |_| Ok("not a task page".into()))
+            .repair_with(URL, a, |url| parse_problem(url, "not a task page"))
             .is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "corrupt original");
         library
             .repair_with(URL, a, |_| {
-                Ok(include_str!("../tests/fixtures/atcoder-task.html").into())
+                parse_problem(a, include_str!("../tests/fixtures/atcoder-task.html"))
             })
             .unwrap();
         assert!(library
@@ -638,5 +648,49 @@ mod tests {
                 .is_err());
         }
         assert!(!root.path().join("workspaces").exists());
+    }
+    #[test]
+    fn repaired_images_are_atomic_and_fixed_against_other_cache_updates() {
+        let root = tempfile::tempdir().unwrap();
+        let library = CollectionLibrary::new(root.path());
+        let view = register(&library);
+        let a = &view.collection.tasks[0].url;
+        let mut media = problem(a);
+        let mut parts = vec![crate::StatementPart::Image {
+            url: "https://img.atcoder.jp/test/image.svg".into(),
+            alt: "図".into(),
+            data: String::new(),
+            width: 0,
+            height: 0,
+        }];
+        fill_images(&mut parts, |_| Ok(br#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20"/></svg>"#.to_vec())).unwrap();
+        media.statement.extend(parts);
+        library.fetch_with(URL, a, |_| Ok(media.clone())).unwrap();
+        let path = library
+            .snapshot_path(&CollectionKey::parse(URL).unwrap(), a)
+            .unwrap();
+        let old = std::fs::read(&path).unwrap();
+        let mut bad = media.clone();
+        if let Some(crate::StatementPart::Image { data, .. }) = bad.statement.last_mut() {
+            *data = "broken".into();
+        }
+        assert!(library.repair_with(URL, a, |_| Ok(bad)).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), old);
+        assert!(library
+            .repair_with(URL, a, |_| Err("image download failed".into()))
+            .is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), old);
+        media.title = "Repaired media".into();
+        library.repair_with(URL, a, |_| Ok(media.clone())).unwrap();
+        assert_eq!(
+            library
+                .snapshot(&CollectionKey::parse(URL).unwrap(), a)
+                .unwrap()
+                .statement,
+            media.statement
+        );
+        library
+            .fetch_with(URL, a, |_| panic!("acquired image must not download"))
+            .unwrap();
     }
 }

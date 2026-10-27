@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="120" viewBox="0 0 240 120">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#25324b"/></marker>
+    <clipPath id="clip"><rect x="10" y="10" width="220" height="100" rx="12"/></clipPath>
+    <linearGradient id="grad"><stop offset="0" stop-color="#f8b4cd"/><stop offset="1" stop-color="#c5b8ff"/></linearGradient>
+  </defs>
+  <style><![CDATA[
+    .panel { fill: url("#grad"); }
+    .edge { stroke: #25324b; stroke-width: 4; marker-end: url(#arrow); }
+    .node { fill: white; stroke: #25324b; stroke-width: 2; }
+  ]]></style>
+  <g clip-path="url(#clip)"><rect class="panel" width="240" height="120"/><path class="edge" d="M55 60 L180 60"/><circle class="node" cx="45" cy="60" r="15"/><circle class="node" cx="195" cy="60" r="15"/></g>
+</svg>

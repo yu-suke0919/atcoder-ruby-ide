@@ -3,6 +3,7 @@ mod comparison;
 mod document;
 mod files;
 mod library;
+mod presentation;
 mod process;
 mod runner;
 mod samples;
@@ -14,6 +15,7 @@ pub use collections::{
 pub use comparison::{compare_output, decode_output, first_difference, OutputDifference};
 pub use document::{DocumentResult, DocumentStore};
 pub use library::{parse_problem, Problem, ProblemLibrary, ProblemWorkspace};
+pub use presentation::StatementPart;
 pub use runner::{Output, PreparedRun, RunRequest, RunResult, Runner};
 pub use samples::{load_samples, save_samples, SampleCase, SampleResult};
 

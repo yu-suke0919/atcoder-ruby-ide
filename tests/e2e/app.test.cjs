@@ -902,7 +902,7 @@ test('M15: long lines show bounded context around the correct Unicode column', a
 
 async function seedProblem(task) {
   const url = `https://atcoder.jp/contests/${libraryContest}/tasks/${task}`;
-  const problem = { url, title: `A - ${task}`, statement: '整数AとBの和。<img src=x onerror=alert(1)>\n1 \\leq A,B \\leq 100\n'.repeat(80), samples: [{ stdin: '1 2\n', expectedOutput: '3\n', compare: true }, { stdin: '10 20\n', expectedOutput: '30\n', compare: true }] };
+  const problem = { url, title: `A - ${task}`, statement: [{ type: 'text', text: '整数AとBの和。<img src=x onerror=alert(1)>\n1 \\leq A,B \\leq 100\n'.repeat(80) }], samples: [{ stdin: '1 2\n', expectedOutput: '3\n', compare: true }, { stdin: '10 20\n', expectedOutput: '30\n', compare: true }] };
   const directory = path.join(app.dataDir, 'library/problems', libraryContest, task);
   await mkdir(directory, { recursive: true });
   await writeFile(path.join(directory, 'problem.json'), JSON.stringify(problem));
@@ -923,7 +923,7 @@ test('P01: cached problem opens offline, runs samples and restores its saved wor
   await page.locator('#problem-open').click({ timeout: 2000 });
   await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
   assert.equal(await page.locator('#problem-statement img').count(), 0);
-  assert.equal(await page.locator('#problem-statement').textContent(), problem.statement);
+  assert.equal(await page.locator('#problem-statement').textContent(), problem.statement.map(p => p.text).join(''));
   const panelFits = await page.locator('#problem-panel').evaluate(element => {
     const rect = element.getBoundingClientRect();
     return rect.top >= 0 && rect.left >= 0 && rect.bottom <= innerHeight && rect.right <= innerWidth;
@@ -995,7 +995,7 @@ test('P03: invalid cache preserves the current problem and workspace', async () 
   await page.locator('#message').filter({ hasText: '失敗' }).waitFor();
   assert.equal(await page.locator('#problem-title').textContent(), a.title);
   assert.equal(await page.locator('#problem-dialog').isVisible(), true);
-  assert.equal(await page.locator('#problem-statement').textContent(), a.statement);
+  assert.equal(await page.locator('#problem-statement').textContent(), a.statement.map(p => p.text).join(''));
   await page.locator('#problem-close').click();
   assert.equal(await page.locator('#stdin').inputValue(), '1 2\n');
 });
@@ -1013,7 +1013,7 @@ test('P04: refresh keeps edited code and cases and retains the previous statemen
   // Isolate external HTTP at the bridge; Rust separately verifies HTTP and atomic cache updates.
   await page.evaluate(async problem => {
     const { ide } = await import('./bridge.js');
-    ide.refreshProblem = async () => ({ ...problem, title: 'Updated problem', statement: problem.statement + '\nRefreshed' });
+    ide.refreshProblem = async () => ({ ...problem, title: 'Updated problem', statement: [...problem.statement, { type: 'text', text: '\nRefreshed' }] });
   }, problem);
   await page.locator('#problem-refresh').click();
   await page.locator('#problem-title').filter({ hasText: 'Updated problem' }).waitFor();
@@ -1205,7 +1205,7 @@ async function seedCollection(count = 2) {
   return collection;
 }
 async function seedCollectionTask(task) {
-  const problem = { url: task.url, title: `${task.label} - ${task.title}`, statement: '固定保存した問題文', samples: [{ stdin: '1 2\n', expectedOutput: '3\n', compare: true }] };
+  const problem = { url: task.url, title: `${task.label} - ${task.title}`, statement: [{ type: 'text', text: '固定保存した問題文' }], samples: [{ stdin: '1 2\n', expectedOutput: '3\n', compare: true }] };
   await writeFile(path.join(app.dataDir, 'library/collections', libraryContest, `${task.url.split('/').at(-1)}.json`), JSON.stringify(problem));
 }
 async function showCollections() {
@@ -1305,7 +1305,7 @@ test('C02: registration fetches sequentially, pauses and resumes only missing ta
 test('C03: tasks without inline samples open, and corrupt snapshots preserve the current document', async () => {
   const collection = await seedCollection();
   const directory = path.join(app.dataDir, 'library/collections', libraryContest);
-  await writeFile(path.join(directory, 'collection_0.json'), JSON.stringify({ url: collection.tasks[0].url, title: 'A01 - No inline samples', statement: 'サンプルは別ファイルで配布', samples: [] }));
+  await writeFile(path.join(directory, 'collection_0.json'), JSON.stringify({ url: collection.tasks[0].url, title: 'A01 - No inline samples', statement: [{ type: 'text', text: 'サンプルは別ファイルで配布' }], samples: [] }));
   await writeFile(path.join(directory, 'collection_1.json'), 'corrupt');
   await showCollections();
   await page.locator('#collection-tasks [data-action="open"]').first().click();
@@ -1382,7 +1382,7 @@ test('C05: confirmed repair preserves current edits, other snapshots and the pre
     calls.push(taskUrl);
     if (fail) { fail = false; throw new Error('network offline'); }
     const task = collection.tasks.find(task => task.url === taskUrl);
-    const problem = { url: taskUrl, title: `${task.label} - Repaired`, statement: '取り直した問題文', samples: [{ stdin: '8 9\n', expectedOutput: '17\n', compare: true }] };
+    const problem = { url: taskUrl, title: `${task.label} - Repaired`, statement: [{ type: 'text', text: '取り直した問題文' }], samples: [{ stdin: '8 9\n', expectedOutput: '17\n', compare: true }] };
     await writeFile(path.join(directory, `${taskUrl.split('/').at(-1)}.json`), JSON.stringify(problem));
     return { view: { collection, downloaded: collection.tasks.map(task => task.url) }, problem };
   });
@@ -1419,6 +1419,112 @@ test('C05: confirmed repair preserves current edits, other snapshots and the pre
   await page.locator('#problem-toggle').click();
   assert.equal(await page.locator('#problem-panel').isVisible(), true);
   assert.equal(await page.locator('#problem-statement').textContent(), '取り直した問題文');
+});
+
+test('P10: formulas and saved images render offline and enlarge without changing the workspace', async () => {
+  const problem = await seedProblem('media');
+  const data = 'data:image/svg+xml;base64,' + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="320"><rect width="640" height="320" fill="white"/><path d="M60 240 L320 60 L580 240 Z" stroke="black" fill="none"/><text x="300" y="40" font-size="24">A</text></svg>').toString('base64');
+  problem.statement = [
+    { type: 'text', text: '数式と図\n<script>window.injected = true</script>' },
+    { type: 'math', text: String.raw`\frac{a_1}{2}+\sum_{i=1}^{N} i`, display: true },
+    { type: 'code', text: '<img onerror=alert(1)> $literal$' },
+    { type: 'image', url: 'https://img.atcoder.jp/test/diagram.png', alt: '保存した図', data, width: 640, height: 320 },
+    { type: 'math', text: String.raw`\notARealCommand`, display: false }
+  ];
+  await writeFile(path.join(app.dataDir, 'library/problems', libraryContest, 'media', 'problem.json'), JSON.stringify(problem));
+  await openProblemDialog(problem.url); await page.locator('#problem-open').click(); await waitProblem();
+  assert.equal(await page.locator('#problem-panel').isVisible(), true, await page.locator('#message').textContent());
+  assert.equal(await page.locator('#problem-statement .katex').count(), 1);
+  assert.equal(await page.locator('#problem-statement script').count(), 0);
+  assert.equal(await page.evaluate(() => window.injected), undefined);
+  await page.locator('#problem-statement img').evaluate(image => image.decode());
+  await page.locator('#code-editor').fill('puts "keep edits"');
+  await page.locator('#stdin').fill('keep case');
+  const source = await page.locator('#file-path').textContent();
+  for (const [width, height] of [[1440, 900], [900, 650]]) {
+    await page.setViewportSize({ width, height });
+    await assertWorkspaceFits();
+    const image = page.locator('#problem-statement img');
+    assert.ok(await image.evaluate(el => el.getBoundingClientRect().width <= el.parentElement.clientWidth));
+    await page.screenshot({ path: `test-results/problem-media-${width}.png` });
+    await image.click();
+    assert.equal(await page.locator('#image-dialog').isVisible(), true);
+    assert.equal(await page.locator('#image-preview').getAttribute('src'), data);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#image-dialog').isVisible(), false);
+    await page.locator('#problem-statement button').focus();
+    await page.keyboard.press('Enter');
+    await page.locator('#image-close').click();
+  }
+  await page.locator('#problem-statement').evaluate(el => { el.scrollTop = 80; });
+  const scroll = await page.locator('#problem-statement').evaluate(el => el.scrollTop);
+  assert.ok(scroll > 0);
+  await page.locator('#problem-toggle').click();
+  await page.locator('#problem-library').click();
+  await page.evaluate(async problem => {
+    const { ide } = await import('./bridge.js'); ide.refreshProblem = async () => problem;
+  }, problem);
+  await page.locator('#problem-refresh').click(); await waitProblem();
+  assert.equal(await page.locator('#problem-panel').isVisible(), false);
+  await page.locator('#problem-close').click(); await page.locator('#problem-toggle').click();
+  await page.locator('#problem-statement img').evaluate(image => image.decode());
+  assert.equal(await page.locator('#problem-statement').evaluate(el => el.scrollTop), scroll);
+  await page.screenshot({ path: 'test-results/problem-media.png' });
+  assert.equal(await page.locator('#code-editor').inputValue(), 'puts "keep edits"');
+  assert.equal(await page.locator('#stdin').inputValue(), 'keep case');
+  assert.equal(await page.locator('#file-path').textContent(), source);
+  assert.equal(await casesDirty(), true);
+  await page.locator('#save').click(); await page.waitForFunction(() => !document.getElementById('save').disabled);
+  await page.locator('#cases-save').click(); await page.waitForFunction(() => !document.getElementById('cases-save').disabled);
+  await page.reload(); await page.waitForFunction(() => !document.getElementById('run').disabled);
+  await openProblemDialog(problem.url); await page.locator('#problem-open').click(); await waitProblem();
+  await page.locator('#problem-statement img').evaluate(image => image.decode());
+  assert.equal(await page.locator('#problem-statement .katex').count(), 1);
+  assert.equal(await page.locator('#code-editor').inputValue(), 'puts "keep edits"');
+});
+
+test('P11: SVG styles and internal references render with preformatted and legacy math offline', async () => {
+  const problem = await seedProblem('internal-svg');
+  const svg = await readFile(path.join(__dirname, '../fixtures/internal-diagram.svg'));
+  const data = 'data:image/svg+xml;base64,' + svg.toString('base64');
+  problem.statement = [
+    { type: 'text', text: '入力形式と旧形式の数式\n' },
+    { type: 'math', text: '10^{9}', display: false },
+    { type: 'preformatted', parts: [
+      { type: 'text', text: '  ' }, { type: 'math', text: 'H_{1}', display: false },
+      { type: 'text', text: '\n  ' }, { type: 'math', text: 'H_{2}', display: false },
+      { type: 'text', text: '\n$literal$ <script>\n' }
+    ] },
+    { type: 'code', text: '$literal$ <script>' },
+    { type: 'image', url: 'https://img.atcoder.jp/test/internal.svg', alt: '内部CSSの矢印とグラデーション', data, width: 240, height: 120 }
+  ];
+  await writeFile(path.join(app.dataDir, 'library/problems', libraryContest, 'internal-svg', 'problem.json'), JSON.stringify(problem));
+  async function verify() {
+    await openProblemDialog(problem.url); await page.locator('#problem-open').click(); await waitProblem();
+    assert.equal(await page.locator('#problem-title').textContent(), problem.title, await page.locator('#message').textContent());
+    const input = page.locator('#problem-statement pre').first();
+    assert.equal(await input.locator('.katex').count(), 2);
+    assert.deepEqual(await input.evaluate(el => [...el.childNodes].filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent)), ['  ', '\n  ', '\n$literal$ <script>\n']);
+    assert.equal(await input.locator('msub').count(), 2);
+    assert.equal(await page.locator('#problem-statement msup').count(), 1);
+    assert.equal(await page.locator('#problem-statement pre').nth(1).textContent(), '$literal$ <script>');
+    assert.equal(await page.locator('#problem-statement pre').nth(1).locator('.katex').count(), 0);
+    assert.equal(await page.locator('#problem-statement script, #problem-statement style').count(), 0);
+    await page.locator('#problem-statement img').evaluate(image => image.decode());
+    assert.equal(await page.locator('#problem-statement img').getAttribute('src'), data);
+    await page.locator('.statement-image').click();
+    await page.locator('#image-preview').evaluate(image => image.decode());
+    await page.keyboard.press('Escape');
+  }
+  await verify();
+  await mkdir('test-results', { recursive: true });
+  for (const [width, height] of [[1440, 900], [900, 650]]) {
+    await page.setViewportSize({ width, height });
+    await assertWorkspaceFits();
+    await page.screenshot({ path: `test-results/problem-internal-svg-${width}.png` });
+  }
+  await page.reload(); await page.waitForFunction(() => !document.getElementById('run').disabled);
+  await verify();
 });
 
 test('M06/M09: accepting close stops Ruby descendants and exits', async () => {

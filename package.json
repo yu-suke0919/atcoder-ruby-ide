@@ -15,11 +15,14 @@
     "test:atcoder-live": "cargo test --locked --test library live_atcoder -- --ignored --nocapture && node --test --test-isolation=none tests/e2e/atcoder-live.cjs",
     "prepare:ruby": "node --use-env-proxy scripts/prepare-ruby.cjs",
     "build:win": "npm run prepare:ruby && tauri build --features desktop",
-    "package:win": "node scripts/package-windows.cjs"
+    "package:win": "node scripts/package-windows.cjs",
+    "prepare:math": "node scripts/prepare-math.cjs",
+    "postinstall": "npm run prepare:math"
   },
   "devDependencies": {
-    "7zip-bin": "5.2.0",
     "@tauri-apps/cli": "2.12.4",
+    "7zip-bin": "5.2.0",
+    "katex": "0.19.1",
     "playwright": "1.64.1"
   }
 }

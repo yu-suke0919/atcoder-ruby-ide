@@ -1,6 +1,21 @@
 use atcoder_ruby_ide::{parse_problem, DocumentStore, ProblemLibrary, SampleCase};
 use std::path::Path;
 const URL: &str = "https://atcoder.jp/contests/abs/tasks/practice_1";
+fn statement_text(problem: &atcoder_ruby_ide::Problem) -> String {
+    fn parts_text(parts: &[atcoder_ruby_ide::StatementPart]) -> String {
+        parts
+            .iter()
+            .map(|part| match part {
+                atcoder_ruby_ide::StatementPart::Text { text }
+                | atcoder_ruby_ide::StatementPart::Math { text, .. }
+                | atcoder_ruby_ide::StatementPart::Code { text } => text.clone(),
+                atcoder_ruby_ide::StatementPart::Image { alt, .. } => alt.clone(),
+                atcoder_ruby_ide::StatementPart::Preformatted { parts } => parts_text(parts),
+            })
+            .collect()
+    }
+    parts_text(&problem.statement)
+}
 const HTML: &str = include_str!("fixtures/atcoder-task.html");
 
 fn seed(root: &Path) {
@@ -18,9 +33,9 @@ fn parse_japanese_pairs_by_number_and_only_displays_text() {
     let problem = parse_problem(&format!("{URL}?lang=en#sample"), HTML).unwrap();
     assert_eq!(problem.url, URL);
     assert_eq!(problem.title, "A - 和を求める & 比較");
-    assert!(problem.statement.contains("1 \\leq A,B \\leq 100"));
-    assert!(problem.statement.contains("図の説明"));
-    assert!(!problem.statement.contains("DO_NOT_DISPLAY"));
+    assert!(statement_text(&problem).contains("1 \\leq A,B \\leq 100"));
+    assert!(statement_text(&problem).contains("図の説明"));
+    assert!(!statement_text(&problem).contains("DO_NOT_DISPLAY"));
     assert_eq!(problem.samples.len(), 2);
     assert_eq!(problem.samples[0].stdin, "1 2\n");
     assert_eq!(problem.samples[1].expected_output, "30\n");
@@ -44,8 +59,8 @@ fn real_product_page_excludes_editorial_link_and_prefers_japanese() {
     )
     .unwrap();
     assert_eq!(problem.title, "A - Product");
-    assert!(problem.statement.contains("シカのAtCoDeerくん"));
-    assert!(!problem.statement.contains("Problem Statement"));
+    assert!(statement_text(&problem).contains("シカのAtCoDeerくん"));
+    assert!(!statement_text(&problem).contains("Problem Statement"));
     assert_eq!(problem.samples.len(), 2);
     assert_eq!(problem.samples[0].stdin, "3 4\n");
     assert_eq!(problem.samples[0].expected_output, "Even\n");
@@ -87,7 +102,7 @@ fn real_legacy_snow_page_pairs_headings_outside_sections() {
     )
     .unwrap();
     assert_eq!(problem.title, "A - 積雪深差");
-    assert!(problem.statement.contains("積雪深"));
+    assert!(statement_text(&problem).contains("積雪深"));
     assert_eq!(problem.samples.len(), 3);
     for (case, (stdin, expected)) in
         problem
@@ -212,7 +227,7 @@ fn corrupted_cache_and_workspace_fail_without_changing_the_active_document() {
     problem.url = "https://atcoder.jp/contests/abc001/tasks/abc001_1".into();
     std::fs::write(&cache, serde_json::to_vec(&problem).unwrap()).unwrap();
     assert!(library.problem(URL, false).is_err());
-    std::fs::write(&cache, vec![b' '; 8 * 1024 * 1024 + 1]).unwrap();
+    std::fs::write(&cache, vec![b' '; 32 * 1024 * 1024 + 1]).unwrap();
     assert!(library.problem(URL, false).is_err());
     assert_eq!(std::fs::read_to_string(current).unwrap(), "keep");
 }
@@ -402,4 +417,127 @@ fn live_atcoder_collection_import_and_fixed_workspace() {
         .open_task(url, task, documents.revision(), &mut documents)
         .unwrap();
     assert_eq!(reopened.document.code.as_deref(), Some("puts 'saved'"));
+}
+
+#[test]
+fn input_formats_and_legacy_math_preserve_structure_and_literal_code() {
+    let html = r#"<span class="h2">Input</span><div id="task-statement"><p><var>10<sup>9</sup></var> <var>a<sub>i<sub>j</sub></sub></var></p><pre>  <var>H_1</var>
+<var>H<sub>2</sub></var>  $literal$ &lt;script&gt;<br><var>x<sup>2</sup></var></pre><pre>$literal$ &lt;script&gt;</pre></div>"#;
+    let problem = serde_json::to_value(parse_problem(URL, html).unwrap()).unwrap();
+    let parts = problem["statement"].as_array().unwrap();
+    assert!(parts
+        .iter()
+        .any(|p| p["type"] == "math" && p["text"] == "10^{9}"));
+    assert!(parts
+        .iter()
+        .any(|p| p["type"] == "math" && p["text"] == "a_{i_{j}}"));
+    let input = parts.iter().find(|p| p["type"] == "preformatted").unwrap();
+    assert_eq!(
+        input["parts"],
+        serde_json::json!([
+            { "type": "text", "text": "  " },
+            { "type": "math", "text": "H_1", "display": false },
+            { "type": "text", "text": "\n" },
+            { "type": "math", "text": "H_{2}", "display": false },
+            { "type": "text", "text": "  $literal$ <script>\n" },
+            { "type": "math", "text": "x^{2}", "display": false }
+        ])
+    );
+    assert!(parts
+        .iter()
+        .any(|p| p["type"] == "code" && p["text"] == "$literal$ <script>"));
+}
+
+#[test]
+fn real_input_formats_keep_math_and_newlines_separate_from_samples() {
+    for (html, expected) in [
+        (
+            include_str!("fixtures/atcoder-snow.html"),
+            vec!["H_1", "H_2"],
+        ),
+        (
+            include_str!("fixtures/atcoder-product.html"),
+            vec!["a", "b"],
+        ),
+    ] {
+        let problem = serde_json::to_value(parse_problem(URL, html).unwrap()).unwrap();
+        let parts = problem["statement"].as_array().unwrap();
+        let input = parts.iter().find(|p| p["type"] == "preformatted").unwrap();
+        let inline = input["parts"].as_array().unwrap();
+        assert_eq!(
+            inline
+                .iter()
+                .filter(|p| p["type"] == "math")
+                .map(|p| p["text"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert!(inline
+            .iter()
+            .any(|p| p["type"] == "text" && p["text"].as_str().unwrap().contains('\n')));
+        assert!(parts.iter().any(|p| p["type"] == "code"));
+    }
+}
+
+#[test]
+fn rich_statement_preserves_math_code_and_image_order_without_html() {
+    let html = r#"<span class="h2">Rich</span><div id="task-statement"><p>前<var>\frac{a_1}{2}</var>後</p><p>\[\sum_{i=1}^N i\]</p><pre>$literal$ &lt;script&gt;</pre><img src="//img.atcoder.jp/test/diagram.png" alt="図"><script>HIDDEN</script></div>"#;
+    let problem = parse_problem(URL, html).unwrap();
+    let statement = serde_json::to_value(&problem).unwrap()["statement"].clone();
+    assert!(
+        statement.is_array(),
+        "statement must be structured: {statement}"
+    );
+    let parts = statement.as_array().unwrap();
+    assert!(parts
+        .iter()
+        .any(|p| p["type"] == "math" && p["text"] == "\\frac{a_1}{2}"));
+    assert!(parts
+        .iter()
+        .any(|p| p["type"] == "math" && p["display"] == true));
+    assert!(parts
+        .iter()
+        .any(|p| p["type"] == "code" && p["text"] == "$literal$ <script>"));
+    let image = parts.iter().find(|p| p["type"] == "image").unwrap();
+    assert_eq!(image["url"], "https://img.atcoder.jp/test/diagram.png");
+    assert!(!statement.to_string().contains("HIDDEN"));
+}
+
+#[test]
+#[ignore = "AtCoderとimg.atcoder.jpへ接続する。明示実行する画像連携テスト"]
+fn live_atcoder_media_snapshot() {
+    let root = tempfile::tempdir().unwrap();
+    let library = ProblemLibrary::new(root.path());
+    let url = "https://atcoder.jp/contests/abc243/tasks/abc243_c";
+    let problem = library.problem(url, false).unwrap();
+    let images: Vec<_> = problem
+        .statement
+        .iter()
+        .filter_map(|p| match p {
+            atcoder_ruby_ide::StatementPart::Image {
+                data,
+                width,
+                height,
+                ..
+            } => Some((data, width, height)),
+            _ => None,
+        })
+        .collect();
+    assert!(!images.is_empty());
+    for (data, width, height) in images {
+        assert!(data.starts_with("data:image/png;base64,"));
+        assert!(*width > 0 && *height > 0);
+    }
+    assert!(problem
+        .statement
+        .iter()
+        .any(|p| matches!(p, atcoder_ruby_ide::StatementPart::Math { .. })));
+    assert_eq!(
+        library.problem(url, false).unwrap().statement,
+        problem.statement
+    );
+    assert_eq!(
+        library.problem(url, true).unwrap().statement,
+        problem.statement
+    );
 }

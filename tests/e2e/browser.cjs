@@ -21,11 +21,11 @@ function ensureUiTestHostBinary() {
   return hostBinary;
 }
 
-async function launch(root) {
+async function launch(root, { hostEnv = {} } = {}) {
   const started = performance.now();
   const binary = await ensureUiTestHostBinary();
   const prepared = performance.now();
-  const child = spawn(binary, [], { cwd: root, env: { ...process.env, ATCODER_IDE_UI_TIMEOUT_MS: process.env.ATCODER_IDE_UI_TIMEOUT_MS || '4000' }, stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(binary, [], { cwd: root, env: { ...process.env, ...hostEnv, ATCODER_IDE_UI_TIMEOUT_MS: process.env.ATCODER_IDE_UI_TIMEOUT_MS || '4000' }, stdio: ['pipe', 'pipe', 'pipe'] });
   const pending = new Map();
   let sequence = 0;
   let stderr = '';
@@ -72,11 +72,14 @@ async function launch(root) {
     return step;
   }
   try {
-    const assets = new Map([['/', 'index.html'], ...['index.html', 'renderer.js', 'bridge.js', 'sample-cases.mjs', 'styles.css'].map(name => [`/${name}`, name])]);
+    const assets = new Map([['/', 'index.html'], ...['index.html', 'renderer.js', 'bridge.js', 'sample-cases.mjs', 'presentation.mjs', 'styles.css'].map(name => [`/${name}`, name])]);
+    for (const name of ['katex.mjs', 'katex.min.css', 'LICENSE', ...require('node:fs').readdirSync(path.join(repo, 'src/vendor/katex/fonts')).filter(n => n.endsWith('.woff2')).map(n => `fonts/${n}`)]) {
+      assets.set(`/vendor/katex/${name}`, `vendor/katex/${name}`);
+    }
     app.server = http.createServer(async (req, res) => {
       const name = assets.get(new URL(req.url, 'http://localhost').pathname);
       if (!name) { res.writeHead(404).end(); return; }
-      res.setHeader('Content-Type', /\.m?js$/.test(name) ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : 'text/html');
+      res.setHeader('Content-Type', /\.m?js$/.test(name) ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : name.endsWith('.woff2') ? 'font/woff2' : 'text/html');
       res.setHeader('Content-Security-Policy', require('../../src-tauri/tauri.conf.json').app.security.csp);
       res.end(await readFile(path.join(repo, 'src', name)));
     });
