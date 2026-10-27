@@ -54,6 +54,32 @@ fn real_product_page_excludes_editorial_link_and_prefers_japanese() {
 }
 
 #[test]
+fn tasks_without_samples_open_with_one_uncompared_empty_case() {
+    let html = r#"<span class="h2">A50 - 山型足し算</span><div id="task-statement"><section><h3>問題文</h3><p>高さを調整してください。</p></section><section><h3>入出力例1</h3><p><a href="https://img.atcoder.jp/example.zip">入出力ファイルはこちらから(zip)</a></p></section></div>"#;
+    let problem = parse_problem(URL, html).unwrap();
+    assert!(problem.samples.is_empty());
+    let root = tempfile::tempdir().unwrap();
+    let library = ProblemLibrary::new(root.path());
+    let mut documents = DocumentStore::default();
+    let opened = library
+        .open_workspace(problem, documents.revision(), &mut documents)
+        .unwrap();
+    assert_eq!(
+        opened.cases,
+        vec![SampleCase {
+            stdin: String::new(),
+            expected_output: String::new(),
+            compare: false
+        }]
+    );
+    let missing_output = html.replace(
+        "</div>",
+        "<section><h3>入力例 1</h3><pre>input</pre></section></div>",
+    );
+    assert!(parse_problem(URL, &missing_output).is_err());
+}
+
+#[test]
 fn real_legacy_snow_page_pairs_headings_outside_sections() {
     let problem = parse_problem(
         "https://atcoder.jp/contests/abc001/tasks/abc001_1",
@@ -309,4 +335,57 @@ fn live_atcoder_download_run_refresh_and_restore() {
             "{task}: fetched, {count} Ruby samples passed, refreshed, saved workspace restored"
         );
     }
+}
+
+#[test]
+#[ignore = "AtCoderへ接続する。全問は ATCODER_COLLECTION_LIVE_ALL=1 で明示指定"]
+fn live_atcoder_collection_import_and_fixed_workspace() {
+    use atcoder_ruby_ide::CollectionLibrary;
+    let root = tempfile::tempdir().unwrap();
+    let library = CollectionLibrary::new(root.path());
+    let url = "https://atcoder.jp/contests/tessoku-book";
+    let registered = library.register(url).unwrap();
+    assert!(registered.created);
+    assert_eq!(registered.view.collection.tasks.len(), 151);
+    let count = if std::env::var("ATCODER_COLLECTION_LIVE_ALL").as_deref() == Ok("1") {
+        151
+    } else {
+        2
+    };
+    for (index, task) in registered
+        .view
+        .collection
+        .tasks
+        .iter()
+        .take(count)
+        .enumerate()
+    {
+        let view = library.fetch_task(url, &task.url).unwrap();
+        assert!(
+            view.downloaded.contains(&task.url),
+            "{}: {:?}",
+            task.label,
+            view.collection.tasks[index].error
+        );
+        if index % 10 == 0 || index + 1 == count {
+            println!("tessoku-book: {} / {count}", index + 1);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    assert_eq!(library.view(url).unwrap().downloaded.len(), count);
+    assert!(!library.register(url).unwrap().created);
+    let task = &registered.view.collection.tasks[0].url;
+    let mut documents = DocumentStore::default();
+    let opened = library
+        .open_task(url, task, documents.revision(), &mut documents)
+        .unwrap();
+    assert!(!opened.problem.samples.is_empty());
+    documents
+        .save("puts 'saved'", documents.path().map(Path::to_owned))
+        .unwrap();
+    let reopened = library
+        .open_task(url, task, documents.revision(), &mut documents)
+        .unwrap();
+    assert_eq!(reopened.document.code.as_deref(), Some("puts 'saved'"));
+    assert_eq!(reopened.problem.statement, opened.problem.statement);
 }

@@ -33,6 +33,10 @@ beforeEach(resetWorkspace);
 after(async () => {
   if (app) await close(app);
   if (app) for (const kind of ['library/problems', 'workspaces']) await rm(path.join(app.dataDir, kind, libraryContest), { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  if (app) {
+    await rm(path.join(app.dataDir, 'library/collections', libraryContest), { recursive: true, force: true });
+    await rm(path.join(app.dataDir, 'library/collections', `${libraryContest}.json`), { force: true });
+  }
   if (root) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
@@ -1065,6 +1069,134 @@ test('P06: refresh can repair a cache before any problem is selected', async () 
   await page.locator('#problem-open').click();
   await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
   await page.locator('#problem-close').click();
+});
+
+async function seedCollection(count = 2) {
+  await rm(path.join(app.dataDir, 'workspaces', libraryContest), { recursive: true, force: true });
+  const url = `https://atcoder.jp/contests/${libraryContest}`;
+  const collection = { url, title: '練習問題集 <script>safe</script>', tasks: Array.from({ length: count }, (_, index) => ({ label: `A${String(index + 1).padStart(2, '0')}`, title: `Problem ${index + 1}`, url: `${url}/tasks/collection_${index}`, error: null })) };
+  const directory = path.join(app.dataDir, 'library/collections');
+  await rm(path.join(directory, libraryContest), { recursive: true, force: true });
+  await mkdir(path.join(directory, libraryContest), { recursive: true });
+  await writeFile(path.join(directory, `${libraryContest}.json`), JSON.stringify(collection));
+  return collection;
+}
+async function seedCollectionTask(task) {
+  const problem = { url: task.url, title: `${task.label} - ${task.title}`, statement: '固定保存した問題文', samples: [{ stdin: '1 2\n', expectedOutput: '3\n', compare: true }] };
+  await writeFile(path.join(app.dataDir, 'library/collections', libraryContest, `${task.url.split('/').at(-1)}.json`), JSON.stringify(problem));
+}
+async function showCollections() {
+  await page.locator('#collections').click();
+  await page.waitForFunction(() => !document.getElementById('collection-register').disabled);
+  await page.locator('#collection-select').selectOption(`https://atcoder.jp/contests/${libraryContest}`);
+}
+
+test('C01: fixed collection opens offline, protects edits and restores the saved workspace', async () => {
+  const collection = await seedCollection();
+  await Promise.all(collection.tasks.map(seedCollectionTask));
+  await showCollections();
+  assert.equal(await page.locator('#collection-title').textContent(), collection.title);
+  assert.equal(await page.locator('#collection-title script').count(), 0);
+  await page.setViewportSize({ width: 900, height: 650 });
+  assert.equal(await page.locator('#collection-dialog').evaluate(el => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth && el.scrollWidth <= el.clientWidth; }), true);
+  await page.screenshot({ path: 'test-results/collection-library.png' });
+  await page.locator('#collection-tasks button').first().click();
+  await page.locator('#problem-title').filter({ hasText: 'A01 - Problem 1' }).waitFor();
+  assert.equal(await page.locator('#problem-refresh').isDisabled(), true);
+  await page.locator('#problem-close').click();
+  await page.locator('#code-editor').fill('puts STDIN.read.split.map(&:to_i).sum');
+  await page.locator('#save').click();
+  await page.waitForFunction(() => !document.getElementById('save').disabled);
+  await page.locator('#stdin').fill('4 5\n');
+  await page.locator('#expected-output').fill('9\n');
+  await page.locator('#cases-save').click();
+  await page.waitForFunction(() => !document.getElementById('cases-save').disabled);
+  await page.locator('#stdin').fill('unsaved');
+  await showCollections();
+  await fileOperation(() => page.locator('#collection-tasks button').nth(1).click(), [discard(false)]);
+  assert.equal(await page.locator('#stdin').inputValue(), 'unsaved');
+  await fileOperation(() => page.locator('#collection-tasks button').nth(1).click(), [discard(true)]);
+  await page.locator('#problem-close').click();
+  await showCollections();
+  await page.locator('#collection-tasks button').first().click();
+  await page.locator('#problem-close').click();
+  assert.equal(await page.locator('#stdin').inputValue(), '4 5\n');
+  await runAndWait();
+  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
+});
+
+test('C02: registration fetches sequentially, pauses and resumes only missing tasks after reload', async () => {
+  const collection = await seedCollection(3);
+  // HTTP alone is replaced; persistence and subsequent opens use the real store.
+  const calls = [];
+  let failFirst = true;
+  let signalFirst;
+  const firstStarted = new Promise(resolve => { signalFirst = resolve; });
+  let releaseFirst;
+  const firstResponse = new Promise(resolve => { releaseFirst = resolve; });
+  await page.exposeFunction('__collectionFetch', async (url, taskUrl) => {
+    calls.push(taskUrl);
+    const task = collection.tasks.find(task => task.url === taskUrl);
+    if (task === collection.tasks[0] && failFirst) { signalFirst(); await firstResponse; task.error = 'network offline'; failFirst = false; }
+    else { await seedCollectionTask(task); task.error = null; }
+    await writeFile(path.join(app.dataDir, 'library/collections', `${libraryContest}.json`), JSON.stringify(collection));
+    const downloaded = [];
+    for (const task of collection.tasks) if (await access(path.join(app.dataDir, 'library/collections', libraryContest, `${task.url.split('/').at(-1)}.json`)).then(() => true, () => false)) downloaded.push(task.url);
+    return { collection, downloaded };
+  });
+  await page.evaluate(async collection => {
+    const { ide } = await import('./bridge.js');
+    ide.registerCollection = async () => ({ view: { collection, downloaded: [] }, created: true });
+    ide.fetchCollectionTask = (url, task) => window.__collectionFetch(url, task);
+  }, collection);
+  await page.locator('#collections').click();
+  await page.waitForFunction(() => !document.getElementById('collection-register').disabled);
+  await page.locator('#collection-url').fill(collection.url);
+  await page.locator('#collection-register').click();
+  await firstStarted;
+  await page.locator('#collection-pause').click();
+  releaseFirst();
+  await page.waitForFunction(() => !document.getElementById('collection-register').disabled);
+  await page.locator('#collection-tasks').filter({ hasText: 'network offline' }).waitFor();
+  const beforeReload = calls.length;
+  assert.ok(beforeReload < 3);
+  await page.reload();
+  await page.waitForFunction(() => !document.getElementById('run').disabled);
+  await page.evaluate(async () => { const { ide } = await import('./bridge.js'); ide.fetchCollectionTask = (url, task) => window.__collectionFetch(url, task); });
+  await showCollections();
+  await page.locator('#collection-resume').click();
+  await page.waitForFunction(() => document.getElementById('collection-progress').textContent.includes('取得済み 3 / 3'));
+  await page.waitForFunction(() => document.getElementById('collection-pause').disabled);
+  assert.equal(calls.filter(url => url === collection.tasks[0].url).length, 2);
+  for (const task of collection.tasks.slice(1)) assert.equal(calls.filter(url => url === task.url).length, 1);
+  const total = calls.length;
+  await page.locator('#collection-url').fill(collection.url);
+  await page.locator('#collection-register').click();
+  await page.waitForFunction(() => !document.getElementById('collection-register').disabled);
+  assert.equal(calls.length, total);
+  assert.equal(await page.locator('#collection-resume').isDisabled(), true);
+  await page.locator('#collection-close').click();
+});
+
+test('C03: tasks without inline samples open, and corrupt snapshots preserve the current document', async () => {
+  const collection = await seedCollection();
+  const directory = path.join(app.dataDir, 'library/collections', libraryContest);
+  await writeFile(path.join(directory, 'collection_0.json'), JSON.stringify({ url: collection.tasks[0].url, title: 'A01 - No inline samples', statement: 'サンプルは別ファイルで配布', samples: [] }));
+  await writeFile(path.join(directory, 'collection_1.json'), 'corrupt');
+  await showCollections();
+  await page.locator('#collection-tasks button').first().click();
+  await page.locator('#problem-title').filter({ hasText: 'No inline samples' }).waitFor();
+  await page.locator('#problem-close').click();
+  assert.equal(await page.locator('#case-count').textContent(), '1 ケース');
+  assert.equal(await page.locator('#compare-output').isChecked(), false);
+  await page.locator('#code-editor').fill('puts 42');
+  const currentPath = await page.locator('#file-path').textContent();
+  await showCollections();
+  await fileOperation(() => page.locator('#collection-tasks button').nth(1).click(), [discard(true)]);
+  await page.locator('#collection-message').filter({ hasText: '不正' }).waitFor();
+  assert.equal(await page.locator('#code-editor').inputValue(), 'puts 42');
+  assert.equal(await page.locator('#file-path').textContent(), currentPath);
+  await page.locator('#collection-close').click();
 });
 
 test('M06/M09: accepting close stops Ruby descendants and exits', async () => {

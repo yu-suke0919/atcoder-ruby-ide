@@ -124,3 +124,18 @@ pre { margin: 0; padding: 0 16px 12px; white-space: pre-wrap; overflow-wrap: any
 #problem-message[data-error="true"] { color: #f5a3b2; }
 
 .brand-caption { display: block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.library-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; }
+.library-actions button { padding: 6px; font-size: 11px; }
+#collection-dialog { width: min(850px, calc(100vw - 36px)); max-height: calc(100vh - 36px); padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); overflow: auto; }
+#collection-dialog::backdrop { background: #000a; }
+#collection-url { min-width: 0; flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 8px; font: inherit; }
+#collection-select { display: block; width: 100%; margin: 6px 0 12px; padding: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; }
+#collection-title { overflow-wrap: anywhere; }
+.collection-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0; }
+#collection-progress, #collection-message { font-size: 12px; color: var(--muted); }
+#collection-message[data-error="true"] { color: #f5a3b2; }
+#collection-tasks { max-height: 40vh; overflow-y: auto; border-top: 1px solid var(--border); }
+.collection-task { display: grid; grid-template-columns: minmax(0, 1fr) minmax(80px, .6fr) auto; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+.collection-task span { overflow-wrap: anywhere; }
+.collection-task .task-state { font-size: 11px; color: var(--muted); }
+.collection-task .task-state[data-error="true"] { color: #f5a3b2; }

@@ -1,6 +1,7 @@
 //! Test-only stdio transport. All execution and document behavior comes from the app library.
 use atcoder_ruby_ide::{
-    load_samples, save_samples, DocumentStore, ProblemLibrary, RunEvent, RunRequest, Runner,
+    load_samples, save_samples, CollectionLibrary, DocumentStore, ProblemLibrary, RunEvent,
+    RunRequest, Runner,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -75,6 +76,7 @@ fn main() {
     };
     let mut documents = DocumentStore::default();
     let library = ProblemLibrary::new(std::env::current_dir().unwrap().join("user-data"));
+    let collections = CollectionLibrary::new(std::env::current_dir().unwrap().join("user-data"));
     let sink = Arc::new(Mutex::new(io::stdout()));
     for line in io::stdin().lock().lines() {
         let request: Request = serde_json::from_str(&line.unwrap()).unwrap();
@@ -161,6 +163,20 @@ fn main() {
                     &mut documents
                 )?))
             }
+            "collection_list" => Ok(json!(collections.list()?)),
+            "collection_register" => Ok(json!(
+                collections.register(args["url"].as_str().ok_or("URLを指定してください")?)?
+            )),
+            "collection_fetch_task" => Ok(json!(collections.fetch_task(
+                args["url"].as_str().ok_or("URLを指定してください")?,
+                args["task"].as_str().ok_or("問題を指定してください")?
+            )?)),
+            "collection_open_task" => Ok(json!(collections.open_task(
+                args["url"].as_str().ok_or("URLを指定してください")?,
+                args["task"].as_str().ok_or("問題を指定してください")?,
+                documents.revision(),
+                &mut documents
+            )?)),
             "problem_refresh" => Ok(json!(
                 library.problem(args["url"].as_str().ok_or("URLを指定してください")?, true)?
             )),

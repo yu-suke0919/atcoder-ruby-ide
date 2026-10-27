@@ -9,16 +9,16 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use url::Url;
 
-const MAX_HTML_BYTES: usize = 4 * MAX_TEXT_BYTES;
+pub(crate) const MAX_HTML_BYTES: usize = 4 * MAX_TEXT_BYTES;
 const MAX_CACHE_BYTES: usize = 8 * MAX_TEXT_BYTES;
 
-struct ProblemKey {
-    url: String,
-    contest: String,
-    task: String,
+pub(crate) struct ProblemKey {
+    pub(crate) url: String,
+    pub(crate) contest: String,
+    pub(crate) task: String,
 }
 impl ProblemKey {
-    fn parse(value: &str) -> Result<Self, String> {
+    pub(crate) fn parse(value: &str) -> Result<Self, String> {
         let url = Url::parse(value.trim()).map_err(|_| "AtCoder の問題URLを入力してください。")?;
         let parts: Vec<_> = url.path().trim_end_matches('/').split('/').collect();
         let valid_id = |id: &str| {
@@ -74,7 +74,7 @@ pub struct ProblemWorkspace {
     pub cases: Vec<SampleCase>,
 }
 
-fn validate(problem: &Problem, key: &ProblemKey) -> Result<(), String> {
+pub(crate) fn validate(problem: &Problem, key: &ProblemKey) -> Result<(), String> {
     if problem.url != key.url
         || problem.title.trim().is_empty()
         || problem.title.len() > 1024
@@ -85,7 +85,11 @@ fn validate(problem: &Problem, key: &ProblemKey) -> Result<(), String> {
             "問題データのURL・タイトル・本文が不正、またはサイズ上限を超えています。".into(),
         );
     }
-    crate::samples::validate(&problem.samples)
+    if problem.samples.is_empty() {
+        Ok(())
+    } else {
+        crate::samples::validate(&problem.samples)
+    }
 }
 fn selector(value: &str) -> Selector {
     Selector::parse(value).unwrap()
@@ -203,7 +207,7 @@ pub fn parse_problem(url: &str, html: &str) -> Result<Problem, String> {
     if pending.is_some() {
         return Err("サンプル本文がありません。".into());
     }
-    if inputs.is_empty() || inputs.keys().ne(outputs.keys()) {
+    if inputs.keys().ne(outputs.keys()) {
         return Err("対応するサンプル入出力が見つかりません。".into());
     }
     let samples = inputs
@@ -226,7 +230,7 @@ pub fn parse_problem(url: &str, html: &str) -> Result<Problem, String> {
     Ok(problem)
 }
 
-fn download(client: &Client, url: &str) -> Result<String, String> {
+pub(crate) fn download(client: &Client, url: &str) -> Result<String, String> {
     let response = client
         .get(url)
         .send()
@@ -246,6 +250,17 @@ fn download(client: &Client, url: &str) -> Result<String, String> {
         return Err("問題ページは4 MiB以下にしてください。".into());
     }
     String::from_utf8(bytes).map_err(|_| "問題ページがUTF-8ではありません。".into())
+}
+
+pub(crate) fn http_client() -> Result<Client, String> {
+    Client::builder()
+        .use_native_tls()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(15))
+        .user_agent(concat!("AtCoder-Ruby-IDE/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|e| e.to_string())
 }
 
 pub struct ProblemLibrary {
@@ -268,14 +283,7 @@ impl ProblemLibrary {
             validate(&problem, &key)?;
             return Ok(problem);
         }
-        let client = Client::builder()
-            .use_native_tls()
-            .redirect(reqwest::redirect::Policy::none())
-            .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(15))
-            .user_agent(concat!("AtCoder-Ruby-IDE/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .map_err(|e| e.to_string())?;
+        let client = http_client()?;
         self.store_page(&key, &download(&client, &format!("{}?lang=ja", key.url))?)
     }
     fn store_page(&self, key: &ProblemKey, html: &str) -> Result<Problem, String> {
@@ -305,7 +313,16 @@ impl ProblemLibrary {
         let workspace = key.directory(&self.root, "workspaces");
         std::fs::create_dir_all(&workspace).map_err(|e| e.to_string())?;
         let case_path = workspace.join("cases.json");
-        let data = serde_json::to_vec_pretty(&serde_json::json!({"cases":problem.samples}))
+        let initial_cases = if problem.samples.is_empty() {
+            vec![SampleCase {
+                stdin: String::new(),
+                expected_output: String::new(),
+                compare: false,
+            }]
+        } else {
+            problem.samples.clone()
+        };
+        let data = serde_json::to_vec_pretty(&serde_json::json!({"cases":initial_cases}))
             .map_err(|e| e.to_string())?;
         create_if_missing(&case_path, &data)?;
         let cases = load_samples(Some(case_path))?.cases.unwrap();
@@ -327,7 +344,7 @@ impl ProblemLibrary {
         save_samples(cases, Some(workspace.join("cases.json")))
     }
 }
-fn create_if_missing(path: &Path, data: &[u8]) -> Result<(), String> {
+pub(crate) fn create_if_missing(path: &Path, data: &[u8]) -> Result<(), String> {
     if path.try_exists().map_err(|e| e.to_string())? {
         return Ok(());
     }
