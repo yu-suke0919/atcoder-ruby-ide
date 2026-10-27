@@ -147,9 +147,12 @@ test('E06: a pending file action blocks both typing and search replacements', as
     const replace = page.getByRole('button', { name: 'すべて置換', exact: true });
     if (await replace.isEnabled()) await replace.click();
     assert.equal(await editorText(page), 'puts "locked"');
+    await code().focus();
+    assert.equal(await code().evaluate(el => el === document.activeElement), true);
   } finally { await page.evaluate(() => window.finishEditorSave()); }
   await page.waitForFunction(() => !document.getElementById('save').disabled);
   assert.equal(await code().isEditable(), true);
+  assert.equal(await code().evaluate(el => el === document.activeElement), true);
 });
 
 });

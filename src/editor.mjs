@@ -42,7 +42,7 @@ export function createEditor(parent, initial, onChange, onCursor) {
   const editable = () => [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)];
   const state = doc => EditorState.create({ doc, extensions: [
     writable.of(editable()), EditorState.tabSize.of(2), indentUnit.of('  '),
-    EditorView.contentAttributes.of({ id: 'code-editor', 'data-testid': 'code-editor', 'aria-label': 'Ruby コード', spellcheck: 'false', autocapitalize: 'off' }),
+    EditorView.contentAttributes.of({ id: 'code-editor', 'data-testid': 'code-editor', 'aria-label': 'Ruby コード', tabindex: '0', spellcheck: 'false', autocapitalize: 'off' }),
     lineNumbers(), drawSelection(), history(), StreamLanguage.define(ruby), indentOnInput(),
     bracketMatching(), closeBrackets(), syntaxHighlighting(colors), theme,
     search({ top: true }), EditorState.phrases.of(phrases),
