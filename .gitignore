@@ -8,3 +8,4 @@ target/
 artifacts/
 frontend-dist/
 src-tauri/gen/
+src/vendor/katex/

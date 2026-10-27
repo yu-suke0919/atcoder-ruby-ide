@@ -10,6 +10,7 @@ Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使
 - [レビューで維持する修正](docs/review.md)
 - [複数サンプルと JSON の仕様](docs/multi-sample.md)
 - [AtCoder 問題の取り込みと保存](docs/problem-library.md)
+- [問題文の数式と画像](docs/problem-presentation.md)
 
 ## 機能
 
@@ -36,7 +37,7 @@ Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使
 問題集は初回取得の内容を固定保存し、自動・一括で更新しません。同じURLの再登録や未取得分の再試行でも、取得済みの内容を保持します。単問向けの再取得からも問題集の原本を保護します。
 取得済みの問題に欠落・破損があった場合は、その行の「取り直す」を使えます。対象名・URLと上書き内容を確認し、「この問題を取り直す」で現在のAtCoderから1問だけ取り直します。保存時と内容が変わっている可能性があります。キャンセル・Escでは通信しません。失敗時は以前の原本を残し、成功しても解答・編集済みケース・他の問題は変更しません。
 サンプルは問題本文から取り込みます。A50「山型足し算」のようなZIP配布のサンプルは自動取得せず、比較無効の空ケースを用意します。
-データは Windows の `%LOCALAPPDATA%\io.github.yu-suke0919.atcoder-ruby-ide` に置き、配布フォルダーと分離します。問題文はテキスト表示で、数式はTeX表記、画像は代替テキストです。
+データは Windows の `%LOCALAPPDATA%\io.github.yu-suke0919.atcoder-ruby-ide` に置き、配布フォルダーと分離します。数式は整形して表示し、問題内の画像も保存します。画像はクリックで拡大でき、保存後は数式・画像をオフラインで表示できます。
 
 ## Windows 配布版
 
@@ -86,7 +87,7 @@ npm run test:e2e
 
 共通テストは Rust による実際の Ruby プロセス・ファイル操作と、Node によるケース状態・アーカイブ検証です。
 ケース状態だけなら `node --test --test-isolation=none tests/unit/sample-cases.test.cjs` で Ruby・ブラウザーなしで確認できます。
-AtCoder の実サイトとの連携は、通信できる開発環境で `npm run test:atcoder-live` を明示実行します。公開3問の取得・再取得と実Rubyでの全サンプル比較に加え、tessoku-bookの151問の一覧と先頭2問の固定保存・復元・破損原本の個別取り直しを確認します。全151問の取得は `ATCODER_COLLECTION_LIVE_ALL=1 cargo test --locked --test library live_atcoder_collection -- --ignored --nocapture` で明示実行できます。CIを含む通常の自動テストではAtCoderへ接続しません。依存パッケージ・Ruby・ブラウザーなどの初回取得には通信が必要です。画面の実サイトテストは開発用RubyとChromiumを使います。
+AtCoder の実サイトとの連携は、通信できる開発環境で `npm run test:atcoder-live` を明示実行します。公開3問の取得・再取得と実Rubyでの全サンプル比較に加え、tessoku-bookの151問の一覧と先頭2問の固定保存・復元・破損原本の個別取り直しを確認します。画像付きのABC243 Cでは本文・画像の保存、オフライン読込・再取得を確認します。全151問の取得は `ATCODER_COLLECTION_LIVE_ALL=1 cargo test --locked --test library live_atcoder_collection -- --ignored --nocapture` で明示実行できます。CIを含む通常の自動テストではAtCoderへ接続しません。依存パッケージ・Ruby・ブラウザーなどの初回取得には通信が必要です。画像を含む実サイトテストには `atcoder.jp` と `img.atcoder.jp` の通信許可が必要です。画面の実サイトテストは開発用RubyとChromiumを使います。
 Linux では `npm run test:e2e` がテスト専用 Rust ホストをビルドし、HTTP 配信した本番画面を headless Chromium で操作します。
 実 Ruby・ソースとケースのファイル I/O・実行制御・比較は本番の Rust ライブラリを共有し、Tauri 通信・ウィンドウ操作・ダイアログ応答をテスト用に差し替えます。
 通常の GUI テストでは、問題・問題集の登録・取得・再取得・個別取り直しの成功／失敗も、必要に応じてブリッジの応答と保存データをテスト側で用意します。HTTP・HTML解析・原本保存の処理は Rust テストで検証します。

@@ -24,6 +24,9 @@ serde_json = "1"
 tempfile = "3"
 tauri = { version = "2", optional = true }
 tauri-plugin-dialog = { version = "2", optional = true }
+base64 = "=0.23.1"
+quick-xml = "=0.42.0"
+image = { version = "=0.25.8", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 
 [build-dependencies]
 tauri-build = { version = "2", optional = true }

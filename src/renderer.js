@@ -1,4 +1,5 @@
 import { ide } from './bridge.js';
+import { renderStatement } from './presentation.mjs';
 import { SampleCases, MAX_CASES } from './sample-cases.mjs';
 
 const $ = (id) => document.getElementById(id);
@@ -9,6 +10,8 @@ const compareOutput = $('compare-output');
 const differenceDialog = $('difference-dialog');
 const problemDialog = $('problem-dialog');
 const collectionDialog = $('collection-dialog');
+const imageDialog = $('image-dialog');
+$('image-close').addEventListener('click', () => imageDialog.close());
 const collectionRepairDialog = $('collection-repair-dialog');
 let repairTarget = null;
 let activeProblem = null;
@@ -336,7 +339,7 @@ document.addEventListener('keydown', (event) => {
   if (!event.ctrlKey && !event.metaKey) return;
   const key = event.key.toLowerCase();
   if (['s', 'o', 'enter'].includes(key)) event.preventDefault();
-  if (differenceDialog.open || problemDialog.open || collectionDialog.open || collectionRepairDialog.open) return;
+  if (differenceDialog.open || problemDialog.open || collectionDialog.open || collectionRepairDialog.open || imageDialog.open) return;
   if (key === 's') saveFile(event.shiftKey);
   if (key === 'o') openFile();
   if (key === 'enter') run();
@@ -347,7 +350,7 @@ function showProblem() {
   $('problem-title').title = activeProblem?.title || '';
   const statement = $('problem-statement');
   const scroll = statement.scrollTop;
-  statement.textContent = activeProblem ? activeProblem.statement : '';
+  renderStatement(statement, activeProblem?.statement || []);
   statement.scrollTop = scroll;
   $('problem-library').title = activeProblem ? activeProblem.title : 'AtCoder の問題を開く';
   document.querySelector('.brand-caption').textContent = activeProblem ? activeProblem.title : '小さく書いて、すぐ試す。';

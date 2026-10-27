@@ -155,3 +155,14 @@ pre { margin: 0; padding: 0 16px 12px; white-space: pre-wrap; overflow-wrap: any
 #collection-repair-warning { line-height: 1.8; }
 .repair-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 #collection-repair-confirm { background: #493760; color: var(--text); border-color: #7b5e9c; }
+#problem-statement { overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/21px "Segoe UI", "Noto Sans JP", sans-serif; }
+#problem-statement pre { padding: 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--panel); margin: 8px 0; }
+#problem-statement .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; margin: 8px 0; }
+#problem-statement .math-fallback { font-family: Consolas, monospace; }
+.statement-image { display: block; max-width: 100%; padding: 4px; margin: 8px 0; background: white; }
+.statement-image img { display: block; max-width: 100%; height: auto; }
+#image-dialog { width: min(1100px, calc(100vw - 36px)); max-height: calc(100vh - 36px); padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); }
+#image-dialog::backdrop { background: #000b; }
+#image-heading { margin: 0; font-size: 16px; }
+.image-scroll { max-height: calc(100vh - 130px); overflow: auto; margin-top: 12px; background: white; }
+#image-preview { display: block; max-width: none; }

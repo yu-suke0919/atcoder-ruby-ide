@@ -1,7 +1,11 @@
 use crate::files::{read_limited, write_atomic, MAX_TEXT_BYTES};
+use crate::presentation::{
+    download_image, fill_images, parse_statement, validate_statement, MAX_CACHE_BYTES,
+};
+use crate::StatementPart;
 use crate::{load_samples, save_samples, DocumentResult, DocumentStore, SampleCase, SampleResult};
 use reqwest::blocking::Client;
-use scraper::{ElementRef, Html, Node, Selector};
+use scraper::{Html, Node, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
@@ -10,7 +14,6 @@ use std::time::Duration;
 use url::Url;
 
 pub(crate) const MAX_HTML_BYTES: usize = 4 * MAX_TEXT_BYTES;
-const MAX_CACHE_BYTES: usize = 8 * MAX_TEXT_BYTES;
 
 pub(crate) struct ProblemKey {
     pub(crate) url: String,
@@ -63,7 +66,7 @@ impl ProblemKey {
 pub struct Problem {
     pub url: String,
     pub title: String,
-    pub statement: String,
+    pub statement: Vec<StatementPart>,
     pub samples: Vec<SampleCase>,
 }
 #[derive(Serialize)]
@@ -75,16 +78,17 @@ pub struct ProblemWorkspace {
 }
 
 pub(crate) fn validate(problem: &Problem, key: &ProblemKey) -> Result<(), String> {
-    if problem.url != key.url
-        || problem.title.trim().is_empty()
-        || problem.title.len() > 1024
-        || problem.statement.trim().is_empty()
-        || problem.statement.len() > MAX_TEXT_BYTES
-    {
-        return Err(
-            "問題データのURL・タイトル・本文が不正、またはサイズ上限を超えています。".into(),
-        );
+    validate_content(problem, key, true)
+}
+fn validate_content(
+    problem: &Problem,
+    key: &ProblemKey,
+    require_images: bool,
+) -> Result<(), String> {
+    if problem.url != key.url || problem.title.trim().is_empty() || problem.title.len() > 1024 {
+        return Err("問題データのURL・タイトルが不正です。".into());
     }
+    validate_statement(&problem.statement, &key.url, require_images)?;
     if problem.samples.is_empty() {
         Ok(())
     } else {
@@ -94,41 +98,6 @@ pub(crate) fn validate(problem: &Problem, key: &ProblemKey) -> Result<(), String
 fn selector(value: &str) -> Selector {
     Selector::parse(value).unwrap()
 }
-fn plain_text(element: ElementRef<'_>, out: &mut String) {
-    let name = element.value().name();
-    if ["script", "style", "noscript", "iframe"].contains(&name) {
-        return;
-    }
-    if name == "img" {
-        out.push_str(&format!(
-            "[画像: {}]",
-            element
-                .value()
-                .attr("alt")
-                .filter(|s| !s.is_empty())
-                .unwrap_or("原文を参照")
-        ));
-        return;
-    }
-    let block = [
-        "p", "div", "section", "h1", "h2", "h3", "h4", "pre", "li", "tr", "br",
-    ]
-    .contains(&name);
-    if block {
-        out.push('\n');
-    }
-    for child in element.children() {
-        match child.value() {
-            Node::Text(text) => out.push_str(text),
-            Node::Element(_) => plain_text(ElementRef::wrap(child).unwrap(), out),
-            _ => {}
-        }
-    }
-    if block {
-        out.push('\n');
-    }
-}
-
 pub fn parse_problem(url: &str, html: &str) -> Result<Problem, String> {
     let key = ProblemKey::parse(url)?;
     if html.len() > MAX_HTML_BYTES {
@@ -218,15 +187,14 @@ pub fn parse_problem(url: &str, html: &str) -> Result<Problem, String> {
             compare: true,
         })
         .collect();
-    let mut statement = String::new();
-    plain_text(body, &mut statement);
+    let statement = parse_statement(body, &key.url)?;
     let problem = Problem {
         url: key.url.clone(),
         title,
-        statement: statement.trim().to_owned(),
+        statement,
         samples,
     };
-    validate(&problem, &key)?;
+    validate_content(&problem, &key, false)?;
     Ok(problem)
 }
 
@@ -287,10 +255,21 @@ impl ProblemLibrary {
         self.store_page(&key, &download(&client, &format!("{}?lang=ja", key.url))?)
     }
     fn store_page(&self, key: &ProblemKey, html: &str) -> Result<Problem, String> {
-        let problem = parse_problem(&key.url, html)?;
+        let client = http_client()?;
+        self.store_page_with(key, html, |url| download_image(&client, url))
+    }
+    fn store_page_with(
+        &self,
+        key: &ProblemKey,
+        html: &str,
+        fetch_image: impl FnMut(&str) -> Result<Vec<u8>, String>,
+    ) -> Result<Problem, String> {
+        let mut problem = parse_problem(&key.url, html)?;
+        fill_images(&mut problem.statement, fetch_image)?;
+        validate(&problem, key)?;
         let data = serde_json::to_vec_pretty(&problem).map_err(|e| e.to_string())?;
         if data.len() > MAX_CACHE_BYTES {
-            return Err("保存する問題が8 MiBを超えています。".into());
+            return Err("保存する問題が32 MiBを超えています。".into());
         }
         let cache = key
             .directory(&self.root, "library/problems")
@@ -432,6 +411,33 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(code_path).unwrap(),
             "puts 'my answer'"
+        );
+    }
+    #[test]
+    fn image_download_failure_keeps_the_entire_old_snapshot() {
+        let root = tempfile::tempdir().unwrap();
+        let library = ProblemLibrary::new(root.path());
+        let key = ProblemKey::parse("https://atcoder.jp/contests/test/tasks/task").unwrap();
+        let html = r#"<span class="h2">Media</span><div id="task-statement"><p><var>\\frac{1}{2}</var></p><img src="https://img.atcoder.jp/test/figure.svg" alt="図"></div>"#;
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50"><rect width="100" height="50"/></svg>"#;
+        library
+            .store_page_with(&key, html, |_| Ok(svg.to_vec()))
+            .unwrap();
+        let cache = key
+            .directory(root.path(), "library/problems")
+            .join("problem.json");
+        let old = std::fs::read(&cache).unwrap();
+        assert!(library
+            .store_page_with(&key, html, |_| Err("offline".into()))
+            .is_err());
+        assert_eq!(std::fs::read(&cache).unwrap(), old);
+        assert!(library
+            .store_page_with(&key, html, |_| Ok(b"broken image".to_vec()))
+            .is_err());
+        assert_eq!(std::fs::read(&cache).unwrap(), old);
+        let reopened = library.problem(&key.url, false).unwrap();
+        assert!(
+            reopened.statement.iter().any(|p| matches!(p, StatementPart::Image { data, .. } if data.starts_with("data:image/svg+xml;base64,")))
         );
     }
 }

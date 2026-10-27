@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AtCoder Ruby IDE</title>
+  <link rel="stylesheet" href="vendor/katex/katex.min.css">
   <link rel="stylesheet" href="styles.css">
   <script src="renderer.js" type="module"></script>
 </head>
@@ -18,7 +19,7 @@
     <div class="workspace">
       <section id="problem-panel" class="panel problem-panel" aria-labelledby="problem-title" hidden>
         <div class="panel-heading"><h3 id="problem-title">問題を選んでください</h3></div>
-        <pre id="problem-statement" aria-label="問題文" tabindex="0"></pre>
+        <div id="problem-statement" aria-label="問題文" tabindex="0"></div>
       </section>
       <section class="panel editor-panel" aria-labelledby="editor-heading">
         <div class="panel-heading"><div class="panel-label"><span class="file-icon" aria-hidden="true">⌘</span><h3 id="editor-heading">コード</h3><span class="language-pill">Ruby</span></div><span id="save-state" data-testid="save-state" class="subtle">未保存のファイル</span></div>
@@ -77,7 +78,7 @@
     <h2 id="collection-repair-heading">この問題を取り直しますか？</h2>
     <p id="collection-repair-target"></p>
     <p id="collection-repair-url"></p>
-    <p id="collection-repair-warning">現在のAtCoderから問題文と元のサンプルを取得し、保存済みの原本を置き換えます。保存時と内容が変わっている場合があります。解答と編集済みのケースは保持します。</p>
+    <p id="collection-repair-warning">現在のAtCoderから問題文・画像と元のサンプルを取得し、保存済みの原本を置き換えます。保存時と内容が変わっている場合があります。解答と編集済みのケースは保持します。</p>
     <div class="repair-actions"><button id="collection-repair-cancel" autofocus>キャンセル</button><button id="collection-repair-confirm">この問題を取り直す</button></div>
   </dialog>
   <dialog id="problem-dialog" aria-labelledby="problem-dialog-heading">
@@ -85,8 +86,12 @@
     <label for="problem-url">問題URL</label>
     <div class="problem-actions"><input id="problem-url" type="url" placeholder="https://atcoder.jp/contests/abs/tasks/practice_1" spellcheck="false"><button id="problem-open">開く</button><button id="problem-refresh" disabled>再取得</button></div>
     <p class="problem-help">取得済みの問題はオフラインでも開けます。再取得は入力URLの問題文と元のサンプルだけを更新します。</p>
-    <p class="problem-help">問題文はテキスト表示です。数式はTeX表記、画像は説明文を表示します。サンプルは本文から取り込み、ZIPなど別ファイルで配布される場合は空ケースから編集できます。</p>
+    <p class="problem-help">数式は整形し、保存した画像もオフラインで表示します。画像はクリックで拡大できます。サンプルは本文から取り込み、ZIPなど別ファイルで配布される場合は空ケースから編集できます。</p>
     <p id="problem-message" role="status"></p>
+  </dialog>
+  <dialog id="image-dialog" aria-labelledby="image-heading">
+    <div class="difference-heading"><h2 id="image-heading">問題の図</h2><button id="image-close" autofocus>閉じる</button></div>
+    <div class="image-scroll"><img id="image-preview" alt=""></div>
   </dialog>
   <dialog id="difference-dialog" aria-labelledby="difference-position" aria-describedby="difference-help">
     <div class="difference-heading"><h2 id="difference-position" data-testid="difference-position"></h2><button id="difference-close">閉じる</button></div>
