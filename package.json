@@ -17,11 +17,21 @@
     "build:win": "npm run prepare:ruby && tauri build --features desktop",
     "package:win": "node scripts/package-windows.cjs",
     "prepare:math": "node scripts/prepare-math.cjs",
-    "postinstall": "npm run prepare:math"
+    "prepare:editor": "node scripts/prepare-editor.cjs",
+    "postinstall": "npm run prepare:math && npm run prepare:editor"
   },
   "devDependencies": {
+    "@codemirror/autocomplete": "6.20.4",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/language": "6.13.1",
+    "@codemirror/legacy-modes": "6.5.5",
+    "@codemirror/search": "6.7.2",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.15",
+    "@lezer/highlight": "1.2.5",
     "@tauri-apps/cli": "2.12.4",
     "7zip-bin": "5.2.0",
+    "esbuild": "0.28.2",
     "katex": "0.19.1",
     "playwright": "1.64.1"
   }

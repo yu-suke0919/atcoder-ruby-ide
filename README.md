@@ -11,10 +11,11 @@ Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使
 - [複数サンプルと JSON の仕様](docs/multi-sample.md)
 - [AtCoder 問題の取り込みと保存](docs/problem-library.md)
 - [問題文の数式と画像](docs/problem-presentation.md)
+- [Rubyエディタの編集支援](docs/code-editor.md)
 
 ## 機能
 
-- Ruby コード編集、行番号、Tab による 2 スペースのインデント
+- Rubyの色分け、行番号、自動インデントと選択行の字下げ・解除、括弧補完、検索・置換、Undo／Redo
 - UTF-8 ファイルの読み込み、上書き保存、名前を付けて保存
 - 標準入力付き実行、stdout / stderr の逐次表示、実行時間の表示
 - 停止、5 秒の実行制限、合計 1 MiB の出力制限、子プロセスの終了
@@ -64,6 +65,8 @@ npm ci
 npm run prepare:ruby
 npm start
 ```
+
+`npm ci` は数式用資産とCodeMirrorのバンドル・ライセンスを `src/vendor/` に生成します。エディタの依存や `scripts/codemirror.mjs` を変更した場合は `npm run prepare:editor` で再生成します。表示時にCDNや外部サービスへ接続しません。
 
 Windows のデスクトップアプリは `npm start` による開発時も同梱 Ruby を使います。`RUBY_PATH` や PATH の別の Ruby には切り替わりません。
 共通テスト（`npm test`）とブラウザー用テストホストは、OS にかかわらず `RUBY_PATH`、未指定なら PATH の `ruby` を使います。Windows の共通テストでは、CI と同じく準備済みの同梱 Ruby を指定します。
@@ -141,6 +144,8 @@ Ruby は公式配布元から取得し、[固定した SHA-256](config/ruby-wind
 | 保存 | Ctrl+S |
 | 名前を付けて保存 | Ctrl+Shift+S |
 | 実行 | Ctrl+Enter |
+| 検索・置換 | Ctrl+F / Ctrl+H |
+| 元に戻す／やり直す | Ctrl+Z / Ctrl+Y（Ctrl+Shift+Z） |
 
 コードは UTF-8 で保存します。標準入力はソースと別に、その実行時だけ渡します。
 EOF を含む標準入力や日本語出力も Ruby の事前インストールなしで利用できます。

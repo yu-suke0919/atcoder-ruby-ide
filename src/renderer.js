@@ -1,9 +1,9 @@
 import { ide } from './bridge.js';
+import { createEditor } from './editor.mjs';
 import { renderStatement } from './presentation.mjs';
 import { SampleCases, MAX_CASES } from './sample-cases.mjs';
 
 const $ = (id) => document.getElementById(id);
-const editor = $('code-editor');
 const input = $('stdin');
 const expectedOutput = $('expected-output');
 const compareOutput = $('compare-output');
@@ -21,7 +21,6 @@ let selectedCollection = null;
 let collectionDownloading = false;
 let cancelCollection = false;
 const sample = 'a = gets.to_i\nb, c = gets.split.map(&:to_i)\ns = gets.chomp\n\nputs "#{a + b + c} #{s}"\n';
-editor.value = sample;
 const cases = new SampleCases([{ stdin: '1\n2 3\ntest\n', expectedOutput: '6 test\n', compare: false }]);
 let canceled = false;
 const comparisonLabels = { none: '比較なし', pending: '未比較', running: '比較中…', matched: '一致', mismatched: '不一致', unavailable: '判定なし' };
@@ -35,6 +34,8 @@ let rubyChecking = false;
 let currentRun = null;
 let closing = false;
 let scrollFrame = null;
+const editor = createEditor($('editor-host'), sample, () => { resetComparison(true); updateEditor(); }, updateCursor);
+$('editor-search').addEventListener('click', () => editor.search());
 
 async function confirmDiscard(includeCases = false) {
   return (editor.value === savedCode && (!includeCases || !cases.dirty)) || await ide.confirmDiscard();
@@ -144,13 +145,12 @@ function updateEditor() {
   $('save-state').textContent = dirty ? '● 未保存の変更' : filePath ? '保存済み' : '未保存のファイル';
   $('file-path').textContent = filePath || '無題.rb';
   $('file-path').title = filePath || '未保存のファイル';
-  $('line-numbers').textContent = Array.from({ length: editor.value.split('\n').length }, (_, i) => i + 1).join('\n');
   updateCursor();
 }
 
 function updateCursor() {
-  const beforeCursor = editor.value.slice(0, editor.selectionStart).split('\n');
-  $('cursor-position').textContent = `Ln ${beforeCursor.length}, Col ${beforeCursor.at(-1).length + 1}`;
+  const { line, column } = editor.cursor;
+  $('cursor-position').textContent = `Ln ${line}, Col ${column}`;
 }
 
 function updateButtons() {
@@ -177,6 +177,7 @@ function updateButtons() {
   for (const id of ['new', 'open', 'save-as']) $(id).disabled = running || fileBusy || closing;
   $('save').disabled = fileBusy || closing || (running && !filePath);
   editor.readOnly = fileBusy || closing;
+  $('editor-search').disabled = fileBusy || closing;
   input.readOnly = expectedOutput.readOnly = fileBusy || closing;
   compareOutput.disabled = fileBusy || closing;
   for (const id of ['cases-open', 'cases-save']) $(id).disabled = running || fileBusy || closing;
@@ -323,19 +324,8 @@ function editCase(field, value) {
 input.addEventListener('input', () => editCase('stdin', input.value));
 expectedOutput.addEventListener('input', () => editCase('expectedOutput', expectedOutput.value));
 compareOutput.addEventListener('change', () => editCase('compare', compareOutput.checked));
-editor.addEventListener('input', () => { resetComparison(true); updateEditor(); });
-editor.addEventListener('click', updateCursor);
-editor.addEventListener('keyup', updateCursor);
-editor.addEventListener('scroll', () => { $('line-numbers').scrollTop = editor.scrollTop; });
-editor.addEventListener('keydown', (event) => {
-  if (event.key === 'Tab' && !editor.readOnly) {
-    event.preventDefault();
-    editor.setRangeText('  ', editor.selectionStart, editor.selectionEnd, 'end');
-    resetComparison(true);
-    updateEditor();
-  }
-});
 document.addEventListener('keydown', (event) => {
+  if (event.isComposing) return;
   if (!event.ctrlKey && !event.metaKey) return;
   const key = event.key.toLowerCase();
   if (['s', 'o', 'enter'].includes(key)) event.preventDefault();
