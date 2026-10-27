@@ -115,7 +115,9 @@ fn cached_problem_opens_offline_and_restores_saved_workspace_without_overwriting
     let library = ProblemLibrary::new(root.path());
     let problem = library.problem(URL, false).unwrap();
     let mut documents = DocumentStore::default();
-    let first = library.open_workspace(problem, &mut documents).unwrap();
+    let first = library
+        .open_workspace(problem, documents.revision(), &mut documents)
+        .unwrap();
     assert_eq!(first.document.code.as_deref(), Some(""));
     assert_eq!(first.cases.len(), 2);
     let code_path = documents.path().unwrap().to_owned();
@@ -136,7 +138,11 @@ fn cached_problem_opens_offline_and_restores_saved_workspace_without_overwriting
     // A refreshed problem must never replace user-owned code/cases.
     seed(root.path());
     let second = library
-        .open_workspace(library.problem(URL, false).unwrap(), &mut documents)
+        .open_workspace(
+            library.problem(URL, false).unwrap(),
+            documents.revision(),
+            &mut documents,
+        )
         .unwrap();
     assert_eq!(second.document.code.as_deref(), Some("puts 'saved'"));
     assert_eq!(second.cases.len(), 1);
@@ -156,13 +162,21 @@ fn corrupted_cache_and_workspace_fail_without_changing_the_active_document() {
     std::fs::create_dir_all(&workspace).unwrap();
     std::fs::write(workspace.join("cases.json"), r#"{"cases":[]}"#).unwrap();
     assert!(library
-        .open_workspace(library.problem(URL, false).unwrap(), &mut documents)
+        .open_workspace(
+            library.problem(URL, false).unwrap(),
+            documents.revision(),
+            &mut documents
+        )
         .is_err());
     assert_eq!(documents.path(), Some(current.as_path()));
     std::fs::remove_file(workspace.join("cases.json")).unwrap();
     std::fs::write(workspace.join("solution.rb"), vec![b'x'; 1024 * 1024 + 1]).unwrap();
     assert!(library
-        .open_workspace(library.problem(URL, false).unwrap(), &mut documents)
+        .open_workspace(
+            library.problem(URL, false).unwrap(),
+            documents.revision(),
+            &mut documents
+        )
         .is_err());
     assert_eq!(documents.path(), Some(current.as_path()));
     let cache = root
@@ -175,6 +189,46 @@ fn corrupted_cache_and_workspace_fail_without_changing_the_active_document() {
     std::fs::write(&cache, vec![b' '; 8 * 1024 * 1024 + 1]).unwrap();
     assert!(library.problem(URL, false).is_err());
     assert_eq!(std::fs::read_to_string(current).unwrap(), "keep");
+}
+
+#[test]
+fn late_problem_download_cannot_replace_a_newer_document() {
+    for action in ["reset", "open", "save"] {
+        let root = tempfile::tempdir().unwrap();
+        let library = ProblemLibrary::new(root.path());
+        let mut documents = DocumentStore::default();
+        let current = root.path().join("current.rb");
+        std::fs::write(&current, "keep current").unwrap();
+        // A problem download begins, then the user reloads or changes documents.
+        let document_revision = documents.revision();
+        match action {
+            "reset" => documents.reset(),
+            "open" => {
+                documents.open(Some(current.clone())).unwrap();
+            }
+            "save" => {
+                documents
+                    .save("keep current", Some(current.clone()))
+                    .unwrap();
+            }
+            _ => unreachable!(),
+        }
+        let current_path = documents.path().map(Path::to_owned);
+        let downloaded = parse_problem(URL, HTML).unwrap();
+        assert!(
+            library
+                .open_workspace(downloaded, document_revision, &mut documents)
+                .is_err(),
+            "{action}"
+        );
+        assert_eq!(documents.path(), current_path.as_deref());
+        assert!(!root.path().join("workspaces").exists());
+        assert_eq!(std::fs::read_to_string(&current).unwrap(), "keep current");
+        if let Some(path) = current_path {
+            documents.save("new edit", Some(path)).unwrap();
+            assert_eq!(std::fs::read_to_string(&current).unwrap(), "new edit");
+        }
+    }
 }
 
 #[test]
@@ -216,7 +270,9 @@ fn live_atcoder_download_run_refresh_and_restore() {
         assert_eq!(problem.title, title);
         assert_eq!(problem.samples.len(), count);
         let mut documents = DocumentStore::default();
-        let workspace = library.open_workspace(problem, &mut documents).unwrap();
+        let workspace = library
+            .open_workspace(problem, documents.revision(), &mut documents)
+            .unwrap();
         for case in &workspace.cases {
             let result = Runner::new(Duration::from_secs(5), 1048576)
                 .prepare(RunRequest {
@@ -244,7 +300,9 @@ fn live_atcoder_download_run_refresh_and_restore() {
         assert_eq!(refreshed.title, title);
         assert_eq!(refreshed.samples, workspace.problem.samples);
         let cached = library.problem(&url, false).unwrap();
-        let reopened = library.open_workspace(cached, &mut documents).unwrap();
+        let reopened = library
+            .open_workspace(cached, documents.revision(), &mut documents)
+            .unwrap();
         assert_eq!(reopened.document.code.as_deref(), Some(code));
         assert_eq!(reopened.cases, edited);
         println!(

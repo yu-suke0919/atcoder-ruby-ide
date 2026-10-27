@@ -294,8 +294,12 @@ impl ProblemLibrary {
     pub fn open_workspace(
         &self,
         problem: Problem,
+        expected_document_revision: u64,
         documents: &mut DocumentStore,
     ) -> Result<ProblemWorkspace, String> {
+        if documents.revision() != expected_document_revision {
+            return Err("取得中に編集中の文書が変わりました。問題を開き直してください。".into());
+        }
         let key = ProblemKey::parse(&problem.url)?;
         validate(&problem, &key)?;
         let workspace = key.directory(&self.root, "workspaces");
@@ -383,7 +387,9 @@ mod tests {
         let html = include_str!("../tests/fixtures/atcoder-task.html");
         let first = library.store_page(&key, html).unwrap();
         let mut documents = DocumentStore::default();
-        let workspace = library.open_workspace(first, &mut documents).unwrap();
+        let workspace = library
+            .open_workspace(first, documents.revision(), &mut documents)
+            .unwrap();
         let code_path = documents.path().unwrap().to_owned();
         documents
             .save("puts 'my answer'", Some(code_path.clone()))
@@ -401,7 +407,9 @@ mod tests {
             )
             .unwrap();
         assert_eq!(updated.samples[0].stdin, "8 9\n");
-        let reopened = library.open_workspace(updated, &mut documents).unwrap();
+        let reopened = library
+            .open_workspace(updated, documents.revision(), &mut documents)
+            .unwrap();
         assert!(reopened.problem.title.contains("Updated"));
         assert_eq!(reopened.cases, workspace.cases);
         assert_eq!(

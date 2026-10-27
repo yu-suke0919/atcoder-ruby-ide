@@ -152,9 +152,14 @@ fn main() {
                 serde_json::from_value(args["selected"].clone()).map_err(|e| e.to_string())?
             )?)),
             "problem_open" => {
+                let document_revision = documents.revision();
                 let problem =
                     library.problem(args["url"].as_str().ok_or("URLを指定してください")?, false)?;
-                Ok(json!(library.open_workspace(problem, &mut documents)?))
+                Ok(json!(library.open_workspace(
+                    problem,
+                    document_revision,
+                    &mut documents
+                )?))
             }
             "problem_refresh" => Ok(json!(
                 library.problem(args["url"].as_str().ok_or("URLを指定してください")?, true)?

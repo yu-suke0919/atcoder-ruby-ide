@@ -244,9 +244,10 @@ async fn problem_open(
 ) -> Result<ProblemWorkspace, String> {
     let library = problem_library(&app)?;
     let documents = Arc::clone(&state.documents);
+    let document_revision = documents.lock().unwrap().revision();
     tauri::async_runtime::spawn_blocking(move || {
         let problem = library.problem(&url, false)?;
-        library.open_workspace(problem, &mut documents.lock().unwrap())
+        library.open_workspace(problem, document_revision, &mut documents.lock().unwrap())
     })
     .await
     .map_err(|e| e.to_string())?
