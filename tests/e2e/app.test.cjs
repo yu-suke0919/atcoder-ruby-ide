@@ -924,13 +924,13 @@ test('P01: cached problem opens offline, runs samples and restores its saved wor
   await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
   assert.equal(await page.locator('#problem-statement img').count(), 0);
   assert.equal(await page.locator('#problem-statement').textContent(), problem.statement);
-  const dialogFits = await page.locator('#problem-dialog').evaluate(element => {
+  const panelFits = await page.locator('#problem-panel').evaluate(element => {
     const rect = element.getBoundingClientRect();
     return rect.top >= 0 && rect.left >= 0 && rect.bottom <= innerHeight && rect.right <= innerWidth;
   });
-  assert.equal(dialogFits, true);
+  assert.equal(panelFits, true);
   await page.screenshot({ path: 'test-results/problem-library.png' });
-  await page.locator('#problem-close').click();
+  assert.equal(await page.locator('#problem-dialog').isVisible(), false);
   assert.equal(await page.locator('#code-editor').inputValue(), '');
   const sourcePath = path.join(app.dataDir, 'workspaces', libraryContest, 'save', 'solution.rb');
   const normalizePath = value => process.platform === 'win32' ? path.toNamespacedPath(value).toLowerCase() : path.resolve(value);
@@ -951,7 +951,7 @@ test('P01: cached problem opens offline, runs samples and restores its saved wor
   await openProblemDialog(problem.url);
   await page.locator('#problem-open').click();
   await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
-  await page.locator('#problem-close').click();
+  assert.equal(await page.locator('#problem-dialog').isVisible(), false);
   assert.equal(await page.locator('#stdin').inputValue(), '9 1\n');
   assert.equal(await page.locator('#code-editor').inputValue(), await readFile(sourcePath, 'utf8'));
   await runAndWait();
@@ -962,9 +962,11 @@ test('P02: problem switching protects both unsaved code and cases', async () => 
   const a = await seedProblem('guard_a'); const b = await seedProblem('guard_b');
   await openProblemDialog(a.url); await page.locator('#problem-open').click();
   await page.locator('#problem-title').filter({ hasText: a.title }).waitFor();
-  await page.locator('#problem-close').click();
+  assert.equal(await page.locator('#problem-dialog').isVisible(), false);
   await page.locator('#code-editor').fill('puts "keep code"');
   await page.locator('#stdin').fill('keep cases');
+  await page.locator('#problem-statement').evaluate(el => { el.scrollTop = 150; });
+  await page.locator('#problem-toggle').click();
   const originalPath = await page.locator('#file-path').textContent();
   await openProblemDialog(b.url);
   await fileOperation(() => page.locator('#problem-open').click(), [discard(false)]);
@@ -972,11 +974,15 @@ test('P02: problem switching protects both unsaved code and cases', async () => 
   assert.equal(await page.locator('#file-path').textContent(), originalPath);
   assert.equal(await page.locator('#code-editor').inputValue(), 'puts "keep code"');
   assert.equal(await page.locator('#stdin').inputValue(), 'keep cases');
+  assert.equal(await page.locator('#problem-dialog').isVisible(), true);
+  assert.equal(await page.locator('#problem-panel').isVisible(), false);
   await fileOperation(() => page.locator('#problem-open').click(), [discard(true)]);
   await page.locator('#problem-title').filter({ hasText: b.title }).waitFor();
-  await page.locator('#problem-close').click();
+  assert.equal(await page.locator('#problem-dialog').isVisible(), false);
   assert.equal(await page.locator('#code-editor').inputValue(), '');
   assert.equal(await page.locator('#stdin').inputValue(), '1 2\n');
+  assert.equal(await page.locator('#problem-panel').isVisible(), true);
+  assert.equal(await page.locator('#problem-statement').evaluate(el => el.scrollTop), 0);
 });
 
 test('P03: invalid cache preserves the current problem and workspace', async () => {
@@ -984,10 +990,12 @@ test('P03: invalid cache preserves the current problem and workspace', async () 
   await openProblemDialog(a.url); await page.locator('#problem-open').click();
   await page.locator('#problem-title').filter({ hasText: a.title }).waitFor();
   await writeFile(path.join(app.dataDir, 'library/problems', libraryContest, 'failure_b', 'problem.json'), '{}');
-  await page.locator('#problem-url').fill(b.url);
+  await openProblemDialog(b.url);
   await page.locator('#problem-open').click(); await waitProblem();
   await page.locator('#message').filter({ hasText: '失敗' }).waitFor();
   assert.equal(await page.locator('#problem-title').textContent(), a.title);
+  assert.equal(await page.locator('#problem-dialog').isVisible(), true);
+  assert.equal(await page.locator('#problem-statement').textContent(), a.statement);
   await page.locator('#problem-close').click();
   assert.equal(await page.locator('#stdin').inputValue(), '1 2\n');
 });
@@ -996,14 +1004,16 @@ test('P04: refresh keeps edited code and cases and retains the previous statemen
   const problem = await seedProblem('refresh');
   await openProblemDialog(problem.url); await page.locator('#problem-open').click();
   await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
-  await page.locator('#problem-close').click();
+  assert.equal(await page.locator('#problem-dialog').isVisible(), false);
   await page.locator('#code-editor').fill('puts "my edits"');
   await page.locator('#stdin').fill('my cases');
+  await page.locator('#problem-statement').evaluate(el => { el.scrollTop = 150; });
+  const originalScroll = await page.locator('#problem-statement').evaluate(el => el.scrollTop);
   await page.locator('#problem-library').click();
   // Isolate external HTTP at the bridge; Rust separately verifies HTTP and atomic cache updates.
   await page.evaluate(async problem => {
     const { ide } = await import('./bridge.js');
-    ide.refreshProblem = async () => ({ ...problem, title: 'Updated problem' });
+    ide.refreshProblem = async () => ({ ...problem, title: 'Updated problem', statement: problem.statement + '\nRefreshed' });
   }, problem);
   await page.locator('#problem-refresh').click();
   await page.locator('#problem-title').filter({ hasText: 'Updated problem' }).waitFor();
@@ -1014,6 +1024,16 @@ test('P04: refresh keeps edited code and cases and retains the previous statemen
   const workspace = path.join(app.dataDir, 'workspaces', libraryContest, 'refresh');
   assert.equal(await readFile(path.join(workspace, 'solution.rb'), 'utf8'), '');
   assert.deepEqual(JSON.parse(await readFile(path.join(workspace, 'cases.json'), 'utf8')).cases, problem.samples);
+  assert.equal(await page.locator('#problem-statement').evaluate(el => el.scrollTop), originalScroll);
+  await page.locator('#problem-close').click();
+  await page.locator('#problem-toggle').click();
+  await page.locator('#problem-library').click();
+  await page.locator('#problem-refresh').click(); await waitProblem();
+  assert.equal(await page.locator('#problem-panel').isVisible(), false);
+  await page.locator('#problem-close').click();
+  await page.locator('#problem-toggle').click();
+  assert.equal(await page.locator('#problem-statement').evaluate(el => el.scrollTop), originalScroll);
+  await page.locator('#problem-library').click();
   await page.evaluate(async () => {
     const { ide } = await import('./bridge.js');
     ide.refreshProblem = async () => { throw new Error('network offline'); };
@@ -1028,7 +1048,7 @@ test('P05: imported case JSON is unsaved for the workspace and New returns to no
   const problem = await seedProblem('import');
   await openProblemDialog(problem.url); await page.locator('#problem-open').click();
   await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
-  await page.locator('#problem-close').click();
+  assert.equal(await page.locator('#problem-dialog').isVisible(), false);
   const imported = [{ stdin: 'imported\n', expectedOutput: '', compare: false }];
   const file = path.join(root, 'problem-import.json');
   await writeFile(file, JSON.stringify({ cases: imported }));
@@ -1040,6 +1060,8 @@ test('P05: imported case JSON is unsaved for the workspace and New returns to no
   const saved = path.join(app.dataDir, 'workspaces', libraryContest, 'import', 'cases.json');
   assert.deepEqual(JSON.parse(await readFile(saved, 'utf8')).cases, imported);
   await newDocument();
+  assert.equal(await page.locator('#problem-panel').isVisible(), false);
+  assert.equal(await page.locator('#problem-toggle').isDisabled(), true);
   await page.locator('#problem-library').click();
   assert.equal(await page.locator('#problem-refresh').isEnabled(), true);
   assert.equal(await page.locator('#problem-title').textContent(), '問題を選んでください');
@@ -1068,7 +1090,108 @@ test('P06: refresh can repair a cache before any problem is selected', async () 
   await writeFile(cache, JSON.stringify(problem));
   await page.locator('#problem-open').click();
   await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
-  await page.locator('#problem-close').click();
+  assert.equal(await page.locator('#problem-dialog').isVisible(), false);
+});
+
+test('P07: reading panel allows editing and shortcuts, and toggling preserves edits and results', async () => {
+  const problem = await seedProblem('reading');
+  await openProblemDialog(problem.url);
+  await page.locator('#problem-open').click();
+  await waitProblem();
+  assert.equal(await page.locator('#problem-dialog').isVisible(), false);
+  assert.equal(await page.locator('#problem-panel').isVisible(), true);
+  assert.equal(await page.locator('#problem-toggle').getAttribute('aria-expanded'), 'true');
+  await page.locator('#code-editor').fill('puts STDIN.read.split.map(&:to_i).sum');
+  await page.keyboard.press('Control+s');
+  await page.waitForFunction(() => !document.getElementById('save').disabled);
+  const source = await page.locator('#file-path').textContent();
+  assert.equal(await readFile(source, 'utf8'), 'puts STDIN.read.split.map(&:to_i).sum');
+  await page.locator('#stdin').fill('9 1\n');
+  await page.locator('#expected-output').fill('10\n');
+  await page.keyboard.press('Control+Enter');
+  await page.locator('#comparison-status').filter({ hasText: '一致' }).waitFor();
+  assert.equal(await page.locator('#stdout').textContent(), '10\n');
+  await page.locator('#code-editor').fill('puts "unsaved"');
+  await page.locator('#problem-statement').evaluate(el => { el.scrollTop = 150; });
+  const scroll = await page.locator('#problem-statement').evaluate(el => el.scrollTop);
+  assert.ok(scroll > 0);
+  const capture = () => page.evaluate(() => Object.fromEntries(['code-editor', 'stdin', 'expected-output', 'compare-output', 'file-path', 'save-state', 'case-count', 'stdout', 'stderr', 'run-status', 'run-duration', 'comparison-status'].map(id => {
+    const el = document.getElementById(id);
+    return [id, el.type === 'checkbox' ? el.checked : el.value ?? el.textContent];
+  })));
+  const before = await capture();
+  const width = await page.locator('#code-editor').evaluate(el => el.clientWidth);
+  await page.evaluate(async () => {
+    const { ide } = await import('./bridge.js');
+    for (const name of ['openProblem', 'refreshProblem', 'openCollectionTask', 'fetchCollectionTask', 'repairCollectionTask']) ide[name] = () => { throw new Error('display toggles must stay offline'); };
+  });
+  await page.locator('#problem-toggle').click();
+  assert.equal(await page.locator('#problem-panel').isVisible(), false);
+  assert.equal(await page.locator('#problem-toggle').getAttribute('aria-expanded'), 'false');
+  assert.ok(await page.locator('#code-editor').evaluate(el => el.clientWidth) > width);
+  await page.locator('#problem-toggle').click();
+  assert.equal(await page.locator('#problem-panel').isVisible(), true);
+  assert.deepEqual(await capture(), before);
+  assert.equal(await page.locator('#problem-statement').evaluate(el => el.scrollTop), scroll);
+  assert.equal(await readFile(source, 'utf8'), 'puts STDIN.read.split.map(&:to_i).sum');
+});
+
+test('P08: long reading panel, editor and results fit wide and minimum windows with large line boxes', async () => {
+  const problem = await seedProblem('reading_layout');
+  await openProblemDialog(problem.url);
+  await page.locator('#problem-open').click();
+  await waitProblem();
+  assert.equal(await page.locator('#problem-dialog').isVisible(), false);
+  await page.locator('#code-editor').fill('puts "reading and editing"\n'.repeat(80));
+  for (const [width, height] of [[1440, 900], [1200, 650], [900, 650]]) {
+    await page.setViewportSize({ width, height });
+    await page.evaluate(() => { document.body.style.lineHeight = '1.8'; });
+    await assertWorkspaceFits();
+    const layout = await page.evaluate(() => {
+      const rect = selector => { const { x, y, right, bottom, width, height } = document.querySelector(selector).getBoundingClientRect(); return { x, y, right, bottom, width, height }; };
+      const contents = ['problem-statement', 'code-editor'].map(id => {
+        const el = document.getElementById(id), css = getComputedStyle(el);
+        return { id, content: el.clientHeight - parseFloat(css.paddingTop) - parseFloat(css.paddingBottom), line: parseFloat(css.lineHeight), fits: el.scrollWidth <= el.clientWidth };
+      });
+      return { problem: rect('#problem-panel'), editor: rect('.editor-panel'), cases: rect('.right-column'), toolbar: rect('.run-toolbar'), pageWidth: document.documentElement.scrollWidth, contents };
+    });
+    const details = JSON.stringify(layout);
+    assert.ok(layout.problem.x >= 0 && layout.problem.bottom <= layout.toolbar.y, details);
+    assert.ok(layout.editor.bottom <= layout.toolbar.y && layout.cases.bottom <= layout.toolbar.y, details);
+    assert.ok(layout.pageWidth <= width, details);
+    if (width >= 1200) {
+      assert.ok(layout.problem.right <= layout.editor.x && layout.editor.right <= layout.cases.x, details);
+    } else {
+      assert.ok(layout.problem.bottom <= layout.editor.y && layout.problem.right <= layout.cases.x, details);
+    }
+    for (const area of layout.contents) assert.ok(area.content >= area.line, details);
+    assert.equal(layout.contents[0].fits, true, details);
+    await page.locator('#problem-statement').evaluate(el => { el.scrollTop = 200; });
+    assert.ok(await page.locator('#problem-statement').evaluate(el => el.scrollTop) > 0);
+    await page.locator('#code-editor').evaluate(el => { el.scrollTop = 150; });
+    const editorScroll = await page.locator('#code-editor').evaluate(el => el.scrollTop);
+    await page.locator('#problem-statement').evaluate(el => { el.scrollTop += 50; });
+    assert.ok(editorScroll > 0);
+    assert.equal(await page.locator('#code-editor').evaluate(el => el.scrollTop), editorScroll);
+    await page.screenshot({ path: `test-results/problem-panel-${width}.png` });
+  }
+});
+
+test('P09: reading panel can be toggled during a run and Stop remains usable', async () => {
+  const problem = await seedProblem('reading_run');
+  await openProblemDialog(problem.url);
+  await page.locator('#problem-open').click(); await waitProblem();
+  await page.locator('#code-editor').fill('puts "reading"; sleep 30');
+  await page.locator('#run').click();
+  await page.locator('#stdout').filter({ hasText: 'reading' }).waitFor();
+  await page.locator('#problem-toggle').click();
+  assert.equal(await page.locator('#problem-panel').isVisible(), false);
+  await page.locator('#problem-toggle').click();
+  assert.equal(await page.locator('#problem-panel').isVisible(), true);
+  assert.equal(await page.locator('#stop').isEnabled(), true);
+  await page.locator('#stop').click();
+  await page.locator('#run-status').filter({ hasText: '停止しました' }).waitFor();
+  assert.equal(await page.locator('#stdout').textContent(), 'reading\n');
 });
 
 async function seedCollection(count = 2) {
@@ -1103,7 +1226,7 @@ test('C01: fixed collection opens offline, protects edits and restores the saved
   await page.locator('#collection-tasks [data-action="open"]').first().click();
   await page.locator('#problem-title').filter({ hasText: 'A01 - Problem 1' }).waitFor();
   assert.equal(await page.locator('#problem-refresh').isDisabled(), true);
-  await page.locator('#problem-close').click();
+  assert.equal(await page.locator('#collection-dialog').isVisible(), false);
   await page.locator('#code-editor').fill('puts STDIN.read.split.map(&:to_i).sum');
   await page.locator('#save').click();
   await page.waitForFunction(() => !document.getElementById('save').disabled);
@@ -1116,10 +1239,11 @@ test('C01: fixed collection opens offline, protects edits and restores the saved
   await fileOperation(() => page.locator('#collection-tasks [data-action="open"]').nth(1).click(), [discard(false)]);
   assert.equal(await page.locator('#stdin').inputValue(), 'unsaved');
   await fileOperation(() => page.locator('#collection-tasks [data-action="open"]').nth(1).click(), [discard(true)]);
-  await page.locator('#problem-close').click();
+  assert.equal(await page.locator('#collection-dialog').isVisible(), false);
   await showCollections();
   await page.locator('#collection-tasks [data-action="open"]').first().click();
-  await page.locator('#problem-close').click();
+  await page.locator('#problem-title').filter({ hasText: 'A01 - Problem 1' }).waitFor();
+  assert.equal(await page.locator('#collection-dialog').isVisible(), false);
   assert.equal(await page.locator('#stdin').inputValue(), '4 5\n');
   await runAndWait();
   assert.equal(await page.locator('#comparison-status').textContent(), '一致');
@@ -1186,7 +1310,7 @@ test('C03: tasks without inline samples open, and corrupt snapshots preserve the
   await showCollections();
   await page.locator('#collection-tasks [data-action="open"]').first().click();
   await page.locator('#problem-title').filter({ hasText: 'No inline samples' }).waitFor();
-  await page.locator('#problem-close').click();
+  assert.equal(await page.locator('#collection-dialog').isVisible(), false);
   assert.equal(await page.locator('#case-count').textContent(), '1 ケース');
   assert.equal(await page.locator('#compare-output').isChecked(), false);
   await page.locator('#code-editor').fill('puts 42');
@@ -1238,7 +1362,8 @@ test('C05: confirmed repair preserves current edits, other snapshots and the pre
   await writeFile(secondPath, 'corrupt');
   await showCollections();
   await page.locator('#collection-tasks [data-action="open"]').first().click();
-  await page.locator('#problem-close').click();
+  await page.locator('#problem-title').filter({ hasText: 'A01 - Problem 1' }).waitFor();
+  assert.equal(await page.locator('#collection-dialog').isVisible(), false);
   await page.locator('#code-editor').fill('puts "my saved answer"');
   await page.locator('#save').click();
   await page.waitForFunction(() => !document.getElementById('save').disabled);
@@ -1246,6 +1371,7 @@ test('C05: confirmed repair preserves current edits, other snapshots and the pre
   const outputBeforeRepair = await page.locator('#stdout').textContent();
   await page.locator('#code-editor').fill('puts "my unsaved answer"');
   await page.locator('#stdin').fill('my unsaved case');
+  await page.locator('#problem-toggle').click();
   const sourcePath = await page.locator('#file-path').textContent();
   const savedCases = await readFile(path.join(path.dirname(sourcePath), 'cases.json'), 'utf8');
   const manifestPath = path.join(app.dataDir, 'library/collections', `${libraryContest}.json`);
@@ -1273,6 +1399,7 @@ test('C05: confirmed repair preserves current edits, other snapshots and the pre
   await confirmRepair(0);
   assert.equal(await page.locator('#problem-title').textContent(), 'A01 - Repaired');
   assert.equal(await page.locator('#problem-statement').textContent(), '取り直した問題文');
+  assert.equal(await page.locator('#problem-panel').isVisible(), false);
   assert.equal(await page.locator('#code-editor').inputValue(), 'puts "my unsaved answer"');
   assert.equal(await page.locator('#stdin').inputValue(), 'my unsaved case');
   assert.equal(await page.locator('#expected-output').inputValue(), '3\n');
@@ -1289,6 +1416,9 @@ test('C05: confirmed repair preserves current edits, other snapshots and the pre
   assert.deepEqual(calls, [collection.tasks[0].url, collection.tasks[0].url, collection.tasks[1].url]);
   assert.equal(await readFile(manifestPath, 'utf8'), manifest);
   await page.locator('#collection-close').click();
+  await page.locator('#problem-toggle').click();
+  assert.equal(await page.locator('#problem-panel').isVisible(), true);
+  assert.equal(await page.locator('#problem-statement').textContent(), '取り直した問題文');
 });
 
 test('M06/M09: accepting close stops Ruby descendants and exits', async () => {

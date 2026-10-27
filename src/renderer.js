@@ -151,6 +151,7 @@ function updateCursor() {
 }
 
 function updateButtons() {
+  $('problem-toggle').disabled = !activeProblem || fileBusy || closing;
   for (const id of ['collection-repair-cancel', 'collection-repair-confirm']) $(id).disabled = fileBusy || closing || running;
   $('collections').disabled = fileBusy || closing || running;
   for (const id of ['collection-register', 'collection-url', 'collection-select']) $(id).disabled = fileBusy || closing || running;
@@ -343,16 +344,31 @@ document.addEventListener('keydown', (event) => {
 
 function showProblem() {
   $('problem-title').textContent = activeProblem ? activeProblem.title : '問題を選んでください';
-  $('problem-statement').textContent = activeProblem ? activeProblem.statement : '';
+  $('problem-title').title = activeProblem?.title || '';
+  const statement = $('problem-statement');
+  const scroll = statement.scrollTop;
+  statement.textContent = activeProblem ? activeProblem.statement : '';
+  statement.scrollTop = scroll;
   $('problem-library').title = activeProblem ? activeProblem.title : 'AtCoder の問題を開く';
   document.querySelector('.brand-caption').textContent = activeProblem ? activeProblem.title : '小さく書いて、すぐ試す。';
 }
+function setProblemVisible(visible) {
+  $('problem-panel').hidden = !visible;
+  document.querySelector('.workspace').classList.toggle('with-problem', visible);
+  $('problem-toggle').textContent = visible ? '問題文を隠す' : '問題文を表示する';
+  $('problem-toggle').setAttribute('aria-expanded', String(visible));
+}
+$('problem-toggle').addEventListener('click', () => {
+  if (activeProblem && !fileBusy && !closing) setProblemVisible($('problem-panel').hidden);
+});
 function detachProblem() {
   activeProblem = null;
   activeCollectionUrl = null;
   showProblem();
+  setProblemVisible(false);
 }
 function applyWorkspace(result, collectionUrl = null) {
+  const changedProblem = activeProblem?.url !== result.problem.url;
   activeProblem = result.problem;
   activeCollectionUrl = collectionUrl;
   editor.value = result.document.code;
@@ -360,6 +376,8 @@ function applyWorkspace(result, collectionUrl = null) {
   filePath = result.document.filePath;
   cases.replace(result.cases, { saved: true });
   showProblem(); showCase(); updateEditor();
+  setProblemVisible(true);
+  if (changedProblem) $('problem-statement').scrollTop = 0;
 }
 $('problem-library').addEventListener('click', () => problemDialog.showModal());
 $('problem-close').addEventListener('click', () => problemDialog.close());
@@ -371,6 +389,8 @@ $('problem-open').addEventListener('click', () => {
     message('問題を読み込んでいます。');
     const result = await ide.openProblem($('problem-url').value);
     applyWorkspace(result);
+    problemDialog.close();
+    editor.focus();
     message('問題と保存済みの解答・ケースを開きました。');
   });
 });
@@ -420,7 +440,8 @@ function renderCollection() {
       if (running || !await confirmDiscard(true)) return;
       const result = await ide.openCollectionTask(collectionUrl, task.url);
       applyWorkspace(result, collectionUrl);
-      collectionDialog.close(); problemDialog.showModal();
+      collectionDialog.close();
+      editor.focus();
       message('固定保存した問題と解答・ケースを開きました。');
     }));
     const repair = document.createElement('button'); repair.textContent = '取り直す'; repair.dataset.available = String(downloaded.has(task.url)); repair.dataset.action = 'repair';

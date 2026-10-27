@@ -16,11 +16,15 @@
   <main>
     <div class="workspace-heading"><div><span class="eyebrow">WORKSPACE</span><h2>今日の一問を、ここから。</h2></div><span class="workspace-note">コードと入力を用意して、実行してみましょう。</span></div>
     <div class="workspace">
+      <section id="problem-panel" class="panel problem-panel" aria-labelledby="problem-title" hidden>
+        <div class="panel-heading"><h3 id="problem-title">問題を選んでください</h3></div>
+        <pre id="problem-statement" aria-label="問題文" tabindex="0"></pre>
+      </section>
       <section class="panel editor-panel" aria-labelledby="editor-heading">
         <div class="panel-heading"><div class="panel-label"><span class="file-icon" aria-hidden="true">⌘</span><h3 id="editor-heading">コード</h3><span class="language-pill">Ruby</span></div><span id="save-state" data-testid="save-state" class="subtle">未保存のファイル</span></div>
         <div class="editor-toolbar">
           <div class="file-actions"><button id="new" title="新しいファイル">新規</button><button id="open" title="Ctrl+O">開く</button><button id="save" title="Ctrl+S">保存</button><button id="save-as" title="Ctrl+Shift+S">名前を付けて保存</button></div>
-          <div class="library-actions"><button id="collections" class="quiet-button" disabled>問題集</button><button id="problem-library" class="quiet-button" disabled>AtCoder の問題</button></div>
+          <div class="library-actions"><button id="collections" class="quiet-button" disabled>問題集</button><button id="problem-library" class="quiet-button" disabled>AtCoder の問題</button><button id="problem-toggle" class="quiet-button" aria-controls="problem-panel" aria-expanded="false" disabled>問題文を表示する</button></div>
         </div>
         <div class="editor-container"><div id="line-numbers" class="line-numbers" aria-hidden="true"></div><textarea id="code-editor" data-testid="code-editor" aria-label="Ruby コード" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off"></textarea></div>
         <div class="editor-footer"><span id="file-path" title="未保存のファイル">無題.rb</span><span id="cursor-position">Ln 1, Col 1</span></div>
@@ -81,7 +85,6 @@
     <label for="problem-url">問題URL</label>
     <div class="problem-actions"><input id="problem-url" type="url" placeholder="https://atcoder.jp/contests/abs/tasks/practice_1" spellcheck="false"><button id="problem-open">開く</button><button id="problem-refresh" disabled>再取得</button></div>
     <p class="problem-help">取得済みの問題はオフラインでも開けます。再取得は入力URLの問題文と元のサンプルだけを更新します。</p>
-    <h3 id="problem-title">問題を選んでください</h3><pre id="problem-statement"></pre>
     <p class="problem-help">問題文はテキスト表示です。数式はTeX表記、画像は説明文を表示します。サンプルは本文から取り込み、ZIPなど別ファイルで配布される場合は空ケースから編集できます。</p>
     <p id="problem-message" role="status"></p>
   </dialog>
