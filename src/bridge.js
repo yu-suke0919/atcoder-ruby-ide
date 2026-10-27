@@ -6,6 +6,7 @@ export const ide = {
   listCollections: () => invoke('collection_list'),
   registerCollection: url => invoke('collection_register', { url }),
   fetchCollectionTask: (url, task) => invoke('collection_fetch_task', { url, task }),
+  repairCollectionTask: (url, task) => invoke('collection_repair_task', { url, task }),
   openCollectionTask: (url, task) => invoke('collection_open_task', { url, task }),
   openProblem: url => invoke('problem_open', { url }),
   refreshProblem: url => invoke('problem_refresh', { url }),

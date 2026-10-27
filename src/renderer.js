@@ -9,6 +9,8 @@ const compareOutput = $('compare-output');
 const differenceDialog = $('difference-dialog');
 const problemDialog = $('problem-dialog');
 const collectionDialog = $('collection-dialog');
+const collectionRepairDialog = $('collection-repair-dialog');
+let repairTarget = null;
 let activeProblem = null;
 let activeCollectionUrl = null;
 let collectionViews = [];
@@ -149,6 +151,7 @@ function updateCursor() {
 }
 
 function updateButtons() {
+  for (const id of ['collection-repair-cancel', 'collection-repair-confirm']) $(id).disabled = fileBusy || closing || running;
   $('collections').disabled = fileBusy || closing || running;
   for (const id of ['collection-register', 'collection-url', 'collection-select']) $(id).disabled = fileBusy || closing || running;
   $('collection-close').disabled = fileBusy;
@@ -332,7 +335,7 @@ document.addEventListener('keydown', (event) => {
   if (!event.ctrlKey && !event.metaKey) return;
   const key = event.key.toLowerCase();
   if (['s', 'o', 'enter'].includes(key)) event.preventDefault();
-  if (differenceDialog.open || problemDialog.open || collectionDialog.open) return;
+  if (differenceDialog.open || problemDialog.open || collectionDialog.open || collectionRepairDialog.open) return;
   if (key === 's') saveFile(event.shiftKey);
   if (key === 'o') openFile();
   if (key === 'enter') run();
@@ -409,8 +412,10 @@ function renderCollection() {
     state.textContent = downloaded.has(task.url) ? '取得済み' : task.error ? `失敗: ${task.error}` : '未取得';
     state.dataset.error = String(!downloaded.has(task.url) && !!task.error);
     const button = document.createElement('button'); button.textContent = '開く'; button.dataset.available = String(downloaded.has(task.url));
+    button.dataset.action = 'open';
     button.setAttribute('aria-label', `${task.label} ${task.title} を開く`);
     const collectionUrl = selectedCollection.collection.url;
+    const collectionTitle = selectedCollection.collection.title;
     button.addEventListener('click', () => fileAction(async () => {
       if (running || !await confirmDiscard(true)) return;
       const result = await ide.openCollectionTask(collectionUrl, task.url);
@@ -418,7 +423,17 @@ function renderCollection() {
       collectionDialog.close(); problemDialog.showModal();
       message('固定保存した問題と解答・ケースを開きました。');
     }));
-    row.append(name, state, button); return row;
+    const repair = document.createElement('button'); repair.textContent = '取り直す'; repair.dataset.available = String(downloaded.has(task.url)); repair.dataset.action = 'repair';
+    repair.setAttribute('aria-label', `${task.label} ${task.title} を取り直す`);
+    repair.addEventListener('click', () => {
+      if (fileBusy || running || closing) return;
+      repairTarget = { collectionUrl, taskUrl: task.url, label: task.label };
+      $('collection-repair-target').textContent = `${collectionTitle}\n${task.label} · ${task.title}`;
+      $('collection-repair-url').textContent = task.url;
+      collectionRepairDialog.showModal();
+    });
+    const actions = document.createElement('div'); actions.className = 'task-actions'; actions.append(button, repair);
+    row.append(name, state, actions); return row;
   }));
   updateButtons();
 }
@@ -475,6 +490,23 @@ $('collection-pause').addEventListener('click', () => {
 });
 $('collection-close').addEventListener('click', () => collectionDialog.close());
 collectionDialog.addEventListener('cancel', event => { if (fileBusy) event.preventDefault(); });
+$('collection-repair-cancel').addEventListener('click', () => collectionRepairDialog.close());
+collectionRepairDialog.addEventListener('close', () => { repairTarget = null; });
+$('collection-repair-confirm').addEventListener('click', () => {
+  const target = repairTarget;
+  if (!target || running) return;
+  fileAction(async () => {
+    collectionRepairDialog.close();
+    message(`${target.label} を取り直しています…`);
+    const result = await ide.repairCollectionTask(target.collectionUrl, target.taskUrl);
+    rememberCollection(result.view);
+    if (activeCollectionUrl === target.collectionUrl && activeProblem?.url === target.taskUrl) {
+      activeProblem = result.problem;
+      showProblem(); updateEditor();
+    }
+    message('問題文と元のサンプルを取り直しました。解答・編集済みケースは保持しています。');
+  });
+});
 
 window.addEventListener('beforeunload', event => {
   if (closing || (!fileBusy && !running && editor.value === savedCode && !cases.dirty)) return;

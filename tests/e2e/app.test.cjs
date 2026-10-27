@@ -1100,7 +1100,7 @@ test('C01: fixed collection opens offline, protects edits and restores the saved
   await page.setViewportSize({ width: 900, height: 650 });
   assert.equal(await page.locator('#collection-dialog').evaluate(el => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth && el.scrollWidth <= el.clientWidth; }), true);
   await page.screenshot({ path: 'test-results/collection-library.png' });
-  await page.locator('#collection-tasks button').first().click();
+  await page.locator('#collection-tasks [data-action="open"]').first().click();
   await page.locator('#problem-title').filter({ hasText: 'A01 - Problem 1' }).waitFor();
   assert.equal(await page.locator('#problem-refresh').isDisabled(), true);
   await page.locator('#problem-close').click();
@@ -1113,12 +1113,12 @@ test('C01: fixed collection opens offline, protects edits and restores the saved
   await page.waitForFunction(() => !document.getElementById('cases-save').disabled);
   await page.locator('#stdin').fill('unsaved');
   await showCollections();
-  await fileOperation(() => page.locator('#collection-tasks button').nth(1).click(), [discard(false)]);
+  await fileOperation(() => page.locator('#collection-tasks [data-action="open"]').nth(1).click(), [discard(false)]);
   assert.equal(await page.locator('#stdin').inputValue(), 'unsaved');
-  await fileOperation(() => page.locator('#collection-tasks button').nth(1).click(), [discard(true)]);
+  await fileOperation(() => page.locator('#collection-tasks [data-action="open"]').nth(1).click(), [discard(true)]);
   await page.locator('#problem-close').click();
   await showCollections();
-  await page.locator('#collection-tasks button').first().click();
+  await page.locator('#collection-tasks [data-action="open"]').first().click();
   await page.locator('#problem-close').click();
   assert.equal(await page.locator('#stdin').inputValue(), '4 5\n');
   await runAndWait();
@@ -1184,7 +1184,7 @@ test('C03: tasks without inline samples open, and corrupt snapshots preserve the
   await writeFile(path.join(directory, 'collection_0.json'), JSON.stringify({ url: collection.tasks[0].url, title: 'A01 - No inline samples', statement: 'サンプルは別ファイルで配布', samples: [] }));
   await writeFile(path.join(directory, 'collection_1.json'), 'corrupt');
   await showCollections();
-  await page.locator('#collection-tasks button').first().click();
+  await page.locator('#collection-tasks [data-action="open"]').first().click();
   await page.locator('#problem-title').filter({ hasText: 'No inline samples' }).waitFor();
   await page.locator('#problem-close').click();
   assert.equal(await page.locator('#case-count').textContent(), '1 ケース');
@@ -1192,10 +1192,102 @@ test('C03: tasks without inline samples open, and corrupt snapshots preserve the
   await page.locator('#code-editor').fill('puts 42');
   const currentPath = await page.locator('#file-path').textContent();
   await showCollections();
-  await fileOperation(() => page.locator('#collection-tasks button').nth(1).click(), [discard(true)]);
+  await fileOperation(() => page.locator('#collection-tasks [data-action="open"]').nth(1).click(), [discard(true)]);
   await page.locator('#collection-message').filter({ hasText: '不正' }).waitFor();
   assert.equal(await page.locator('#code-editor').inputValue(), 'puts 42');
   assert.equal(await page.locator('#file-path').textContent(), currentPath);
+  await page.locator('#collection-close').click();
+});
+
+test('C04: individual repair requires confirmation and cancel or Escape never starts a request', async () => {
+  const collection = await seedCollection(3);
+  await Promise.all(collection.tasks.slice(0, 2).map(seedCollectionTask));
+  const original = await readFile(path.join(app.dataDir, 'library/collections', libraryContest, 'collection_0.json'), 'utf8');
+  await page.evaluate(async () => {
+    const { ide } = await import('./bridge.js');
+    window.repairCalls = 0;
+    ide.repairCollectionTask = async () => { window.repairCalls++; throw new Error('must not request'); };
+  });
+  await showCollections();
+  assert.equal(await page.locator('#collection-tasks [data-action="repair"]').nth(2).isDisabled(), true);
+  await page.locator('#collection-tasks [data-action="repair"]').first().click();
+  await page.locator('#collection-repair-dialog').waitFor();
+  assert.match(await page.locator('#collection-repair-target').textContent(), /A01.*Problem 1/);
+  assert.equal(await page.locator('#collection-repair-url').textContent(), collection.tasks[0].url);
+  assert.match(await page.locator('#collection-repair-warning').textContent(), /保存時と内容が変わっている/);
+  await page.setViewportSize({ width: 900, height: 650 });
+  assert.equal(await page.locator('#collection-repair-dialog').evaluate(el => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth; }), true);
+  await page.screenshot({ path: 'test-results/collection-repair.png' });
+  await page.locator('#collection-repair-cancel').click();
+  assert.equal(await page.locator('#collection-repair-dialog').isVisible(), false);
+  await page.locator('#collection-tasks [data-action="repair"]').first().click();
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#collection-repair-dialog').isVisible(), false);
+  assert.equal(await page.evaluate(() => window.repairCalls), 0);
+  assert.equal(await readFile(path.join(app.dataDir, 'library/collections', libraryContest, 'collection_0.json'), 'utf8'), original);
+  await page.locator('#collection-close').click();
+});
+
+test('C05: confirmed repair preserves current edits, other snapshots and the previous original on failure', async () => {
+  const collection = await seedCollection();
+  await Promise.all(collection.tasks.map(seedCollectionTask));
+  const directory = path.join(app.dataDir, 'library/collections', libraryContest);
+  const firstPath = path.join(directory, 'collection_0.json');
+  const secondPath = path.join(directory, 'collection_1.json');
+  const original = await readFile(firstPath, 'utf8');
+  await writeFile(secondPath, 'corrupt');
+  await showCollections();
+  await page.locator('#collection-tasks [data-action="open"]').first().click();
+  await page.locator('#problem-close').click();
+  await page.locator('#code-editor').fill('puts "my saved answer"');
+  await page.locator('#save').click();
+  await page.waitForFunction(() => !document.getElementById('save').disabled);
+  await runAndWait();
+  const outputBeforeRepair = await page.locator('#stdout').textContent();
+  await page.locator('#code-editor').fill('puts "my unsaved answer"');
+  await page.locator('#stdin').fill('my unsaved case');
+  const sourcePath = await page.locator('#file-path').textContent();
+  const savedCases = await readFile(path.join(path.dirname(sourcePath), 'cases.json'), 'utf8');
+  const manifestPath = path.join(app.dataDir, 'library/collections', `${libraryContest}.json`);
+  const manifest = await readFile(manifestPath, 'utf8');
+  const calls = [];
+  let fail = true;
+  await page.exposeFunction('__collectionRepair', async (url, taskUrl) => {
+    calls.push(taskUrl);
+    if (fail) { fail = false; throw new Error('network offline'); }
+    const task = collection.tasks.find(task => task.url === taskUrl);
+    const problem = { url: taskUrl, title: `${task.label} - Repaired`, statement: '取り直した問題文', samples: [{ stdin: '8 9\n', expectedOutput: '17\n', compare: true }] };
+    await writeFile(path.join(directory, `${taskUrl.split('/').at(-1)}.json`), JSON.stringify(problem));
+    return { view: { collection, downloaded: collection.tasks.map(task => task.url) }, problem };
+  });
+  await page.evaluate(async () => { const { ide } = await import('./bridge.js'); ide.repairCollectionTask = (url, task) => window.__collectionRepair(url, task); });
+  await showCollections();
+  async function confirmRepair(index) {
+    await page.locator('#collection-tasks [data-action="repair"]').nth(index).click();
+    await page.locator('#collection-repair-confirm').click();
+    await page.waitForFunction(() => !document.getElementById('collection-register').disabled);
+  }
+  await confirmRepair(0);
+  await page.locator('#collection-message').filter({ hasText: 'network offline' }).waitFor();
+  assert.equal(await readFile(firstPath, 'utf8'), original);
+  await confirmRepair(0);
+  assert.equal(await page.locator('#problem-title').textContent(), 'A01 - Repaired');
+  assert.equal(await page.locator('#problem-statement').textContent(), '取り直した問題文');
+  assert.equal(await page.locator('#code-editor').inputValue(), 'puts "my unsaved answer"');
+  assert.equal(await page.locator('#stdin').inputValue(), 'my unsaved case');
+  assert.equal(await page.locator('#expected-output').inputValue(), '3\n');
+  assert.equal(await page.locator('#stdout').textContent(), outputBeforeRepair);
+  assert.equal(await casesDirty(), true);
+  assert.match(await page.locator('#save-state').textContent(), /変更/);
+  assert.equal(await page.locator('#file-path').textContent(), sourcePath);
+  assert.equal(await readFile(sourcePath, 'utf8'), 'puts "my saved answer"');
+  assert.equal(await readFile(path.join(path.dirname(sourcePath), 'cases.json'), 'utf8'), savedCases);
+  assert.equal(await readFile(secondPath, 'utf8'), 'corrupt');
+  await confirmRepair(1);
+  assert.equal(await page.locator('#problem-title').textContent(), 'A01 - Repaired');
+  assert.equal(JSON.parse(await readFile(secondPath, 'utf8')).title, 'A02 - Repaired');
+  assert.deepEqual(calls, [collection.tasks[0].url, collection.tasks[0].url, collection.tasks[1].url]);
+  assert.equal(await readFile(manifestPath, 'utf8'), manifest);
   await page.locator('#collection-close').click();
 });
 

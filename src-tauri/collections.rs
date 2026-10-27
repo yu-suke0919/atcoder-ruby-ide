@@ -2,7 +2,7 @@ use crate::files::{read_limited, write_atomic};
 use crate::library::{
     create_if_missing, download, http_client, validate, ProblemKey, MAX_HTML_BYTES,
 };
-use crate::{DocumentStore, Problem, ProblemLibrary, ProblemWorkspace};
+use crate::{parse_problem, DocumentStore, Problem, ProblemLibrary, ProblemWorkspace};
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -66,6 +66,11 @@ pub struct CollectionView {
 pub struct RegisteredCollection {
     pub view: CollectionView,
     pub created: bool,
+}
+#[derive(Serialize)]
+pub struct RepairedCollectionTask {
+    pub view: CollectionView,
+    pub problem: Problem,
 }
 fn text(element: scraper::ElementRef<'_>) -> String {
     element
@@ -326,6 +331,35 @@ impl CollectionLibrary {
         let problem = self.snapshot(&key, task)?;
         ProblemLibrary::new(&self.root).open_workspace(problem, revision, documents)
     }
+
+    pub fn repair_task(&self, url: &str, task: &str) -> Result<RepairedCollectionTask, String> {
+        self.repair_with(url, task, |url| download(&http_client()?, url))
+    }
+    fn repair_with(
+        &self,
+        url: &str,
+        task: &str,
+        fetch: impl FnOnce(&str) -> Result<String, String>,
+    ) -> Result<RepairedCollectionTask, String> {
+        let key = CollectionKey::parse(url)?;
+        let view = self.view(url)?;
+        if !view.collection.tasks.iter().any(|entry| entry.url == task) {
+            return Err("問題集に含まれない問題です。".into());
+        }
+        if !view.downloaded.iter().any(|entry| entry == task) {
+            return Err("未取得の問題は「未取得分を取得」から取得してください。".into());
+        }
+        // Explicit repairs bypass both caches. Do every fallible read/validation
+        // before the atomic replacement so failure leaves the old bytes intact.
+        let problem = parse_problem(task, &fetch(&format!("{task}?lang=ja"))?)?;
+        let bytes = serde_json::to_vec_pretty(&problem).map_err(|e| e.to_string())?;
+        if bytes.len() > 8 * 1024 * 1024 {
+            return Err("問題が8 MiBを超えています。".into());
+        }
+        write_atomic(&self.snapshot_path(&key, task)?, &bytes)
+            .map_err(|e| format!("問題原本を置き換えられません: {e}"))?;
+        Ok(RepairedCollectionTask { view, problem })
+    }
 }
 
 #[cfg(test)]
@@ -484,5 +518,125 @@ mod tests {
             .fetch_with(URL, a, |_| panic!("cannot replace a snapshot"))
             .is_err());
         assert_eq!(std::fs::read_to_string(snapshot).unwrap(), "corrupt");
+    }
+
+    #[test]
+    fn explicit_repair_replaces_only_the_target_and_keeps_workspaces_and_metadata() {
+        let root = tempfile::tempdir().unwrap();
+        let library = CollectionLibrary::new(root.path());
+        let view = register(&library);
+        let a = &view.collection.tasks[0].url;
+        let b = &view.collection.tasks[1].url;
+        for task in [a, b] {
+            library
+                .fetch_with(URL, task, |url| Ok(problem(url)))
+                .unwrap();
+        }
+        let key = CollectionKey::parse(URL).unwrap();
+        let manifest = std::fs::read(key.manifest(root.path())).unwrap();
+        let other_path = library.snapshot_path(&key, b).unwrap();
+        let other = std::fs::read(&other_path).unwrap();
+        let mut documents = DocumentStore::default();
+        library
+            .open_task(URL, a, documents.revision(), &mut documents)
+            .unwrap();
+        let source = documents.path().unwrap().to_owned();
+        documents
+            .save("puts 'my answer'", Some(source.clone()))
+            .unwrap();
+        let cases = vec![SampleCase {
+            stdin: "mine".into(),
+            expected_output: "answer".into(),
+            compare: false,
+        }];
+        ProblemLibrary::new(root.path())
+            .save_cases(a, cases.clone())
+            .unwrap();
+        let case_path = source.parent().unwrap().join("cases.json");
+        let saved_cases = std::fs::read(&case_path).unwrap();
+        let revision = documents.revision();
+        let global = root
+            .path()
+            .join("library/problems/tessoku-book/tessoku_book_a");
+        std::fs::create_dir_all(&global).unwrap();
+        std::fs::write(global.join("problem.json"), "bad standalone cache").unwrap();
+        let html = include_str!("../tests/fixtures/atcoder-task.html")
+            .replace("和を求める", "Repaired")
+            .replace("1 2", "8 9")
+            .replace("<pre>3", "<pre>17");
+        let repaired = library
+            .repair_with(URL, a, |url| {
+                assert_eq!(url, format!("{a}?lang=ja"));
+                Ok(html)
+            })
+            .unwrap();
+        assert!(repaired.problem.title.contains("Repaired"));
+        assert_eq!(repaired.problem.samples[0].stdin, "8 9\n");
+        assert_eq!(repaired.problem.samples[0].expected_output, "17\n");
+        assert_eq!(repaired.view.downloaded.len(), 2);
+        assert_eq!(documents.revision(), revision);
+        assert_eq!(documents.path(), Some(source.as_path()));
+        assert_eq!(
+            std::fs::read_to_string(&source).unwrap(),
+            "puts 'my answer'"
+        );
+        assert_eq!(std::fs::read(&case_path).unwrap(), saved_cases);
+        assert_eq!(std::fs::read(key.manifest(root.path())).unwrap(), manifest);
+        assert_eq!(std::fs::read(other_path).unwrap(), other);
+        assert_eq!(
+            std::fs::read_to_string(global.join("problem.json")).unwrap(),
+            "bad standalone cache"
+        );
+        let reopened = library
+            .open_task(URL, a, documents.revision(), &mut documents)
+            .unwrap();
+        assert!(reopened.problem.title.contains("Repaired"));
+        assert_eq!(reopened.cases, cases);
+    }
+
+    #[test]
+    fn repair_can_replace_corrupt_bytes_but_failures_leave_them_untouched() {
+        let root = tempfile::tempdir().unwrap();
+        let library = CollectionLibrary::new(root.path());
+        let view = register(&library);
+        let a = &view.collection.tasks[0].url;
+        library.fetch_with(URL, a, |url| Ok(problem(url))).unwrap();
+        let path = library
+            .snapshot_path(&CollectionKey::parse(URL).unwrap(), a)
+            .unwrap();
+        std::fs::write(&path, "corrupt original").unwrap();
+        assert!(library
+            .repair_with(URL, a, |_| Err("network offline".into()))
+            .is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "corrupt original");
+        assert!(library
+            .repair_with(URL, a, |_| Ok("not a task page".into()))
+            .is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "corrupt original");
+        library
+            .repair_with(URL, a, |_| {
+                Ok(include_str!("../tests/fixtures/atcoder-task.html").into())
+            })
+            .unwrap();
+        assert!(library
+            .snapshot(&CollectionKey::parse(URL).unwrap(), a)
+            .is_ok());
+    }
+
+    #[test]
+    fn repair_rejects_missing_and_foreign_tasks_before_fetching() {
+        let root = tempfile::tempdir().unwrap();
+        let library = CollectionLibrary::new(root.path());
+        let view = register(&library);
+        for task in [
+            &view.collection.tasks[0].url[..],
+            "https://atcoder.jp/contests/other/tasks/x",
+            "https://atcoder.jp/contests/tessoku-book/tasks/unknown",
+        ] {
+            assert!(library
+                .repair_with(URL, task, |_| panic!("must not fetch"))
+                .is_err());
+        }
+        assert!(!root.path().join("workspaces").exists());
     }
 }

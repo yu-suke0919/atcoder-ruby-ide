@@ -388,4 +388,18 @@ fn live_atcoder_collection_import_and_fixed_workspace() {
         .unwrap();
     assert_eq!(reopened.document.code.as_deref(), Some("puts 'saved'"));
     assert_eq!(reopened.problem.statement, opened.problem.statement);
+    let snapshot = root
+        .path()
+        .join("library/collections/tessoku-book")
+        .join(format!("{}.json", task.rsplit('/').next().unwrap()));
+    std::fs::write(snapshot, "corrupt original").unwrap();
+    let revision = documents.revision();
+    let repaired = library.repair_task(url, task).unwrap();
+    assert_eq!(repaired.problem.url, *task);
+    assert_eq!(repaired.view.downloaded.len(), count);
+    assert_eq!(documents.revision(), revision);
+    let reopened = library
+        .open_task(url, task, documents.revision(), &mut documents)
+        .unwrap();
+    assert_eq!(reopened.document.code.as_deref(), Some("puts 'saved'"));
 }

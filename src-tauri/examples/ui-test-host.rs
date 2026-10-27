@@ -177,6 +177,10 @@ fn main() {
                 documents.revision(),
                 &mut documents
             )?)),
+            "collection_repair_task" => Ok(json!(collections.repair_task(
+                args["url"].as_str().ok_or("URLを指定してください")?,
+                args["task"].as_str().ok_or("問題を指定してください")?
+            )?)),
             "problem_refresh" => Ok(json!(
                 library.problem(args["url"].as_str().ok_or("URLを指定してください")?, true)?
             )),

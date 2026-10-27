@@ -69,6 +69,13 @@
     <div id="collection-tasks" aria-label="収録問題"></div>
     <p id="collection-message" role="status"></p>
   </dialog>
+  <dialog id="collection-repair-dialog" aria-labelledby="collection-repair-heading" aria-describedby="collection-repair-warning">
+    <h2 id="collection-repair-heading">この問題を取り直しますか？</h2>
+    <p id="collection-repair-target"></p>
+    <p id="collection-repair-url"></p>
+    <p id="collection-repair-warning">現在のAtCoderから問題文と元のサンプルを取得し、保存済みの原本を置き換えます。保存時と内容が変わっている場合があります。解答と編集済みのケースは保持します。</p>
+    <div class="repair-actions"><button id="collection-repair-cancel" autofocus>キャンセル</button><button id="collection-repair-confirm">この問題を取り直す</button></div>
+  </dialog>
   <dialog id="problem-dialog" aria-labelledby="problem-dialog-heading">
     <div class="difference-heading"><h2 id="problem-dialog-heading">AtCoder の問題</h2><button id="problem-close">閉じる</button></div>
     <label for="problem-url">問題URL</label>

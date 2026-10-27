@@ -2,8 +2,8 @@
 
 use atcoder_ruby_ide::{
     load_samples, save_samples, CollectionLibrary, CollectionView, DocumentResult, DocumentStore,
-    Problem, ProblemLibrary, ProblemWorkspace, RegisteredCollection, RunEvent, RunRequest, Runner,
-    SampleCase, SampleResult,
+    Problem, ProblemLibrary, ProblemWorkspace, RegisteredCollection, RepairedCollectionTask,
+    RunEvent, RunRequest, Runner, SampleCase, SampleResult,
 };
 use serde::Serialize;
 use std::path::PathBuf;
@@ -286,6 +286,23 @@ async fn collection_fetch_task(
 }
 
 #[tauri::command]
+async fn collection_repair_task(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    url: String,
+    task: String,
+) -> Result<RepairedCollectionTask, String> {
+    let library = collection_library(&app)?;
+    let lock = Arc::clone(&state.collection_lock);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = lock.lock().unwrap();
+        library.repair_task(&url, &task)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn collection_open_task(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
@@ -393,6 +410,7 @@ fn main() {
             collection_list,
             collection_register,
             collection_fetch_task,
+            collection_repair_task,
             collection_open_task
         ])
         .build(context)

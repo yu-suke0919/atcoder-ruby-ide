@@ -139,3 +139,12 @@ pre { margin: 0; padding: 0 16px 12px; white-space: pre-wrap; overflow-wrap: any
 .collection-task span { overflow-wrap: anywhere; }
 .collection-task .task-state { font-size: 11px; color: var(--muted); }
 .collection-task .task-state[data-error="true"] { color: #f5a3b2; }
+.collection-task .task-actions { display: flex; gap: 2px; }
+.collection-task .task-actions button { font-size: 11px; padding: 7px; }
+#collection-repair-dialog { width: min(600px, calc(100vw - 36px)); max-height: calc(100vh - 36px); padding: 22px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); }
+#collection-repair-dialog::backdrop { background: #000b; }
+#collection-repair-target { white-space: pre-line; overflow-wrap: anywhere; line-height: 1.6; }
+#collection-repair-url { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+#collection-repair-warning { line-height: 1.8; }
+.repair-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+#collection-repair-confirm { background: #493760; color: var(--text); border-color: #7b5e9c; }
