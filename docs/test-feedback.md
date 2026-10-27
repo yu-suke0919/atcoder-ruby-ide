@@ -1,5 +1,7 @@
 # 開発・テスト速度の改善
 
+Ruby 削減とテスト速度改善を行った PR #5 の方針・測定記録。現在の実行手順は [README](../README.md)、テスト構成は [構成と検証方針](architecture.md)、機能追加ごとの結果は [検証記録](verification.md) を参照する。
+
 資料 → 失敗するテスト → 最小実装 → 不要コード・資料矛盾の確認の順に進める。
 
 ## 受入条件
@@ -8,7 +10,7 @@
 - Ruby の起動・JSON・BigDecimal など同梱拡張が Windows で動く。削減前の 19,696 ファイル・102.71 MiB を基準として実測する。
 - Ruby の内容走査は取得元 1 回と、ポータブル GUI 後の配布対象 1 回に整理する。NSIS は exe と主要ファイルの存在を確認する。
 - Windows の全 GUI テストは 1 周とし、NSIS は実インストールとアプリ起動・サンプル・JSON・同梱 Ruby の確認に絞る。
-- Linux で本番 renderer.js / bridge.js を使い、実 Ruby・Rust の実行とファイル操作を通す。同じ GUI 受入ケースを使い、確認ダイアログの返答だけをテスト側から与える。
+- Linux で本番 renderer.js / bridge.js を使い、実 Ruby・Rust の実行とファイル操作を通す。同じ GUI 受入ケースを使い、Tauri 通信・ウィンドウ操作・ファイル選択と破棄確認への応答をテスト側で差し替える。後から追加した問題取得テストを含む現在の検証範囲は、構成と検証方針を参照する。
 - 初回セットアップ後の Linux の GUI テスト時間、Windows 各工程、配布容量を記録する。過去の検証記録の数値は当時の測定として維持する。
 
 ## レビュー後の補強
@@ -22,7 +24,7 @@
 
 リンク混入、EOF・不正入力時の実 Ruby の後始末、stdout 切断の回帰テストを追加した。
 Linux Cloud の Rust 17 件・Node 11 件（サブテスト含む）と、`E2E_RUNNER=browser` で共通 GUI 23 件が成功した（全 GUI 約 18.2 秒）。
-マージ前に [PR #5](https://github.com/yu-suke0919/atcoder-ruby-ide/pull/5) の最終コミットで両 OS の CI と Windows の GUI・配布検証を確認する。
+当時の最終コミットの両 OS の CI と Windows の GUI・配布検証は [PR #5 の Checks](https://github.com/yu-suke0919/atcoder-ruby-ide/pull/5/checks) を参照する。
 
 ## 検証結果
 

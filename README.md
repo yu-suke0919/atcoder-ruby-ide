@@ -64,9 +64,19 @@ npm run prepare:ruby
 npm start
 ```
 
-Windows は開発時も常に同梱 Ruby を使います。`RUBY_PATH` や PATH の別の Ruby には切り替わりません。
-Linux の共通テストでは `RUBY_PATH`、未指定なら PATH の `ruby` を使います。
+Windows のデスクトップアプリは `npm start` による開発時も同梱 Ruby を使います。`RUBY_PATH` や PATH の別の Ruby には切り替わりません。
+共通テスト（`npm test`）とブラウザー用テストホストは、OS にかかわらず `RUBY_PATH`、未指定なら PATH の `ruby` を使います。Windows の共通テストでは、CI と同じく準備済みの同梱 Ruby を指定します。
+
+```powershell
+npm run prepare:ruby
+$env:RUBY_PATH = (Resolve-Path vendor/ruby/bin/ruby.exe).Path
+npm test
+cargo fmt --all --check
+```
+
+Windows のネイティブ GUI テストは、後述の「ビルドと検証」の手順で実行します。
 Linux の画面テストは headless Chromium と既存の Rust コアを使い、GTK / WebKitGTK は不要です。通常の Tauri デスクトップアプリ自体を Linux で起動する場合は、GTK / WebKitGTK 開発依存が別途必要です。
+Linux の共通・画面テストは次のコマンドで実行します。
 
 ```bash
 npm test
@@ -76,9 +86,10 @@ npm run test:e2e
 
 共通テストは Rust による実際の Ruby プロセス・ファイル操作と、Node によるケース状態・アーカイブ検証です。
 ケース状態だけなら `node --test --test-isolation=none tests/unit/sample-cases.test.cjs` で Ruby・ブラウザーなしで確認できます。
-AtCoder の実サイトとの連携は、通信できる開発環境で `npm run test:atcoder-live` を明示実行します。公開3問の取得・再取得と実Rubyでの全サンプル比較に加え、tessoku-bookの151問の一覧と先頭2問の固定保存・復元・破損原本の個別取り直しを確認します。全151問の取得は `ATCODER_COLLECTION_LIVE_ALL=1 cargo test --locked --test library live_atcoder_collection -- --ignored --nocapture` で明示実行できます。通常のテスト・CIは外部サービスへ接続しません。画面の実サイトテストは開発用RubyとChromiumを使います。
+AtCoder の実サイトとの連携は、通信できる開発環境で `npm run test:atcoder-live` を明示実行します。公開3問の取得・再取得と実Rubyでの全サンプル比較に加え、tessoku-bookの151問の一覧と先頭2問の固定保存・復元・破損原本の個別取り直しを確認します。全151問の取得は `ATCODER_COLLECTION_LIVE_ALL=1 cargo test --locked --test library live_atcoder_collection -- --ignored --nocapture` で明示実行できます。CIを含む通常の自動テストではAtCoderへ接続しません。依存パッケージ・Ruby・ブラウザーなどの初回取得には通信が必要です。画面の実サイトテストは開発用RubyとChromiumを使います。
 Linux では `npm run test:e2e` がテスト専用 Rust ホストをビルドし、HTTP 配信した本番画面を headless Chromium で操作します。
-実 Ruby・ファイル I/O・実行制御・比較は本番の Rust ライブラリを共有し、Tauri 通信・ウィンドウ操作・ダイアログ応答だけをテスト用に差し替えます。
+実 Ruby・ソースとケースのファイル I/O・実行制御・比較は本番の Rust ライブラリを共有し、Tauri 通信・ウィンドウ操作・ダイアログ応答をテスト用に差し替えます。
+通常の GUI テストでは、問題・問題集の登録・取得・再取得・個別取り直しの成功／失敗も、必要に応じてブリッジの応答と保存データをテスト側で用意します。HTTP・HTML解析・原本保存の処理は Rust テストで検証します。
 Windows は同じ受入ケースを実際の WebView2 / ネイティブダイアログで確認します。テスト専用ホストは配布しません。
 `E2E_RUNNER=browser` または `native` で明示選択でき、その他の値はエラーになります（native は Windows 専用）。
 Windows でも browser を選べますが、その場合は開発用の Ruby と Chromium を別途用意し、必要なら `RUBY_PATH` を指定してください。
@@ -101,7 +112,7 @@ npm run test:e2e
 初回導入・コンパイルと、準備後の画面テスト時間は分けて測定します。
 
 Windows ではアプリから Ruby の PATH を除去し、不正な `RUBY_PATH` でも同梱 Ruby を使うことを確認します。
-通常起動ではテスト用デバッグポートを開きません。検証範囲・実測値は [テスト速度の改善](docs/test-feedback.md) に記録します。
+通常起動ではテスト用デバッグポートを開きません。機能追加ごとの検証結果は [検証記録](docs/verification.md)、Ruby 削減時の速度・容量の測定は [テスト速度の改善](docs/test-feedback.md) を参照してください。
 
 ## ビルドと検証
 
