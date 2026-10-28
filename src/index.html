@@ -27,8 +27,8 @@
           <div class="file-actions"><button id="new" title="新しいファイル">新規</button><button id="open" title="Ctrl+O">開く</button><button id="save" title="Ctrl+S">保存</button><button id="save-as" title="Ctrl+Shift+S">名前を付けて保存</button></div>
           <div class="library-actions"><button id="collections" class="quiet-button" disabled>問題集</button><button id="problem-library" class="quiet-button" disabled>AtCoder の問題</button><button id="problem-toggle" class="quiet-button" aria-controls="problem-panel" aria-expanded="false" disabled>問題文を表示する</button></div>
         </div>
-        <div class="editor-container"><div id="line-numbers" class="line-numbers" aria-hidden="true"></div><textarea id="code-editor" data-testid="code-editor" aria-label="Ruby コード" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off"></textarea></div>
-        <div class="editor-footer"><span id="file-path" title="未保存のファイル">無題.rb</span><span id="cursor-position">Ln 1, Col 1</span></div>
+        <div id="editor-host" class="editor-container"></div>
+        <div class="editor-footer"><span id="file-path" title="未保存のファイル">無題.rb</span><button id="editor-search" class="quiet-button" title="Ctrl+F / Ctrl+H">検索・置換</button><span id="cursor-position">Ln 1, Col 1</span></div>
       </section>
 
       <div class="right-column">

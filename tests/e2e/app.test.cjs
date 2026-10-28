@@ -1,4 +1,5 @@
-const { test, before, beforeEach, after } = require('node:test');
+const { editorText } = require('./editor.cjs');
+const { test, describe, before, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { mkdtemp, mkdir, readFile, writeFile, rm, access, realpath } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
@@ -6,6 +7,7 @@ const path = require('node:path');
 const { once } = require('node:events');
 const { launch, dialogs, discard, open, save, cancelSave, overwrite, close, requestClose, pause } = require('./support.cjs');
 
+describe('Application', () => {
 let app;
 let page;
 let root;
@@ -57,7 +59,7 @@ async function newDocument() {
   const dirty = await page.evaluate(() => document.getElementById('save-state').textContent.includes('変更'));
   if (dirty) await fileOperation(() => page.getByRole('button', { name: '新規', exact: true }).click(), [discard(true)]);
   else await page.getByRole('button', { name: '新規', exact: true }).click();
-  await page.waitForFunction(() => !document.getElementById('new').disabled && document.getElementById('code-editor').value === '');
+  await page.waitForFunction(() => !document.getElementById('new').disabled && document.getElementById('code-editor').textContent === '');
 }
 async function runAndWait(label = '正常終了') {
   await page.getByRole('button', { name: '実行', exact: true }).click();
@@ -122,7 +124,7 @@ test('R07: reloading a saved source makes Save choose a new path', async () => {
   assert.equal(await readFile(original, 'utf8'), 'puts "original"');
   const saved = path.join(root, 'reload-new.rb');
   await fileOperation(() => page.locator('#save').click(), [save(saved)]);
-  assert.equal(await readFile(saved, 'utf8'), await page.locator('#code-editor').inputValue());
+  assert.equal(await readFile(saved, 'utf8'), await editorText(page));
   assert.equal(await readFile(original, 'utf8'), 'puts "original"');
 });
 
@@ -130,7 +132,7 @@ test('R07: reload protects source edits and accepted reload starts clean', async
   await page.locator('#code-editor').click();
   await page.locator('#code-editor').fill('puts "unsaved source"');
   await confirmReload(false);
-  assert.equal(await page.locator('#code-editor').inputValue(), 'puts "unsaved source"');
+  assert.equal(await editorText(page), 'puts "unsaved source"');
   await confirmReload(true);
   await runAndWait();
   assert.equal(await page.locator('#stdout').textContent(), '6 test\n');
@@ -141,7 +143,7 @@ test('R07: reload protects case-only edits', async () => {
   await page.locator('#stdin').fill('unsaved case');
   await confirmReload(false);
   assert.equal(await page.locator('#stdin').inputValue(), 'unsaved case');
-  assert.equal(await page.locator('#code-editor').inputValue().then(code => code.includes('gets.to_i')), true);
+  assert.equal(await editorText(page).then(code => code.includes('gets.to_i')), true);
 });
 
 test('R07: accepting reload stops an active run before enabling a new run', async () => {
@@ -214,7 +216,7 @@ test('M12: Ruby detection can fail and recover without losing edits', async () =
   assert.equal(await page.locator('#run').isDisabled(), true);
   await retry.click();
   await page.waitForFunction(() => !document.getElementById('run').disabled);
-  assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts "recovered"');
+  assert.equal(await editorText(page), 'puts "recovered"');
   assert.equal(await page.getByTestId('stdin').inputValue(), 'keep input');
   await runAndWait();
   assert.equal(await page.getByTestId('stdout').textContent(), 'recovered\n');
@@ -386,7 +388,7 @@ test('M01: Tab inserts two spaces and output is rendered as text', async () => {
   await page.getByTestId('code-editor').fill('puts "<img src=x onerror=alert(1)>"');
   await page.getByTestId('code-editor').press('End');
   await page.getByTestId('code-editor').press('Tab');
-  assert.match(await page.getByTestId('code-editor').inputValue(), /  $/);
+  assert.match(await editorText(page), /  $/);
   await page.getByRole('button', { name: '実行', exact: true }).click();
   await page.getByTestId('run-status').filter({ hasText: '正常終了' }).waitFor();
   assert.equal(await page.getByTestId('stdout').locator('img').count(), 0);
@@ -416,16 +418,16 @@ test('M02/M03/M09: open/save preserve Japanese paths and canceled edits', async 
   const file = path.join(root, '解答.rb');
   await writeFile(file, '\uFEFFputs "ファイル"\n', 'utf8');
   await openDocument(file);
-  assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts "ファイル"\n');
+  assert.equal(await editorText(page), 'puts "ファイル"\n');
   await page.getByTestId('code-editor').fill('puts "変更済み"\n');
   await fileOperation(() => page.getByRole('button', { name: '開く', exact: true }).click(), [discard(false)]);
-  assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts "変更済み"\n');
+  assert.equal(await editorText(page), 'puts "変更済み"\n');
   await page.keyboard.press('Control+s');
   await page.getByTestId('save-state').filter({ hasText: '保存済み' }).waitFor();
   assert.equal(await readFile(file, 'utf8'), 'puts "変更済み"\n');
   await page.getByTestId('code-editor').fill('puts "未保存"');
   await fileOperation(() => page.keyboard.press('Control+Shift+s'), [cancelSave()]);
-  assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts "未保存"');
+  assert.equal(await editorText(page), 'puts "未保存"');
   assert.match(await page.getByTestId('save-state').textContent(), /未保存/);
   assert.equal(await readFile(file, 'utf8'), 'puts "変更済み"\n');
 });
@@ -442,7 +444,7 @@ test('M08: opening an oversized source preserves the current code, path and comp
   await writeFile(large, 'a'.repeat(1048577));
   await fileOperation(() => page.locator('#open').click(), [open(large)]);
   await page.locator('#message').filter({ hasText: '1 MiB' }).waitFor();
-  assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts "keep"');
+  assert.equal(await editorText(page), 'puts "keep"');
   assert.equal(await page.locator('#file-path').textContent(), currentPath);
   assert.equal(await page.getByTestId('comparison-status').textContent(), '一致');
   await runAndWait();
@@ -453,7 +455,7 @@ test('M09: cancel close/new confirmation, then create and save a document', asyn
   await page.getByTestId('code-editor').fill('puts "保持"');
   await fileOperation(() => page.getByRole('button', { name: '新規', exact: true }).click(), [discard(false)]);
   await fileOperation(() => requestClose(app), [discard(false)]);
-  assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts "保持"');
+  assert.equal(await editorText(page), 'puts "保持"');
   await newDocument();
   await page.getByTestId('code-editor').fill('puts "新規保存"');
   const file = path.join(root, '新しい解答.rb');
@@ -466,7 +468,7 @@ test('R01: a CRLF document opens clean and remains unchanged on disk', async () 
   const file = path.join(root, 'Windows 改行.rb');
   await writeFile(file, 'puts 1\r\nputs 2\r\n', 'utf8');
   await openDocument(file);
-  assert.equal(await page.getByTestId('code-editor').inputValue(), 'puts 1\nputs 2\n');
+  assert.equal(await editorText(page), 'puts 1\nputs 2\n');
   assert.equal(await page.getByTestId('save-state').textContent(), '保存済み');
   assert.equal(await readFile(file, 'utf8'), 'puts 1\r\nputs 2\r\n');
 });
@@ -696,7 +698,7 @@ test('M14: JSON roundtrip preserves case data and leaves the source and cwd unch
   await page.getByTestId('expected-output').fill('');
   await addCase('two', 'ignored');
   await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
-  const source = await page.getByTestId('code-editor').inputValue();
+  const source = await editorText(page);
   const sourcePath = await page.locator('#file-path').textContent();
   const file = path.join(root, 'サンプル 空白.json');
   await saveCases(file);
@@ -708,7 +710,7 @@ test('M14: JSON roundtrip preserves case data and leaves the source and cwd unch
   assert.equal(await casesDirty(), false);
   await page.getByTestId('stdin').fill('edited');
   await loadCases(file);
-  assert.equal(await page.getByTestId('code-editor').inputValue(), source);
+  assert.equal(await editorText(page), source);
   assert.equal(await page.locator('#file-path').textContent(), sourcePath);
   assert.equal(await page.getByTestId('stdin').inputValue(), '日本語\n');
   assert.equal(await page.getByTestId('stdout').textContent(), '');
@@ -931,7 +933,7 @@ test('P01: cached problem opens offline, runs samples and restores its saved wor
   assert.equal(panelFits, true);
   await page.screenshot({ path: 'test-results/problem-library.png' });
   assert.equal(await page.locator('#problem-dialog').isVisible(), false);
-  assert.equal(await page.locator('#code-editor').inputValue(), '');
+  assert.equal(await editorText(page), '');
   const sourcePath = path.join(app.dataDir, 'workspaces', libraryContest, 'save', 'solution.rb');
   const normalizePath = value => process.platform === 'win32' ? path.toNamespacedPath(value).toLowerCase() : path.resolve(value);
   assert.equal(normalizePath(await page.locator('#file-path').textContent()), normalizePath(sourcePath));
@@ -953,7 +955,7 @@ test('P01: cached problem opens offline, runs samples and restores its saved wor
   await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
   assert.equal(await page.locator('#problem-dialog').isVisible(), false);
   assert.equal(await page.locator('#stdin').inputValue(), '9 1\n');
-  assert.equal(await page.locator('#code-editor').inputValue(), await readFile(sourcePath, 'utf8'));
+  assert.equal(await editorText(page), await readFile(sourcePath, 'utf8'));
   await runAndWait();
   assert.equal(await page.locator('#comparison-status').textContent(), '一致');
 });
@@ -972,14 +974,14 @@ test('P02: problem switching protects both unsaved code and cases', async () => 
   await fileOperation(() => page.locator('#problem-open').click(), [discard(false)]);
   assert.equal(await page.locator('#problem-title').textContent(), a.title);
   assert.equal(await page.locator('#file-path').textContent(), originalPath);
-  assert.equal(await page.locator('#code-editor').inputValue(), 'puts "keep code"');
+  assert.equal(await editorText(page), 'puts "keep code"');
   assert.equal(await page.locator('#stdin').inputValue(), 'keep cases');
   assert.equal(await page.locator('#problem-dialog').isVisible(), true);
   assert.equal(await page.locator('#problem-panel').isVisible(), false);
   await fileOperation(() => page.locator('#problem-open').click(), [discard(true)]);
   await page.locator('#problem-title').filter({ hasText: b.title }).waitFor();
   assert.equal(await page.locator('#problem-dialog').isVisible(), false);
-  assert.equal(await page.locator('#code-editor').inputValue(), '');
+  assert.equal(await editorText(page), '');
   assert.equal(await page.locator('#stdin').inputValue(), '1 2\n');
   assert.equal(await page.locator('#problem-panel').isVisible(), true);
   assert.equal(await page.locator('#problem-statement').evaluate(el => el.scrollTop), 0);
@@ -1017,7 +1019,7 @@ test('P04: refresh keeps edited code and cases and retains the previous statemen
   }, problem);
   await page.locator('#problem-refresh').click();
   await page.locator('#problem-title').filter({ hasText: 'Updated problem' }).waitFor();
-  assert.equal(await page.locator('#code-editor').inputValue(), 'puts "my edits"');
+  assert.equal(await editorText(page), 'puts "my edits"');
   assert.equal(await page.locator('#stdin').inputValue(), 'my cases');
   assert.equal(await casesDirty(), true);
   assert.match(await page.locator('#save-state').textContent(), /変更/);
@@ -1115,10 +1117,10 @@ test('P07: reading panel allows editing and shortcuts, and toggling preserves ed
   await page.locator('#problem-statement').evaluate(el => { el.scrollTop = 150; });
   const scroll = await page.locator('#problem-statement').evaluate(el => el.scrollTop);
   assert.ok(scroll > 0);
-  const capture = () => page.evaluate(() => Object.fromEntries(['code-editor', 'stdin', 'expected-output', 'compare-output', 'file-path', 'save-state', 'case-count', 'stdout', 'stderr', 'run-status', 'run-duration', 'comparison-status'].map(id => {
+  const capture = async () => ({ code: await editorText(page), fields: await page.evaluate(() => Object.fromEntries(['stdin', 'expected-output', 'compare-output', 'file-path', 'save-state', 'case-count', 'stdout', 'stderr', 'run-status', 'run-duration', 'comparison-status'].map(id => {
     const el = document.getElementById(id);
     return [id, el.type === 'checkbox' ? el.checked : el.value ?? el.textContent];
-  })));
+  }))) });
   const before = await capture();
   const width = await page.locator('#code-editor').evaluate(el => el.clientWidth);
   await page.evaluate(async () => {
@@ -1145,12 +1147,13 @@ test('P08: long reading panel, editor and results fit wide and minimum windows w
   await page.locator('#code-editor').fill('puts "reading and editing"\n'.repeat(80));
   for (const [width, height] of [[1440, 900], [1200, 650], [900, 650]]) {
     await page.setViewportSize({ width, height });
+    await page.locator('#editor-search').click();
     await page.evaluate(() => { document.body.style.lineHeight = '1.8'; });
     await assertWorkspaceFits();
     const layout = await page.evaluate(() => {
       const rect = selector => { const { x, y, right, bottom, width, height } = document.querySelector(selector).getBoundingClientRect(); return { x, y, right, bottom, width, height }; };
       const contents = ['problem-statement', 'code-editor'].map(id => {
-        const el = document.getElementById(id), css = getComputedStyle(el);
+        const el = id === 'code-editor' ? document.querySelector('.cm-scroller') : document.getElementById(id), css = getComputedStyle(el);
         return { id, content: el.clientHeight - parseFloat(css.paddingTop) - parseFloat(css.paddingBottom), line: parseFloat(css.lineHeight), fits: el.scrollWidth <= el.clientWidth };
       });
       return { problem: rect('#problem-panel'), editor: rect('.editor-panel'), cases: rect('.right-column'), toolbar: rect('.run-toolbar'), pageWidth: document.documentElement.scrollWidth, contents };
@@ -1168,11 +1171,11 @@ test('P08: long reading panel, editor and results fit wide and minimum windows w
     assert.equal(layout.contents[0].fits, true, details);
     await page.locator('#problem-statement').evaluate(el => { el.scrollTop = 200; });
     assert.ok(await page.locator('#problem-statement').evaluate(el => el.scrollTop) > 0);
-    await page.locator('#code-editor').evaluate(el => { el.scrollTop = 150; });
-    const editorScroll = await page.locator('#code-editor').evaluate(el => el.scrollTop);
+    await page.locator('.cm-scroller').evaluate(el => { el.scrollTop = 150; });
+    const editorScroll = await page.locator('.cm-scroller').evaluate(el => el.scrollTop);
     await page.locator('#problem-statement').evaluate(el => { el.scrollTop += 50; });
     assert.ok(editorScroll > 0);
-    assert.equal(await page.locator('#code-editor').evaluate(el => el.scrollTop), editorScroll);
+    assert.equal(await page.locator('.cm-scroller').evaluate(el => el.scrollTop), editorScroll);
     await page.screenshot({ path: `test-results/problem-panel-${width}.png` });
   }
 });
@@ -1318,7 +1321,7 @@ test('C03: tasks without inline samples open, and corrupt snapshots preserve the
   await showCollections();
   await fileOperation(() => page.locator('#collection-tasks [data-action="open"]').nth(1).click(), [discard(true)]);
   await page.locator('#collection-message').filter({ hasText: '不正' }).waitFor();
-  assert.equal(await page.locator('#code-editor').inputValue(), 'puts 42');
+  assert.equal(await editorText(page), 'puts 42');
   assert.equal(await page.locator('#file-path').textContent(), currentPath);
   await page.locator('#collection-close').click();
 });
@@ -1400,7 +1403,7 @@ test('C05: confirmed repair preserves current edits, other snapshots and the pre
   assert.equal(await page.locator('#problem-title').textContent(), 'A01 - Repaired');
   assert.equal(await page.locator('#problem-statement').textContent(), '取り直した問題文');
   assert.equal(await page.locator('#problem-panel').isVisible(), false);
-  assert.equal(await page.locator('#code-editor').inputValue(), 'puts "my unsaved answer"');
+  assert.equal(await editorText(page), 'puts "my unsaved answer"');
   assert.equal(await page.locator('#stdin').inputValue(), 'my unsaved case');
   assert.equal(await page.locator('#expected-output').inputValue(), '3\n');
   assert.equal(await page.locator('#stdout').textContent(), outputBeforeRepair);
@@ -1470,7 +1473,7 @@ test('P10: formulas and saved images render offline and enlarge without changing
   await page.locator('#problem-statement img').evaluate(image => image.decode());
   assert.equal(await page.locator('#problem-statement').evaluate(el => el.scrollTop), scroll);
   await page.screenshot({ path: 'test-results/problem-media.png' });
-  assert.equal(await page.locator('#code-editor').inputValue(), 'puts "keep edits"');
+  assert.equal(await editorText(page), 'puts "keep edits"');
   assert.equal(await page.locator('#stdin').inputValue(), 'keep case');
   assert.equal(await page.locator('#file-path').textContent(), source);
   assert.equal(await casesDirty(), true);
@@ -1480,7 +1483,7 @@ test('P10: formulas and saved images render offline and enlarge without changing
   await openProblemDialog(problem.url); await page.locator('#problem-open').click(); await waitProblem();
   await page.locator('#problem-statement img').evaluate(image => image.decode());
   assert.equal(await page.locator('#problem-statement .katex').count(), 1);
-  assert.equal(await page.locator('#code-editor').inputValue(), 'puts "keep edits"');
+  assert.equal(await editorText(page), 'puts "keep edits"');
 });
 
 test('P11: SVG styles and internal references render with preformatted and legacy math offline', async () => {
@@ -1536,4 +1539,6 @@ test('M06/M09: accepting close stops Ruby descendants and exits', async () => {
   await Promise.all([exited, dialogs(app, () => requestClose(app), [discard(true)], true)]);
   await pause(2200);
   await assert.rejects(access(marker), { code: 'ENOENT' });
+});
+
 });

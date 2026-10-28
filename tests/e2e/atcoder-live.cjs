@@ -1,3 +1,4 @@
+const { editorText } = require('./editor.cjs');
 // Explicit live check: excluded from the ordinary offline *.test.cjs suite.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -49,7 +50,7 @@ test('AtCoder live: import legacy problem, run every sample, save, refresh and r
     await page.reload();
     await page.waitForFunction(() => !document.getElementById('run').disabled);
     await openProblem();
-    assert.equal(await page.locator('#code-editor').inputValue(), code);
+    assert.equal(await editorText(page), code);
     assert.equal(await page.locator('#stdin').inputValue(), '30\n10\n');
     assert.equal(await page.locator('#expected-output').inputValue(), '20\n');
     await page.locator('#run-all').click();
@@ -141,7 +142,7 @@ test('AtCoder live: download real images, enlarge, refresh and reopen without ne
     await page.locator('#problem-close').click();
     await checkImages(images);
     const savedCache = await readFile(cachePath, 'utf8');
-    assert.equal(await page.locator('#code-editor').inputValue(), code);
+    assert.equal(await editorText(page), code);
     assert.equal(await page.locator('#stdin').inputValue(), 'saved media case\n');
     assert.equal(await readFile(path.join(workspace, 'cases.json'), 'utf8'), savedCases);
 
@@ -153,7 +154,7 @@ test('AtCoder live: download real images, enlarge, refresh and reopen without ne
     await openProblem();
     await checkImages(images);
     assert.equal(blockedRequests, 0, 'Opening the saved problem must not attempt any network request');
-    assert.equal(await app.page.locator('#code-editor').inputValue(), code);
+    assert.equal(await editorText(app.page), code);
     assert.equal(await app.page.locator('#stdin').inputValue(), 'saved media case\n');
     await app.page.locator('.statement-image').first().click();
     await app.page.locator('#image-preview').evaluate(image => image.decode());
