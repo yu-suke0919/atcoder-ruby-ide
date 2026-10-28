@@ -6,6 +6,7 @@
 - HTML / CSS / JavaScript は既存の画面を使う。bridge.js が Tauri の invoke / Channel と画面をつなぐ。
 - コード編集は同梱CodeMirror 6で行い、editor.mjsが文書内容・読取専用状態・カーソル・変更通知を画面へ渡す。Ruby用モードと必要な拡張をesbuildで1つのES Moduleへまとめ、依存のライセンスを同梱する。CodeMirrorが生成する表示用CSSをCSPで許可し、スクリプトは同梱ファイルに限定する。
 - ruby-completion.mjsが同梱の候補・定型コードとCodeMirrorの文書内単語収集を組み合わせる。補完の表示・選択・挿入はCodeMirrorに任せ、手動で開く。候補生成にRubyプロセスや外部サービスを使わない。
+- ruby-methods.mjsがString・Array・Hashのメソッドと引数・説明を保持する。既存Rubyモードの字句情報で文字列・コメントを除外しながら、直前の単純なリテラルを有界に識別する。確定できなければ一般候補へ戻す。候補詳細はCodeMirrorのinfoを使い、最小画面でも領域内に収める。
 - Rust の実行・ファイル操作・期待出力比較は GUI に依存しないモジュールとし、Linux でも実プロセスでテストする。
 - 入力検証とファイルパスの管理は Rust で行う。手動のファイル操作はネイティブダイアログで選んだパス、問題の作業領域はユーザーデータ内の固定パスを使う。
 - Electron と本番 Node.js ランタイム、旧バックエンドの二重実装は残さない。Node.js は開発・配布準備・テストに使う。

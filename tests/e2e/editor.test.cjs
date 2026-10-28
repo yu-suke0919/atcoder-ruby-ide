@@ -288,6 +288,53 @@ test('E10: completion fits a small viewport and works near the end of a large do
   assert.ok((await editorText(page)).endsWith('\ntotal_count'));
 });
 
+test('E15: literal method completion shows offline argument hints and preserves editing behavior', async () => {
+  await code().fill('"abc".up');
+  const file = path.join(root, 'method-hints.rb');
+  await dialogs(app, () => code().press('Control+s'), [save(file)]);
+  await code().press('Control+Space'); await completions();
+  await option('upcase').waitFor();
+  const info = page.locator('.cm-completionInfo');
+  await info.filter({ hasText: 'String#upcase' }).waitFor();
+  assert.match(await info.textContent(), /大文字/);
+  assert.equal(await option('keys').count(), 0);
+  assert.equal(await option('each do … end').count(), 0);
+  assert.equal(await page.locator('#save-state').textContent(), '保存済み');
+  await code().press('Escape');
+  assert.equal(await info.count(), 0);
+  assert.equal(await page.locator('#save-state').textContent(), '保存済み');
+  await code().press('End'); await code().press('Control+Space'); await completions();
+  await code().press('Enter');
+  assert.equal(await editorText(page), '"abc".upcase');
+  await code().press('Control+z'); assert.equal(await editorText(page), '"abc".up');
+  await code().press('Control+Shift+Z'); assert.equal(await editorText(page), '"abc".upcase');
+  for (const [doc, label, signature] of [['[].fe', 'fetch', 'Array#fetch(index'], ['{}.fe', 'fetch', 'Hash#fetch(key'], ['unknown.sp', 'split', 'String#split']]) {
+    await code().fill(doc); await page.locator('#editor-complete').click(); await completions();
+    await option(label).waitFor(); await info.filter({ hasText: signature }).waitFor();
+    await option(label).click(); assert.equal(await editorText(page), doc.replace(/\w+$/, label));
+  }
+  await code().fill('puts("abc".upcase)');
+  await code().press('Control+s'); await page.waitForFunction(() => !document.getElementById('save').disabled);
+  await page.locator('#compare-output').check(); await page.locator('#expected-output').fill('ABC\n');
+  await code().press('Control+Enter'); await page.locator('#comparison-status').filter({ hasText: /^一致$/ }).waitFor();
+  await code().press('End'); await code().press('ArrowLeft'); await code().press('Control+Space'); await completions();
+  await info.filter({ hasText: 'String#upcase' }).waitFor();
+  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
+  assert.equal(await page.locator('#save-state').textContent(), '保存済み');
+  await code().press('Escape');
+  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
+  assert.equal(await editorText(page), 'puts("abc".upcase)');
+  await page.setViewportSize({ width: 900, height: 650 });
+  await code().fill('{}.fe'); await code().press('Control+Space'); await completions();
+  await info.filter({ hasText: 'Hash#fetch' }).waitFor();
+  for (const selector of ['.cm-tooltip-autocomplete', '.cm-completionInfo']) {
+    const bounds = await page.locator(selector).boundingBox();
+    assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 901 && bounds.y + bounds.height <= 651, JSON.stringify(bounds));
+  }
+  await mkdir('test-results', { recursive: true });
+  await page.screenshot({ path: 'test-results/ruby-method-hints-900.png' });
+});
+
 test('E11: runtime and syntax errors navigate without changing code, saved state or history', async () => {
   assert.equal(await page.locator('#error-location').count(), 1);
   const file = path.join(root, 'error 日本語.rb');

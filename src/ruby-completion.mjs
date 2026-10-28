@@ -1,4 +1,5 @@
 import { completeAnyWord, ensureSyntaxTree, insertCompletionText, pickedCompletion, snippetCompletion } from './vendor/editor/codemirror.mjs';
+import { methodCompletions, receiverType } from './ruby-methods.mjs';
 
 const entries = (words, type, detail) => words.split(' ').map(label => ({ label, type, detail }));
 const keywords = entries('alias and BEGIN begin break case class def defined? do else elsif END end ensure false for if in module next nil not or redo rescue retry return self super then true undef unless until when while yield __FILE__ __LINE__ __ENCODING__', 'keyword', 'キーワード');
@@ -33,7 +34,12 @@ export function rubyCompletions(context) {
   if (!word && !context.explicit) return null;
   const from = word ? word.from : pos;
   const member = state.sliceDoc(Math.max(0, from - 1), from) === '.';
-  const options = member ? [...methods, iteration(true)] : [...keywords, ...globals, ...constants, conditional, iteration(false), integers];
+  const type = member ? receiverType(state, tree, from) : null;
+  const options = member ? [...methodCompletions(type)] : [...keywords, ...globals, ...constants, conditional, iteration(false), integers];
+  if (member) {
+    if (!type) for (const option of methods) if (!options.some(known => known.label === option.label)) options.push(option);
+    if (type !== 'String') options.push(iteration(true));
+  }
   const seen = new Set(options.map(option => option.label));
   if (!member) {
     for (const option of completeAnyWord(context)?.options || []) {
@@ -42,5 +48,10 @@ export function rubyCompletions(context) {
       options.push({ ...option, type: 'variable', detail: '文書内' });
     }
   }
-  return { from, options: options.map(replaceIdentifier), validFor: /^[\p{L}\p{N}_]*[!?]?$/u };
+  return { from, options: options.map(replaceIdentifier), validFor(text, from, _to, state) {
+    if (!/^[\p{L}\p{N}_]*[!?]?$/u.test(text)) return false;
+    if ((state.sliceDoc(Math.max(0, from - 1), from) === '.') !== member) return false;
+    const tree = member && ensureSyntaxTree(state, from, 100);
+    return !member || !!tree && receiverType(state, tree, from) === type;
+  } };
 }
