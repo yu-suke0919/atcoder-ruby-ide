@@ -306,6 +306,7 @@ fn error_positions_follow_the_executed_source_including_library_callers() {
         ("# 日本語\nif true\n", 2),
         ("def explode\n  raise 'boom'\nend\nexplode\n", 2),
         ("require 'json'\nJSON.parse('{')\n", 2),
+        ("$VERBOSE = true\nA = 1\nA = 2\nraise 'boom'\n", 4),
     ] {
         let result = execute(code, "");
         assert_eq!(result.status, "failed");

@@ -331,7 +331,10 @@ fn source_error_line(stderr: &str, source: &Path, line_count: usize) -> Option<u
         let line = line.trim_start();
         let frame = line.strip_prefix("from ").unwrap_or(line);
         let rest = frame.strip_prefix(&source)?.strip_prefix(':')?;
-        let (number, _) = rest.split_once(':')?;
+        let (number, message) = rest.split_once(':')?;
+        if message.trim_start().starts_with("warning:") {
+            return None;
+        }
         let number = number.parse::<usize>().ok()?;
         (number > 0 && number <= line_count).then_some(number)
     })
@@ -371,6 +374,7 @@ mod tests {
             ),
             Some(3)
         );
+        assert_eq!(source_error_line("/tmp/日本語 space/solution.rb:1: warning: already initialized constant A\n/tmp/日本語 space/solution.rb:2:in main: boom", source, 3), Some(2));
     }
 
     #[test]
