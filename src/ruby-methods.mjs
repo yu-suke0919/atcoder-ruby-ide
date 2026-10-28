@@ -129,6 +129,12 @@ export function receiverType(state, tree, from) {
   }
   const result = literal(end);
   if (!result) return null;
-  const before = state.sliceDoc(Math.max(0, result.from - 64), result.from);
-  return /(?:^|[\n=,;([{:]|\b(?:return|yield|then|else))\s*$/.test(before) ? result.type : null;
+  let before = result.from;
+  const boundary = Math.max(0, before - 64);
+  while (before > boundary && /[ \t\r]/.test(state.sliceDoc(before - 1, before))) before--;
+  if (before === 0) return result.type;
+  if (before === boundary) return null;
+  if (/[\n=,;([{:]$/.test(state.sliceDoc(before - 1, before))) return result.type;
+  const token = tree.resolveInner(before, -1);
+  return token.name === 'keyword' && /^(return|yield|then|else)$/.test(state.sliceDoc(token.from, token.to)) ? result.type : null;
 }

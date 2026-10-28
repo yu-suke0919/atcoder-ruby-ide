@@ -102,7 +102,7 @@ test('Ruby receiver detection handles nesting, comments, quoted brackets, groupi
 });
 
 test('Ruby uncertain or overly large receivers keep general method completion', async () => {
-  for (const doc of ['values.ea', 'values[0].ea', '[1][0].ea', 'f("abc").ea', 'items.each { 1 }.ea', '-> {}.ea', '"#{name}".ea', '"#{}".ea', '"#{"a"}".ea', '"#@value".ea', '"#$global".ea', '%w[a b].ea', ':"abc".ea', '/abc/.ea', '[1}.ea', '["' + 'x'.repeat(4200) + '"].ea', '('.repeat(10) + '[]' + ')'.repeat(10) + '.ea']) {
+  for (const doc of ['values.ea', 'values[0].ea', 'values' + ' '.repeat(80) + '[0].ea', '[1][0].ea', 'f("abc").ea', 'items.each { 1 }.ea', '-> {}.ea', '"#{name}".ea', '"#{}".ea', '"#{"a"}".ea', '"#@value".ea', '"#$global".ea', '%w[a b].ea', ':"abc".ea', '/abc/.ea', '[1}.ea', '["' + 'x'.repeat(4200) + '"].ea', '('.repeat(10) + '[]' + ')'.repeat(10) + '.ea']) {
     const labels = (await complete(doc)).options.map(o => o.label);
     assert.ok(labels.includes('keys'), doc.slice(0, 80));
     assert.ok(labels.includes('push'), doc.slice(0, 80));
