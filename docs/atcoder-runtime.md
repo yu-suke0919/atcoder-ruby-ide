@@ -28,7 +28,7 @@ WindowsでC拡張のビルドや外部DLLの追加が不要な次の5つを、�
 
 `config/atcoder-runtime.json`を取得元・バージョン・SHA-256の固定情報とする。RubyGemsから取得した `.gem` はすべてハッシュ検証してから、ネットワークで依存解決せずに指定先へインストールする。別プラットフォームのgemやC拡張は拒否する。
 WindowsはRubyの展開先へ追加してから配布し、Linuxの開発・CIは `npm run prepare:gems` で実行用Rubyへ同じgemを追加する。標準ライブラリの利用方法は変えない。
-アプリのRubyプロセスは、そのRubyの標準gemディレクトリだけを探索する。端末のGEM_HOME・GEM_PATHやユーザー用gemディレクトリから、別バージョンを読み込まない。prepare:gemsも選択したRubyの標準gemディレクトリへ追加するため、Linuxでは書き込み可能なRuby環境を用意する。
+アプリはRuby起動前に、子プロセスの環境変数からRUBYOPT・RUBYLIB・BUNDLE_GEMFILE・GEM_HOME・GEM_PATHを除外する。端末のRubyオプション、外部ライブラリ探索先、BundlerのGemfileを引き継がない。起動後もGem.use_paths(Gem.default_dir)により、そのRubyの標準gemディレクトリだけを探索し、ユーザー用gemディレクトリから別バージョンを読み込まない。Rubyの確認とコード実行は同じRunnerを使う。prepare:gemsも選択したRubyの標準gemディレクトリへ追加するため、Linuxでは書き込み可能なRuby環境を用意する。
 Rubyアーカイブまたは採用gemの固定情報が変わったら、管理対象のWindowsランタイムを元アーカイブから作り直す。取得・検証・gem追加の失敗では既存のランタイムを維持する。
 
 ## 残る差
@@ -72,4 +72,4 @@ immutable-rubyとsorted_setはgem本体がRubyでも、依存先にrbtreeのC拡
 - 実RunnerからRuby 3.4.5と採用gemのバージョン、代表的な処理、標準ライブラリ、日本語を含む入出力を確認する。
 - 共通GUIで未保存・日本語パスのソースから追加gemを使い、期待出力との比較まで確認する。
 - Windowsのポータブル版とNSIS版で、システムRubyに依存せず追加gemを実行できることを確認する。
-- GEM_HOME・GEM_PATHが別環境を指す場合も、実RunnerとWindows配布版が採用gemを同じバージョンで使えることを確認する。
+- RUBYOPTによる追加require・RubyGems無効化、RUBYLIBによる標準ライブラリの置換、Bundlerの外部Gemfile、GEM_HOME・GEM_PATHが別環境を指す場合も、実RunnerとWindows配布版が採用gemを同じバージョンで使えることを確認する。

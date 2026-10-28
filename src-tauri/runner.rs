@@ -160,6 +160,11 @@ impl PreparedRun {
         std::fs::write(&bootstrap, "Gem.use_paths(Gem.default_dir); [STDIN, STDOUT, STDERR].each { |io| io.binmode; io.set_encoding(Encoding::UTF_8) }; STDOUT.sync = true; STDERR.sync = true\n").map_err(|e| e.to_string())?;
         let mut command = Command::new(ruby);
         command
+            .env_remove("RUBYOPT")
+            .env_remove("RUBYLIB")
+            .env_remove("BUNDLE_GEMFILE")
+            .env_remove("GEM_HOME")
+            .env_remove("GEM_PATH")
             .args(["-EUTF-8:UTF-8", "-r"])
             .arg(&bootstrap)
             .arg(&source)

@@ -184,8 +184,12 @@ test('E07: explicit completion navigates, cancels, inserts and preserves Tab and
   assert.equal(await page.locator('.cm-tooltip-autocomplete').count(), 0);
   assert.equal(await editorText(page), 'pu');
   assert.equal(await page.locator('#save-state').textContent(), '保存済み');
-  // A new key clears Esc's temporary Tab-focus mode.
-  await code().press('End'); await code().press('Control+Space'); await completions();
+  await page.keyboard.press('Tab');
+  assert.equal(await editorText(page), 'pu  ');
+  assert.equal(await code().evaluate(el => el.contains(document.activeElement)), true);
+  await code().press('Control+z'); assert.equal(await editorText(page), 'pu');
+  assert.equal(await page.locator('#save-state').textContent(), '保存済み');
+  await code().press('Control+Space'); await completions();
   await option('puts').click();
   assert.equal(await editorText(page), 'puts');
   assert.match(await page.locator('#save-state').textContent(), /未保存の変更/);
@@ -199,6 +203,12 @@ test('E07: explicit completion navigates, cancels, inserts and preserves Tab and
   await code().fill('push'); await code().press('Home'); await code().press('ArrowRight'); await code().press('ArrowRight');
   await code().press('Control+Space'); await completions(); await option('puts').click();
   assert.equal(await editorText(page), 'puts');
+  await code().fill('  pu'); await code().press('Control+Space'); await completions();
+  await code().press('Escape'); await page.keyboard.press('Shift+Tab');
+  assert.equal(await editorText(page), 'pu');
+  assert.equal(await code().evaluate(el => el.contains(document.activeElement)), true);
+  await code().press('Escape'); await page.keyboard.press('Tab');
+  assert.equal(await code().evaluate(el => el.contains(document.activeElement)), false);
 });
 
 test('E08: templates keep indentation, receivers, normal Tab and save-run shortcuts', async () => {

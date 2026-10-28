@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { spawn, execFileSync } = require('node:child_process');
 const { once } = require('node:events');
 const { createInterface } = require('node:readline');
-const { access, mkdtemp, readFile, rm } = require('node:fs/promises');
+const { access, mkdtemp, readFile, writeFile, rm } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 const { ensureUiTestHostBinary } = require('../e2e/browser.cjs');
@@ -46,7 +46,7 @@ async function startHost(t, largeOutput = false, env = {}, code = 'sleep 30', st
     messages.push(message);
     const event = message.event;
     if (event?.type === 'completed') finish(event.result);
-    if (event?.type === 'output') {
+    if (event?.type === 'output' && event.stream === 'stdout') {
       output += Buffer.from(event.bytes).toString('utf8');
       if (output.includes(largeOutput ? 'payload-ready\n' : '\n')) resolve(output.split('\n')[0].trim());
     }
@@ -54,7 +54,11 @@ async function startHost(t, largeOutput = false, env = {}, code = 'sleep 30', st
   host.stdin.write(`${JSON.stringify({ id: 1, command: 'run_ruby', args: {
     code: `puts __dir__; ${largeOutput ? 'print "x" * 262144; puts "payload-ready";' : ''} ${code}`, stdin, onEvent: 1,
   } })}\n`);
-  const directory = await Promise.race([ready, exited.then(() => { throw new Error(`UI test host exited before Ruby output: ${stderr}`); })]);
+  const directory = await Promise.race([
+    ready,
+    completed.then(result => { throw new Error(`Ruby completed before startup output: ${result.stderr}`); }),
+    exited.then(() => { throw new Error(`UI test host exited before Ruby output: ${stderr}`); }),
+  ]);
   await access(directory);
   return { host, exited, directory, messages, completed, stderr: () => stderr };
 }
@@ -69,6 +73,35 @@ test('M19: external gem settings cannot hide or replace the selected Ruby gems',
   assert.equal(result.status, 'completed', result.stderr);
   assert.equal(result.stdout.slice(result.stdout.indexOf('\n') + 1), `${expected}true\n`);
   host.stdin.end();
+});
+
+test('M19: Ruby startup excludes inherited options, libraries and Bundler context', { timeout: 30000 }, async t => {
+  const external = await mkdtemp(path.join(tmpdir(), 'IDE-external Ruby 日本語 '));
+  t.after(() => rm(external, { recursive: true, force: true }));
+  await writeFile(path.join(external, 'json.rb'), 'raise "external json.rb was loaded"\n');
+  const inherited = {
+    RUBYOPT: '-rbundler/setup', RUBYLIB: external,
+    BUNDLE_GEMFILE: path.join(external, 'missing-Gemfile'), GEM_HOME: external, GEM_PATH: external,
+  };
+  const fixture = await readFile(path.join(__dirname, '../fixtures/runtime-gems.rb'), 'utf8');
+  const expected = await readFile(path.join(__dirname, '../fixtures/runtime-gems.txt'), 'utf8');
+  const checkEnvironment = 'puts %w[RUBYOPT RUBYLIB BUNDLE_GEMFILE GEM_HOME GEM_PATH].none? { |name| ENV.key?(name) }; puts(Gem.path == [Gem.default_dir])';
+  for (const [name, env] of [
+    ['preload', { RUBYOPT: '-ride_missing_startup_library' }],
+    ['disable RubyGems', { RUBYOPT: '--disable-gems' }],
+    ['library shadowing', { RUBYLIB: external }],
+    ['Gemfile', { BUNDLE_GEMFILE: inherited.BUNDLE_GEMFILE }],
+    ['combined Bundler context', inherited],
+  ]) {
+    await t.test(name, async t => {
+      const { host, completed } = await startHost(t, false, env, `${fixture}\n${checkEnvironment}`, '日本語\n');
+      const result = await completed;
+      assert.equal(result.status, 'completed', result.stderr);
+      assert.equal(result.stdout.slice(result.stdout.indexOf('\n') + 1), `${expected}true\ntrue\n`);
+      assert.equal(result.stderr, '');
+      host.stdin.end();
+    });
+  }
 });
 
 test('stdio host stops Ruby and removes its temp directory when stdin closes or panics', { timeout: 15000 }, async t => {

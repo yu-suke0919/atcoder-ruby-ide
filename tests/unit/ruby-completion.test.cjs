@@ -47,6 +47,33 @@ test('Ruby method completion after a receiver excludes keywords and preserves th
   assert.ok(!labels.includes('gets.split.map(&:to_i)'));
 });
 
+test('Ruby range endpoints offer document words, keywords and global methods', async () => {
+  for (const expression of ['1..', '0...', '"a"..', '"a"...']) {
+    for (const prefix of ['', 'tot']) {
+      const doc = `total_count = 12\n${expression}${prefix}`;
+      const result = await complete(doc);
+      assert.equal(result.from, doc.length - prefix.length);
+      for (const label of ['total_count', 'if', 'puts', 'gets.split.map(&:to_i)']) {
+        assert.ok(result.options.some(option => option.label === label), `${expression}${prefix}: ${label}`);
+      }
+      assert.ok(!result.options.some(option => option.label === 'keys'), expression);
+    }
+  }
+});
+
+test('Ruby completion caches distinguish member access from range operators', async () => {
+  const { EditorState, StreamLanguage, ruby } = await import('../../src/vendor/editor/codemirror.mjs');
+  const member = operator => operator === '.' || operator === '&.';
+  for (const original of ['.', '&.', '..', '...']) {
+    const result = await complete(`value${original}ea`);
+    for (const operator of ['.', '&.', '..', '...']) {
+      const doc = `value${operator}each`;
+      const state = EditorState.create({ doc, extensions: [StreamLanguage.define(ruby)] });
+      assert.equal(result.validFor('each', doc.length - 4, doc.length, state), member(original) === member(operator), `${original} → ${operator}`);
+    }
+  }
+});
+
 test('Ruby completion does not retain words from another document', async () => {
   assert.ok((await complete('previous_secret = 1\npre')).options.some(option => option.label === 'previous_secret'));
   assert.ok(!(await complete('pre')).options.some(option => option.label === 'previous_secret'));
