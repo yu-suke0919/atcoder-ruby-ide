@@ -37,6 +37,7 @@ let scrollFrame = null;
 const editor = createEditor($('editor-host'), sample, () => { resetComparison(true); updateEditor(); }, updateCursor);
 $('editor-search').addEventListener('click', () => editor.search());
 $('editor-complete').addEventListener('click', () => editor.complete());
+$('error-location').addEventListener('click', () => { if (!fileBusy && !closing) editor.jumpToError(); });
 
 async function confirmDiscard(includeCases = false) {
   return (editor.value === savedCode && (!includeCases || !cases.dirty)) || await ide.confirmDiscard();
@@ -109,7 +110,15 @@ function showResult() {
   $('run-status').textContent = statusLabel(item.status, item.exitCode);
   $('run-duration').textContent = item.durationMs === null ? '— ms' : `${item.durationMs} ms`;
   showComparison(item.comparison);
+  showErrorLocation();
   updateCaseList();
+}
+
+function showErrorLocation() {
+  const line = cases.current.errorLine;
+  $('error-location').hidden = line === null;
+  $('error-location').textContent = line === null ? '' : `コードの${line}行目へ`;
+  editor.errorLine = line;
 }
 
 function showCase() {
@@ -127,6 +136,7 @@ function resetComparison(all = false) {
   cases.invalidate(all);
   expectedOutput.disabled = !cases.current.compare;
   showComparison(cases.current.comparison);
+  showErrorLocation();
   updateCaseList();
 }
 
@@ -180,6 +190,7 @@ function updateButtons() {
   editor.readOnly = fileBusy || closing;
   $('editor-search').disabled = fileBusy || closing;
   $('editor-complete').disabled = fileBusy || closing;
+  $('error-location').disabled = fileBusy || closing;
   input.readOnly = expectedOutput.readOnly = fileBusy || closing;
   compareOutput.disabled = fileBusy || closing;
   for (const id of ['cases-open', 'cases-save']) $(id).disabled = running || fileBusy || closing;

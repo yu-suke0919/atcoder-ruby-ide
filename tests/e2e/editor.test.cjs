@@ -288,4 +288,110 @@ test('E10: completion fits a small viewport and works near the end of a large do
   assert.ok((await editorText(page)).endsWith('\ntotal_count'));
 });
 
+test('E11: runtime and syntax errors navigate without changing code, saved state or history', async () => {
+  assert.equal(await page.locator('#error-location').count(), 1);
+  const file = path.join(root, 'error 日本語.rb');
+  const text = '# 日本語\n' + '# padding\n'.repeat(80) + "raise 'boom'\n";
+  await writeFile(file, text);
+  await dialogs(app, () => code().press('Control+o'), [open(file)]);
+  await page.locator('#run').click(); await page.waitForFunction(() => !document.getElementById('run').disabled);
+  const jump = page.getByRole('button', { name: 'コードの82行目へ', exact: true });
+  await jump.waitFor();
+  await page.setViewportSize({ width: 900, height: 650 });
+  await jump.focus(); await page.keyboard.press('Enter');
+  assert.equal(await page.locator('#cursor-position').textContent(), 'Ln 82, Col 1');
+  assert.equal(await code().evaluate(el => el === document.activeElement), true);
+  assert.equal(await editorText(page), text);
+  assert.equal(await page.locator('#save-state').textContent(), '保存済み');
+  const marked = page.locator('.cm-run-error-line');
+  await marked.waitFor();
+  assert.equal(await marked.textContent(), "raise 'boom'");
+  const rect = await marked.boundingBox();
+  const editorRect = await page.locator('.cm-scroller').boundingBox();
+  assert.ok(rect.y >= editorRect.y && rect.y + rect.height <= editorRect.y + editorRect.height);
+  await mkdir('test-results', { recursive: true });
+  await page.screenshot({ path: 'test-results/run-error-900.png' });
+  await code().press('Control+s'); await page.waitForFunction(() => !document.getElementById('save').disabled);
+  assert.equal(await jump.isVisible(), true);
+  await page.evaluate(async () => {
+    const { ide } = await import('./bridge.js');
+    const save = ide.saveFile;
+    ide.saveFile = () => new Promise(resolve => { window.finishErrorSave = () => { ide.saveFile = save; resolve({ canceled: true }); }; });
+  });
+  await code().press('Control+s');
+  try {
+    assert.equal(await jump.isDisabled(), true);
+    assert.equal(await marked.count(), 1);
+  } finally { await page.evaluate(() => window.finishErrorSave()); }
+  await page.waitForFunction(() => !document.getElementById('save').disabled);
+  assert.equal(await jump.isEnabled(), true);
+  await code().press('Control+z'); assert.equal(await editorText(page), text);
+  await code().press('Home'); await page.keyboard.insertText('# changed\n');
+  assert.equal(await page.locator('#error-location').isVisible(), false);
+  assert.equal(await marked.count(), 0);
+  await code().press('Control+z'); assert.equal(await editorText(page), text);
+  assert.equal(await page.locator('#error-location').isVisible(), false);
+  await code().fill('# 日本語\nif true\n');
+  await page.locator('#run').click(); await page.waitForFunction(() => !document.getElementById('run').disabled);
+  await page.getByRole('button', { name: 'コードの2行目へ', exact: true }).click();
+  assert.equal(await page.locator('#cursor-position').textContent(), 'Ln 2, Col 1');
+  await page.locator('#clear-output').click();
+  assert.equal(await page.locator('#error-location').isVisible(), false);
+  assert.equal(await marked.count(), 0);
+});
+
+test('E12: each case keeps its error location and input edits invalidate only the affected case', async () => {
+  await code().fill("n = gets.to_i\nif n == 1\n  raise 'one'\nelse\n  raise 'two'\nend\n");
+  await page.locator('#stdin').fill('1');
+  await page.locator('#case-add').click(); await page.locator('#stdin').fill('2');
+  await page.locator('#compare-output').uncheck();
+  await page.locator('#run-all').click(); await page.waitForFunction(() => !document.getElementById('run-all').disabled);
+  await page.getByRole('button', { name: 'コードの5行目へ', exact: true }).click();
+  await page.locator('#case-select').selectOption('0');
+  await page.getByRole('button', { name: 'コードの3行目へ', exact: true }).click();
+  assert.equal(await page.locator('#cursor-position').textContent(), 'Ln 3, Col 1');
+  await page.locator('#stdin').fill('edited');
+  assert.equal(await page.locator('#error-location').isVisible(), false);
+  assert.equal(await page.locator('.cm-run-error-line').count(), 0);
+  await page.locator('#case-select').selectOption('1');
+  await page.getByRole('button', { name: 'コードの5行目へ', exact: true }).waitFor();
+  await code().press('Control+Home'); await page.keyboard.insertText('# edited\n');
+  for (const index of ['0', '1']) {
+    await page.locator('#case-select').selectOption(index);
+    assert.equal(await page.locator('#error-location').isVisible(), false);
+  }
+});
+
+test('E13: library callers navigate, warnings and unrelated backtraces do not, and document changes clear marks', async () => {
+  await code().fill("require 'json'\nJSON.parse('{')\n");
+  await page.locator('#run').click(); await page.waitForFunction(() => !document.getElementById('run').disabled);
+  await page.getByRole('button', { name: 'コードの2行目へ', exact: true }).click();
+  assert.equal(await page.locator('#cursor-position').textContent(), 'Ln 2, Col 1');
+  const file = path.join(root, 'different.rb'); await writeFile(file, 'puts 42');
+  await dialogs(app, () => code().press('Control+o'), [discard(true), open(file)]);
+  assert.equal(await page.locator('#error-location').isVisible(), false);
+  assert.equal(await page.locator('.cm-run-error-line').count(), 0);
+  for (const text of ["warn \"#{__FILE__}:1: warning\"", "e = RuntimeError.new('boom'); e.set_backtrace(['/other/solution.rb:1:in main']); raise e"]) {
+    await code().fill(text);
+    await page.locator('#run').click(); await page.waitForFunction(() => !document.getElementById('run').disabled);
+    assert.notEqual(await page.locator('#stderr').textContent(), '');
+    assert.equal(await page.locator('#error-location').isVisible(), false);
+  }
+});
+
+test('E14: editing during a batch run prevents late errors from restoring old locations', async () => {
+  await code().fill("puts 'started'\nsleep 0.4\nraise 'late'\n");
+  await page.locator('#case-add').click();
+  await page.locator('#case-select').selectOption('0');
+  await page.locator('#run-all').click(); await page.locator('#stdout').filter({ hasText: 'started' }).waitFor();
+  await code().press('Control+Home'); await page.keyboard.insertText('# edited\n');
+  await page.waitForFunction(() => !document.getElementById('run-all').disabled);
+  for (const index of ['0', '1']) {
+    await page.locator('#case-select').selectOption(index);
+    assert.match(await page.locator('#stderr').textContent(), /late/);
+    assert.equal(await page.locator('#error-location').isVisible(), false);
+    assert.equal(await page.locator('.cm-run-error-line').count(), 0);
+  }
+});
+
 });

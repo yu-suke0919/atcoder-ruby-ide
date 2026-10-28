@@ -73,6 +73,7 @@ textarea { resize: none; border: 0; border-radius: 0; color: #d5deed; background
 pre { margin: 0; padding: 0 16px 12px; white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; font: 12px/21px Consolas, "Liberation Mono", monospace; }
 #stdout { flex: 1.4; min-height: calc(1lh + 12px); color: #b9ebd7; }
 .error-heading { border-top: 1px solid #252d3c; }
+#error-location { color: #f5a3b2; text-decoration: underline; }
 #stderr { flex: .8; min-height: calc(1lh + 12px); color: #f5a3b2; }
 :is(#stdout, #stderr):empty::before { content: "実行結果がここに表示されます"; color: #53627a; font-family: "Segoe UI", sans-serif; font-size: 11px; }
 #stderr:empty::before { content: "エラーはありません"; }

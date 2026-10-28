@@ -4,6 +4,45 @@ const assert = require('node:assert/strict');
 const load = () => import('../../src/sample-cases.mjs');
 const sample = (stdin = 'one', expectedOutput = 'ONE', compare = true) => ({ stdin, expectedOutput, compare });
 
+test('error locations are per case, independent of comparison, and excluded from saved data', async () => {
+  const { SampleCases } = await load();
+  const cases = new SampleCases([sample(), sample('two', '', false)]);
+  for (const [index, snapshot] of cases.snapshot(true).entries()) {
+    cases.begin(snapshot);
+    assert.equal(snapshot.item.errorLine, null);
+    cases.finish(snapshot, { status: 'failed', stdout: '', stderr: 'boom', exitCode: 1, durationMs: 1, comparison: null, errorLine: index + 2 });
+  }
+  assert.deepEqual(cases.items.map(item => item.errorLine), [2, 3]);
+  assert.ok(cases.data().every(item => !('errorLine' in item)));
+  assert.equal(cases.dirty, false);
+  cases.markSaved();
+  assert.equal(cases.current.errorLine, 2);
+  cases.invalidate();
+  assert.deepEqual(cases.items.map(item => item.errorLine), [null, 3]);
+  cases.invalidate(true);
+  assert.deepEqual(cases.items.map(item => item.errorLine), [null, null]);
+});
+
+test('stale runs and cleared or non-error results cannot restore an error location', async () => {
+  const { SampleCases } = await load();
+  const cases = new SampleCases([sample()]);
+  const result = { status: 'failed', stdout: '', stderr: 'boom', exitCode: 1, durationMs: 1, comparison: null, errorLine: 2 };
+  const [old] = cases.snapshot();
+  cases.begin(old); cases.invalidate(true); cases.finish(old, result);
+  assert.equal(cases.current.errorLine, null);
+  for (const phase of ['begin', 'clear', 'cancel', 'fail', 'completed', 'timeout', 'stopped', 'output-limit']) {
+    const [snapshot] = cases.snapshot();
+    cases.finish(snapshot, result);
+    assert.equal(cases.current.errorLine, 2);
+    if (phase === 'begin') cases.begin(snapshot);
+    else if (phase === 'clear') cases.clear();
+    else if (phase === 'cancel') cases.cancel(snapshot);
+    else if (phase === 'fail') cases.fail(snapshot, 'missing ruby');
+    else cases.finish(snapshot, { ...result, status: phase });
+    assert.equal(cases.current.errorLine, null, phase);
+  }
+});
+
 test('case data contains only editable inputs and does not share imported objects', async () => {
   const { SampleCases } = await load();
   const original = [sample('日本語', '', false)];

@@ -300,12 +300,48 @@ fn m05_syntax_error_missing_ruby_and_recovery() {
 }
 
 #[test]
+fn error_positions_follow_the_executed_source_including_library_callers() {
+    for (code, line) in [
+        ("# 日本語\nraise 'boom'\n", 2),
+        ("# 日本語\nif true\n", 2),
+        ("def explode\n  raise 'boom'\nend\nexplode\n", 2),
+        ("require 'json'\nJSON.parse('{')\n", 2),
+    ] {
+        let result = execute(code, "");
+        assert_eq!(result.status, "failed");
+        assert!(!result.stderr.is_empty());
+        assert_eq!(
+            serde_json::to_value(result).unwrap()["errorLine"],
+            line,
+            "{code}"
+        );
+    }
+}
+
+#[test]
+fn error_positions_ignore_success_unrelated_backtraces_and_missing_locations() {
+    for code in [
+        "warn \"#{__FILE__}:1: warning\"",
+        "warn 'unknown'; exit 1",
+        "e = RuntimeError.new('boom'); e.set_backtrace(['/other/solution.rb:1:in main']); raise e",
+    ] {
+        let result = execute(code, "");
+        assert_eq!(
+            serde_json::to_value(result).unwrap()["errorLine"],
+            serde_json::Value::Null
+        );
+    }
+}
+
+#[test]
 fn m06_stop_before_spawn_and_reject_concurrent_reservations() {
     let runner = Runner::new(Duration::from_secs(5), 1048576);
     let pending = runner.prepare(request("loop {}", "")).unwrap();
     assert!(runner.prepare(request("puts 2", "")).is_err());
     assert!(runner.stop());
-    assert_eq!(pending.execute(&ruby(), |_| {}).unwrap().status, "stopped");
+    let result = pending.execute(&ruby(), |_| {}).unwrap();
+    assert_eq!(result.status, "stopped");
+    assert_eq!(result.error_line, None);
     assert!(!runner.busy());
 }
 
