@@ -22,6 +22,8 @@ async function launch(root) {
   }
   env.Path = `${path.join(process.env.SystemRoot, 'System32')};${process.env.SystemRoot}`;
   env.RUBY_PATH = 'C:\\no-system-ruby\\ruby.exe';
+  env.GEM_HOME = path.join(root, 'external-gems');
+  env.GEM_PATH = env.GEM_HOME;
   env.ATCODER_IDE_TEST_PORT = String(port);
   env.WEBVIEW2_USER_DATA_FOLDER = path.join(root, 'webview-profile');
   await assert.rejects(execute(system('where.exe'), ['ruby'], { env }), error => error.code === 1);
@@ -47,7 +49,7 @@ async function launch(root) {
     page = context.pages()[0] || await context.waitForEvent('page');
     page.setDefaultTimeout(15000);
     page.on('pageerror', error => console.error('WebView error:', error));
-    await page.getByTestId('ruby-version').filter({ hasText: /ruby 3\.4\.12/i }).waitFor();
+    await page.getByTestId('ruby-version').filter({ hasText: /ruby 3\.4\.5\b/i }).waitFor();
     const ruby = await page.evaluate(() => window.__TAURI__.core.invoke('ruby_info'));
     const canonical = value => path.toNamespacedPath(path.resolve(value)).toLowerCase();
     assert.equal(canonical(await realpath(ruby.path)), canonical(await realpath(path.join(path.dirname(executable), 'ruby', 'bin', 'ruby.exe'))));

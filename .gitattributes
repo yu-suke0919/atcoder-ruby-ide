@@ -1,0 +1,2 @@
+# Expected Ruby stdout uses LF on both operating systems.
+tests/fixtures/runtime-gems.txt text eol=lf

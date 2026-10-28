@@ -1,12 +1,11 @@
-const { createHash } = require('node:crypto');
-const { createWriteStream } = require('node:fs');
 const { access, chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } = require('node:fs/promises');
 const { execFile } = require('node:child_process');
-const { promisify } = require('node:util');
-const { pipeline } = require('node:stream/promises');
-const { Readable } = require('node:stream');
+const { promisify, isDeepStrictEqual } = require('node:util');
 const path = require('node:path');
 const manifest = require('../config/ruby-windows.json');
+const profile = require('../config/atcoder-runtime.json');
+const { downloadVerified } = require('./download-verified.cjs');
+const { prepareGems } = require('./prepare-gems.cjs');
 const execute = promisify(execFile);
 
 async function exists(file) {
@@ -26,31 +25,18 @@ async function trimRuntime(runtime) {
   for (const directory of ['share', 'include']) await rm(path.join(runtime, directory), { recursive: true, force: true });
 }
 
-async function prepareRuby({ root = path.resolve(__dirname, '..'), source = manifest } = {}) {
+async function prepareRuby({ root = path.resolve(__dirname, '..'), source = manifest, gems = profile.gems } = {}) {
   const destination = path.join(root, 'vendor', 'ruby');
   const marker = path.join(destination, '.runtime-source.json');
   if (await exists(destination) && !await exists(marker)) {
     throw new Error('既存の vendor/ruby はこのスクリプトの管理対象ではありません。内容を確認してください。');
   }
   const cache = path.join(root, '.cache');
-  await mkdir(cache, { recursive: true });
-  const archive = path.join(cache, source.archive);
-  if (!await exists(archive)) {
-    console.log(`Downloading official RubyInstaller ${source.version}…`);
-    const response = await fetch(source.url, { signal: AbortSignal.timeout(180000) });
-    if (!response.ok) throw new Error(`Ruby のダウンロードに失敗しました: HTTP ${response.status}`);
-    const partial = `${archive}.part`;
-    try {
-      await pipeline(Readable.fromWeb(response.body), createWriteStream(partial));
-      await rename(partial, archive);
-    } finally { await rm(partial, { force: true }); }
-  }
-  const hash = createHash('sha256').update(await readFile(archive)).digest('hex');
-  if (hash !== source.sha256) throw new Error(`Ruby アーカイブの SHA-256 が一致しません。キャッシュを確認してください: ${archive}`);
-  console.log(`Ruby archive SHA-256 verified: ${hash}`);
+  const archive = await downloadVerified(source, cache);
+  console.log(`Ruby archive SHA-256 verified: ${source.sha256}`);
   if (await exists(marker)) {
     const previous = JSON.parse(await readFile(marker, 'utf8'));
-    if (previous.sha256 === hash && await exists(path.join(destination, 'bin', 'ruby.exe'))) {
+    if (previous.sha256 === source.sha256 && isDeepStrictEqual(previous.gems, gems) && await exists(path.join(destination, 'bin', 'ruby.exe'))) {
       await trimRuntime(destination);
       console.log('Windows Ruby is already prepared.');
       return destination;
@@ -70,8 +56,13 @@ async function prepareRuby({ root = path.resolve(__dirname, '..'), source = mani
       if (await exists(path.join(directory, 'bin', 'ruby.exe'))) { runtime = directory; break; }
     }
     if (!runtime) throw new Error('公式アーカイブ内に bin/ruby.exe がありません。');
+    await prepareGems({
+      ruby: process.platform === 'win32' ? path.join(runtime, 'bin/ruby.exe') : process.env.RUBY_PATH || 'ruby',
+      directory: path.join(runtime, 'lib/ruby/gems', profile.rubyApiVersion),
+      cache: path.join(cache, 'gems'), gems
+    });
     await trimRuntime(runtime);
-    await writeFile(path.join(runtime, '.runtime-source.json'), `${JSON.stringify(source, null, 2)}\n`);
+    await writeFile(path.join(runtime, '.runtime-source.json'), `${JSON.stringify({ ...source, gems }, null, 2)}\n`);
     if (await exists(destination)) await rm(destination, { recursive: true });
     await rename(runtime, destination);
     console.log(`Prepared Windows Ruby ${source.version}: ${destination}`);

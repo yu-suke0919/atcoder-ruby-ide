@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 const { spawn, execFileSync } = require('node:child_process');
 const { once } = require('node:events');
 const { createInterface } = require('node:readline');
-const { access } = require('node:fs/promises');
+const { access, mkdtemp, readFile, rm } = require('node:fs/promises');
+const { tmpdir } = require('node:os');
 const path = require('node:path');
 const { ensureUiTestHostBinary } = require('../e2e/browser.cjs');
 
@@ -25,7 +26,7 @@ test('UI runner selection preserves OS defaults, supports overrides and rejects 
   assert.throws(() => select('brower'), error => /E2E_RUNNER/.test(error.stderr));
 });
 
-async function startHost(t, largeOutput = false, env = {}) {
+async function startHost(t, largeOutput = false, env = {}, code = 'sleep 30', stdin = '') {
   const binary = await ensureUiTestHostBinary();
   const host = spawn(binary, [], { env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
   const exited = once(host, 'close');
@@ -51,12 +52,24 @@ async function startHost(t, largeOutput = false, env = {}) {
     }
   }));
   host.stdin.write(`${JSON.stringify({ id: 1, command: 'run_ruby', args: {
-    code: `puts __dir__; ${largeOutput ? 'print "x" * 262144; puts "payload-ready";' : ''} sleep 30`, stdin: '', onEvent: 1,
+    code: `puts __dir__; ${largeOutput ? 'print "x" * 262144; puts "payload-ready";' : ''} ${code}`, stdin, onEvent: 1,
   } })}\n`);
   const directory = await Promise.race([ready, exited.then(() => { throw new Error(`UI test host exited before Ruby output: ${stderr}`); })]);
   await access(directory);
   return { host, exited, directory, messages, completed, stderr: () => stderr };
 }
+
+test('M19: external gem settings cannot hide or replace the selected Ruby gems', { timeout: 15000 }, async t => {
+  const external = await mkdtemp(path.join(tmpdir(), 'IDE-external-gems-'));
+  t.after(() => rm(external, { recursive: true, force: true }));
+  const code = await readFile(path.join(__dirname, '../fixtures/runtime-gems.rb'), 'utf8');
+  const expected = await readFile(path.join(__dirname, '../fixtures/runtime-gems.txt'), 'utf8');
+  const { host, completed } = await startHost(t, false, { GEM_HOME: external, GEM_PATH: external }, `${code}\nputs(Gem.path == [Gem.default_dir])`, '日本語\n');
+  const result = await completed;
+  assert.equal(result.status, 'completed', result.stderr);
+  assert.equal(result.stdout.slice(result.stdout.indexOf('\n') + 1), `${expected}true\n`);
+  host.stdin.end();
+});
 
 test('stdio host stops Ruby and removes its temp directory when stdin closes or panics', { timeout: 15000 }, async t => {
   for (const [name, malformed, largeOutput] of [['EOF', false, false], ['EOF with a large final event', false, true], ['malformed input', true, false]]) {

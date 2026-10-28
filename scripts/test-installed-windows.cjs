@@ -31,7 +31,12 @@ async function main() {
     await page.getByRole('button', { name: '実行', exact: true }).click();
     await page.getByTestId('run-status').filter({ hasText: '正常終了' }).waitFor();
     assert.equal(await page.getByTestId('stdout').textContent(), '{"value":"1.5"}\n');
-    console.log('NSIS smoke passed: installed exe, runtime files, sample and bundled extensions without system Ruby');
+    await page.getByTestId('code-editor').fill(await readFile(path.join(root, 'tests/fixtures/runtime-gems.rb'), 'utf8'));
+    await page.locator('#stdin').fill('日本語\n');
+    await page.getByRole('button', { name: '実行', exact: true }).click();
+    await page.getByTestId('run-status').filter({ hasText: '正常終了' }).waitFor();
+    assert.equal(await page.getByTestId('stdout').textContent(), await readFile(path.join(root, 'tests/fixtures/runtime-gems.txt'), 'utf8'));
+    console.log('NSIS smoke passed: installed exe, runtime files, sample, bundled extensions and AtCoder gems without system Ruby');
   } finally {
     if (app) await close(app);
     await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
