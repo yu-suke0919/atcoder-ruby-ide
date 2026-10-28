@@ -1,5 +1,6 @@
 import { completeAnyWord, ensureSyntaxTree, insertCompletionText, pickedCompletion, snippetCompletion } from './vendor/editor/codemirror.mjs';
-import { methodCompletions, receiverType } from './ruby-methods.mjs';
+import { methodCompletions } from './ruby-methods.mjs';
+import { receiverType } from './ruby-receivers.mjs';
 
 const entries = (words, type, detail) => words.split(' ').map(label => ({ label, type, detail }));
 const keywords = entries('alias and BEGIN begin break case class def defined? do else elsif END end ensure false for if in module next nil not or redo rescue retry return self super then true undef unless until when while yield __FILE__ __LINE__ __ENCODING__', 'keyword', 'キーワード');

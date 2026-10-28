@@ -159,3 +159,108 @@ test('Ruby symbol operators and indexing across explicit line continuations keep
   const nextLine = (await complete('value\n[0].ea')).options.map(o => o.label);
   assert.ok(!nextLine.includes('keys'));
 });
+
+async function expectOwner(doc, owner) {
+  const context = doc.length > 200 ? `${doc.slice(0, 80)}…${doc.slice(-80)}` : doc;
+  const result = await complete(doc);
+  assert.ok(result, context);
+  const methods = result.options.filter(option => option.type === 'method');
+  assert.ok(methods.length, context);
+  assert.ok(methods.every(option => option.detail === owner), `${context}: expected ${owner}`);
+  assert.ok(methods.every(option => option.info.startsWith(`${owner}#`)), context);
+  return result;
+}
+
+async function expectGeneral(doc) {
+  const labels = (await complete(doc)).options.map(option => option.label);
+  for (const label of ['upcase', 'push', 'keys']) assert.ok(labels.includes(label), `${doc}: ${label}`);
+}
+
+test('Ruby local variables inherit literal methods and hints across simple assignments', async () => {
+  const prefix = 'text = "abc"\nvalues = [1, 2]\ncounts = {a: 1}\n';
+  for (const [name, owner] of [['text', 'String'], ['values', 'Array'], ['counts', 'Hash']]) {
+    await expectOwner(`${prefix}${name}.`, owner);
+    await expectOwner(`${prefix}${name}&.`, owner);
+  }
+  await expectOwner('文字列 = "日本語"\n文字列.up', 'String');
+  await expectOwner('_items = ([])\n_items.ea', 'Array');
+  await expectOwner('text = "a"\nputs(text.up', 'String');
+  await expectOwner('text = "a"\nputs text.up', 'String');
+});
+
+test('Ruby local inference skips comments and string contents and groups multiline literals', async () => {
+  await expectOwner('text = "abc"\n# text = []\n\nmessage = "text = {}; end; if true"\ntext.up', 'String');
+  await expectOwner('values = [\n  "]", # } ignored\n  {a: [1, 2]}\n] # comment\nvalues.ea', 'Array');
+  await expectOwner('counts = {\n  "a;]" => [1],\n  other: nil\n}\ncounts.ke', 'Hash');
+  await expectOwner('text = "a;b"; values = []; text.up', 'String');
+  await expectOwner('text = "a"\n=begin\ntext = []\n=end\ntext.up', 'String');
+  await expectOwner('text = "a"\nmessage = "` %x{...}"\ntext.up', 'String');
+  await expectOwner('text = "a"\nmessage = \'#{text = []}\'\ntext.up', 'String');
+});
+
+test('Ruby direct reassignments replace types and unknown assignments discard stale types', async () => {
+  await expectOwner('value = "abc"\nvalue = []\nvalue.ea', 'Array');
+  await expectOwner('value = []\nvalue = {}\nvalue.ke', 'Hash');
+  for (const statement of ['value = gets', 'value = other', 'value ||= []', 'value += []', 'value, other = [], {}', 'other = value', 'value = [] if flag', 'value = "#{name}"', 'value = %w[a b]', 'eval("value = {}")']) {
+    await expectGeneral(`value = "abc"\n${statement}\nvalue.ea`);
+  }
+  await expectOwner('value = gets\nvalue = []\nvalue.ea', 'Array');
+  for (const expression of ['flag and', 'flag or', 'read_value rescue', 'defined?']) {
+    await expectGeneral(`value = "abc"\n${expression}\nvalue = []\nvalue.ea`);
+  }
+  await expectOwner('values = [get_value()]\nvalues.ea', 'Array');
+  await expectGeneral('text = "abc"\nvalues = [text = {}]\ntext.ea');
+  await expectGeneral('text = "abc"\nvalues = ["#{text = {}}"]\ntext.ea');
+});
+
+test('Ruby scope and control boundaries do not leak inferred locals', async () => {
+  for (const code of [
+    'value = []\nif flag\nvalue.ea',
+    'if flag\nvalue = []\nend\nvalue.ea',
+    'value = []\nitems.each do |value|\nvalue.ea',
+    'value = []\nitems.each { |value|\nvalue.ea',
+    'value = []\ndef solve(value)\nvalue.ea',
+    'def solve\nvalue = []\nend\nvalue.ea',
+    'value = []\nclass Example\nvalue.ea',
+    'value = []\ncase flag\nwhen 1\nvalue.ea',
+    'value = []\nfor value in items\nvalue.ea',
+    'def solve(arg =\nvalue = []\nvalue.ea',
+    'def solve arg = \\\nvalue = []\nvalue.ea',
+  ]) await expectGeneral(code);
+  await expectOwner('def solve\nvalue = []\nvalue.ea', 'Array');
+  await expectOwner('if flag\nvalue = []\nvalue.ea', 'Array');
+  await expectOwner('if flag\nvalue = "a"\nend\nvalue = {}\nvalue.ke', 'Hash');
+});
+
+test('Ruby local inference rejects indirect receivers, unfinished expressions and future assignments', async () => {
+  for (const receiver of ['@value', '$value', 'Object::value', 'object.value', 'value[0]', 'value()', ':value']) {
+    await expectGeneral(`value = []\n${receiver}.ea`);
+  }
+  for (const code of ['value = []\ncall(value = {}; value.ea', 'value = []\n[change(), value.ea', 'VALUE = []\nVALUE.ea']) await expectGeneral(code);
+  for (const marker of ['<<TEXT', "<<'TEXT'", '<<"TEXT"', '<<`TEXT`']) await expectGeneral(`message = ${marker}\nvalue = []\nvalue.ea`);
+  await expectGeneral('message = <<\'TEXT\'\n[]\nvalue = []\nvalue.ea');
+  assert.equal(await complete('message = <<~TEXT\nvalue = []\nvalue.ea'), null);
+  await expectGeneral('__END__\nvalue = []\nvalue.ea');
+  const doc = 'value.ea\nvalue = []';
+  const labels = (await complete(doc, 'value.ea'.length)).options.map(option => option.label);
+  assert.ok(labels.includes('upcase') && labels.includes('keys'));
+});
+
+test('Ruby local inference is bounded from the real document start and preserves literal completion', async () => {
+  await expectOwner('#' + 'x'.repeat(15000) + '\nvalue = []\nvalue.ea', 'Array');
+  await expectGeneral('#' + 'x'.repeat(17000) + '\nvalue = []\nvalue.ea');
+  await expectGeneral('value = []\n' + ' '.repeat(15000) + '+ value.ea');
+  await expectGeneral('if flag\n' + '# padding\n'.repeat(2000) + 'value = []\nvalue.ea');
+  await expectOwner('#' + 'x'.repeat(17000) + '\n[].ea', 'Array');
+});
+
+test('Ruby completion caches recheck changed assignments and control boundaries', async () => {
+  const { EditorState, StreamLanguage, ruby } = await import('../../src/vendor/editor/codemirror.mjs');
+  const typed = await complete('value = "abc"\nvalue.up');
+  const unknown = await complete('value.up');
+  for (const [doc, valid] of [['value = "def"\nvalue.up', true], ['value = []\nvalue.up', false], ['value = "abc"\nif flag\nvalue.up', false], ['value = gets\nvalue.up', false]]) {
+    const state = EditorState.create({ doc, extensions: [StreamLanguage.define(ruby)] });
+    assert.equal(typed.validFor('up', doc.length - 2, doc.length, state), valid, doc);
+    if (valid) assert.equal(unknown.validFor('up', doc.length - 2, doc.length, state), false, doc);
+  }
+});

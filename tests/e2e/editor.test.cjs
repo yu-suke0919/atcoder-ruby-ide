@@ -345,6 +345,44 @@ test('E15: literal method completion shows offline argument hints and preserves 
   await page.screenshot({ path: 'test-results/ruby-method-hints-900.png' });
 });
 
+test('E16: local variables select typed methods, refresh hints after assignment edits and preserve save-run', async () => {
+  const info = page.locator('.cm-completionInfo');
+  const original = 'text = "abc"\ntext.up';
+  await code().fill(original);
+  const file = path.join(root, 'local-methods.rb');
+  await dialogs(app, () => code().press('Control+s'), [save(file)]);
+  await code().press('Control+Space'); await completions();
+  await info.filter({ hasText: 'String#upcase' }).waitFor();
+  assert.equal(await option('each do … end').count(), 0);
+  assert.equal(await page.locator('#save-state').textContent(), '保存済み');
+  await code().press('Escape');
+  assert.equal(await page.locator('#save-state').textContent(), '保存済み');
+  await code().press('Control+Space'); await completions(); await code().press('Enter');
+  assert.equal(await editorText(page), 'text = "abc"\ntext.upcase');
+  await code().press('Control+z'); assert.equal(await editorText(page), original);
+  await code().press('Control+Shift+Z'); assert.equal(await editorText(page), 'text = "abc"\ntext.upcase');
+  for (const [doc, owner, absent] of [
+    ['values = []\nvalues.fe', 'Array#fetch(index', 'upcase'],
+    ['values = []\nvalues = {}\nvalues.fe', 'Hash#fetch(key', 'push'],
+    ['values = []\nvalues = gets\nvalues.fe', 'Array#fetch(index', ''],
+  ]) {
+    await code().fill(doc); await code().press('Control+Space'); await completions();
+    await info.filter({ hasText: owner }).waitFor();
+    if (absent) assert.equal(await option(absent).count(), 0);
+    else assert.match(await info.textContent(), /Hash#fetch\(key/);
+    await code().press('Escape');
+  }
+  await code().fill('text = "abc"\nputs(text.upcase)');
+  await code().press('Control+s'); await page.waitForFunction(() => !document.getElementById('save').disabled);
+  await page.locator('#compare-output').check(); await page.locator('#expected-output').fill('ABC\n');
+  await code().press('Control+Enter'); await page.locator('#comparison-status').filter({ hasText: /^一致$/ }).waitFor();
+  await code().press('Control+End'); await code().press('ArrowLeft'); await code().press('Control+Space'); await completions();
+  await info.filter({ hasText: 'String#upcase' }).waitFor();
+  await code().press('Escape');
+  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
+  assert.equal(await page.locator('#save-state').textContent(), '保存済み');
+});
+
 test('E11: runtime and syntax errors navigate without changing code, saved state or history', async () => {
   assert.equal(await page.locator('#error-location').count(), 1);
   const file = path.join(root, 'error 日本語.rb');
