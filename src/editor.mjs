@@ -3,8 +3,10 @@ import {
   StreamLanguage, ruby, indentUnit, indentOnInput, bracketMatching,
   syntaxHighlighting, HighlightStyle, tags, history, historyKeymap, defaultKeymap,
   indentMore, indentLess, redo, closeBrackets, closeBracketsKeymap,
+  autocompletion, completionKeymap, startCompletion, closeCompletion,
   search, searchKeymap, openSearchPanel,
 } from './vendor/editor/codemirror.mjs';
+import { rubyCompletions } from './ruby-completion.mjs';
 
 const colors = HighlightStyle.define([
   { tag: tags.keyword, color: '#c5a3ff' },
@@ -34,7 +36,13 @@ const phrases = {
   'match case': '大文字小文字を区別', regexp: '正規表現', 'by word': '単語単位',
   replace: '置換する', 'replace all': 'すべて置換', close: '閉じる',
   'Go to line': '行へ移動', go: '移動', 'Selection deleted': '選択範囲を削除しました',
+  Completions: '補完候補',
 };
+
+function complete(view) {
+  if (view.state.readOnly || view.compositionStarted) return false;
+  return startCompletion(view);
+}
 
 export function createEditor(parent, initial, onChange, onCursor) {
   const writable = new Compartment();
@@ -45,6 +53,8 @@ export function createEditor(parent, initial, onChange, onCursor) {
     EditorView.contentAttributes.of({ id: 'code-editor', 'data-testid': 'code-editor', 'aria-label': 'Ruby コード', tabindex: '0', spellcheck: 'false', autocapitalize: 'off' }),
     lineNumbers(), drawSelection(), history(), StreamLanguage.define(ruby), indentOnInput(),
     bracketMatching(), closeBrackets(), syntaxHighlighting(colors), theme,
+    autocompletion({ override: [rubyCompletions], activateOnTyping: false, defaultKeymap: false, filterStrict: true }),
+    EditorView.domEventHandlers({ compositionstart: (_event, view) => { closeCompletion(view); return false; } }),
     search({ top: true }), EditorState.phrases.of(phrases),
     keymap.of([
       { key: 'Tab', run: view => {
@@ -54,7 +64,9 @@ export function createEditor(parent, initial, onChange, onCursor) {
         return true;
       } },
       { key: 'Shift-Tab', run: indentLess },
-      { key: 'Escape', run: view => { view.setTabFocusMode(2000); return false; } },
+      { key: 'Escape', run: view => { view.setTabFocusMode(2000); return closeCompletion(view); } },
+      { key: 'Ctrl-Space', run: complete },
+      ...completionKeymap.filter(binding => binding.key !== 'Ctrl-Space' && binding.key !== 'Escape' && !binding.mac),
       { key: 'Mod-h', run: openSearchPanel, scope: 'editor search-panel' },
       { key: 'Mod-Shift-z', run: redo, preventDefault: true },
       ...closeBracketsKeymap, ...searchKeymap, ...historyKeymap,
@@ -71,8 +83,9 @@ export function createEditor(parent, initial, onChange, onCursor) {
     get value() { return view.state.doc.toString(); },
     set value(value) { view.setState(state(value)); },
     get cursor() { const pos = view.state.selection.main.head; const line = view.state.doc.lineAt(pos); return { line: line.number, column: pos - line.from + 1 }; },
-    set readOnly(value) { if (readOnly === value) return; readOnly = value; view.dispatch({ effects: writable.reconfigure(editable()) }); },
+    set readOnly(value) { if (readOnly === value) return; readOnly = value; if (value) closeCompletion(view); view.dispatch({ effects: writable.reconfigure(editable()) }); },
     focus() { view.focus(); },
     search() { openSearchPanel(view); },
+    complete() { view.focus(); complete(view); },
   };
 }

@@ -36,6 +36,7 @@ let closing = false;
 let scrollFrame = null;
 const editor = createEditor($('editor-host'), sample, () => { resetComparison(true); updateEditor(); }, updateCursor);
 $('editor-search').addEventListener('click', () => editor.search());
+$('editor-complete').addEventListener('click', () => editor.complete());
 
 async function confirmDiscard(includeCases = false) {
   return (editor.value === savedCode && (!includeCases || !cases.dirty)) || await ide.confirmDiscard();
@@ -178,6 +179,7 @@ function updateButtons() {
   $('save').disabled = fileBusy || closing || (running && !filePath);
   editor.readOnly = fileBusy || closing;
   $('editor-search').disabled = fileBusy || closing;
+  $('editor-complete').disabled = fileBusy || closing;
   input.readOnly = expectedOutput.readOnly = fileBusy || closing;
   compareOutput.disabled = fileBusy || closing;
   for (const id of ['cases-open', 'cases-save']) $(id).disabled = running || fileBusy || closing;

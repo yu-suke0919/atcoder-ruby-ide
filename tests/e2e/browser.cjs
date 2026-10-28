@@ -72,7 +72,7 @@ async function launch(root, { hostEnv = {} } = {}) {
     return step;
   }
   try {
-    const assets = new Map([['/', 'index.html'], ...['index.html', 'renderer.js', 'bridge.js', 'sample-cases.mjs', 'presentation.mjs', 'editor.mjs', 'vendor/editor/codemirror.mjs', 'styles.css'].map(name => [`/${name}`, name])]);
+    const assets = new Map([['/', 'index.html'], ...['index.html', 'renderer.js', 'bridge.js', 'sample-cases.mjs', 'presentation.mjs', 'editor.mjs', 'ruby-completion.mjs', 'vendor/editor/codemirror.mjs', 'styles.css'].map(name => [`/${name}`, name])]);
     for (const name of ['katex.mjs', 'katex.min.css', 'LICENSE', ...require('node:fs').readdirSync(path.join(repo, 'src/vendor/katex/fonts')).filter(n => n.endsWith('.woff2')).map(n => `fonts/${n}`)]) {
       assets.set(`/vendor/katex/${name}`, `vendor/katex/${name}`);
     }
