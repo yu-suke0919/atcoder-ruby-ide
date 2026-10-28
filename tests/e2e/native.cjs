@@ -18,12 +18,17 @@ async function launch(root) {
   await new Promise(resolve => server.close(resolve));
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
-    if (['PATH', 'RUBY_PATH', 'RUBYOPT', 'RUBYLIB', 'GEM_HOME', 'GEM_PATH'].includes(key.toUpperCase())) delete env[key];
+    if (['PATH', 'RUBY_PATH', 'RUBYOPT', 'RUBYLIB', 'BUNDLE_GEMFILE', 'GEM_HOME', 'GEM_PATH'].includes(key.toUpperCase())) delete env[key];
   }
   env.Path = `${path.join(process.env.SystemRoot, 'System32')};${process.env.SystemRoot}`;
   env.RUBY_PATH = 'C:\\no-system-ruby\\ruby.exe';
   env.GEM_HOME = path.join(root, 'external-gems');
   env.GEM_PATH = env.GEM_HOME;
+  await mkdir(env.GEM_HOME, { recursive: true });
+  await writeFile(path.join(env.GEM_HOME, 'json.rb'), 'raise "external json.rb was loaded"\n');
+  env.RUBYOPT = '-ride_external_startup_library';
+  env.RUBYLIB = env.GEM_HOME;
+  env.BUNDLE_GEMFILE = path.join(env.GEM_HOME, 'missing-Gemfile');
   env.ATCODER_IDE_TEST_PORT = String(port);
   env.WEBVIEW2_USER_DATA_FOLDER = path.join(root, 'webview-profile');
   await assert.rejects(execute(system('where.exe'), ['ruby'], { env }), error => error.code === 1);

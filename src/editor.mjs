@@ -77,7 +77,11 @@ export function createEditor(parent, initial, onChange, onCursor) {
         return true;
       } },
       { key: 'Shift-Tab', run: indentLess },
-      { key: 'Escape', run: view => { view.setTabFocusMode(2000); return closeCompletion(view); } },
+      { key: 'Escape', run: view => {
+        if (closeCompletion(view)) return true;
+        view.setTabFocusMode(2000);
+        return false;
+      } },
       { key: 'Ctrl-Space', run: complete },
       ...completionKeymap.filter(binding => binding.key !== 'Ctrl-Space' && binding.key !== 'Escape' && !binding.mac),
       { key: 'Mod-h', run: openSearchPanel, scope: 'editor search-panel' },

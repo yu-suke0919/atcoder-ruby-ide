@@ -10,6 +10,7 @@ const conditional = snippetCompletion('if ${condition}\n\t\nend', { label: 'if �
 const iteration = member => snippetCompletion(member ? 'each do |${item}|\n\t\nend' : '${items}.each do |item|\n\t\nend', { label: 'each do … end', type: 'snippet', detail: '繰り返し' });
 const integers = snippetCompletion('gets.split.map(&:to_i)${}', { label: 'gets.split.map(&:to_i)', type: 'snippet', detail: '整数列の入力' });
 const identifier = /^[\p{L}_][\p{L}\p{N}_]*[!?]?$/u;
+const isMemberAccess = (state, from) => state.sliceDoc(Math.max(0, from - 1), from) === '.' && state.sliceDoc(Math.max(0, from - 2), from) !== '..';
 
 // Filter using the prefix, but replace the entire identifier when accepting.
 function replaceIdentifier(option) {
@@ -33,7 +34,7 @@ export function rubyCompletions(context) {
   if (word && !identifier.test(word.text)) return null;
   if (!word && !context.explicit) return null;
   const from = word ? word.from : pos;
-  const member = state.sliceDoc(Math.max(0, from - 1), from) === '.';
+  const member = isMemberAccess(state, from);
   const type = member ? receiverType(state, tree, from) : null;
   const options = member ? [...methodCompletions(type)] : [...keywords, ...globals, ...constants, conditional, iteration(false), integers];
   if (member) {
@@ -50,7 +51,7 @@ export function rubyCompletions(context) {
   }
   return { from, options: options.map(replaceIdentifier), validFor(text, from, _to, state) {
     if (!/^[\p{L}\p{N}_]*[!?]?$/u.test(text)) return false;
-    if ((state.sliceDoc(Math.max(0, from - 1), from) === '.') !== member) return false;
+    if (isMemberAccess(state, from) !== member) return false;
     const tree = member && ensureSyntaxTree(state, from, 100);
     return !member || !!tree && receiverType(state, tree, from) === type;
   } };
