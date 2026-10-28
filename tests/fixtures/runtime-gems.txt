@@ -1,0 +1,16 @@
+3.4.5
+prime:0.1.3
+rexml:3.4.4
+pairing_heap:3.1.3
+stream:0.5.6
+ac-library-rb:1.2.0
+bitarray:1.3.1
+faster_prime:1.0.2
+rgl:0.6.6
+sorted_containers:1.1.0
+true
+true
+00010000
+0,1,2
+1,2,3
+{"value":"1.5","input":"日本語"}

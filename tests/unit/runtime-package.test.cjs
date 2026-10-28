@@ -64,7 +64,7 @@ test('M10: an existing managed runtime is trimmed before cache reuse', async () 
     for (const [name, text] of Object.entries({
       'bin/ruby.exe': 'keep', 'include/ruby.h': 'remove', 'LICENSE.txt': 'keep license',
       'share/doc/ruby/html/COPYING.html': 'copying', 'share/doc/ruby/html/COPYING_ja.html': 'copying ja',
-      'share/doc/ruby/html/LEGAL.html': 'legal', '.runtime-source.json': JSON.stringify(source)
+      'share/doc/ruby/html/LEGAL.html': 'legal', '.runtime-source.json': JSON.stringify({ ...source, gems: require('../../config/atcoder-runtime.json').gems })
     })) {
       await mkdir(path.dirname(path.join(runtime, name)), { recursive: true });
       await writeFile(path.join(runtime, name), text);
@@ -73,5 +73,22 @@ test('M10: an existing managed runtime is trimmed before cache reuse', async () 
     await assert.rejects(readFile(path.join(runtime, 'include/ruby.h')), { code: 'ENOENT' });
     assert.equal(await readFile(path.join(runtime, 'licenses/ruby/LEGAL.html'), 'utf8'), 'legal');
     assert.equal(await prepareRuby({ root, source }), runtime);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('M19: changing the gem snapshot rebuilds Ruby; a failed rebuild preserves the old installation', async () => {
+  const { createHash } = require('node:crypto');
+  const root = await mkdtemp(path.join(tmpdir(), 'IDE-ruby-gems-change-'));
+  const data = Buffer.from('corrupt archive with a matching hash');
+  const source = { ...manifest, sha256: createHash('sha256').update(data).digest('hex') };
+  try {
+    await mkdir(path.join(root, '.cache'), { recursive: true });
+    await writeFile(path.join(root, '.cache', source.archive), data);
+    const runtime = path.join(root, 'vendor/ruby');
+    await mkdir(path.join(runtime, 'bin'), { recursive: true });
+    await writeFile(path.join(runtime, 'bin/ruby.exe'), 'preserve');
+    await writeFile(path.join(runtime, '.runtime-source.json'), JSON.stringify({ ...source, gems: [] }));
+    await assert.rejects(prepareRuby({ root, source }), /Command failed/);
+    assert.equal(await readFile(path.join(runtime, 'bin/ruby.exe'), 'utf8'), 'preserve');
   } finally { await rm(root, { recursive: true, force: true }); }
 });

@@ -1,0 +1,20 @@
+{
+  "checkedAt": "2026-10-28",
+  "informationAsOf": "2026-06-16",
+  "languageList": "https://img.atcoder.jp/file/language-update/2025-10/language-list.html",
+  "installationSource": "https://img.atcoder.jp/file/language-update/2025-10/087-3-3_ruby-3-3-6.toml",
+  "announcement": "https://atcoder.jp/posts/1594",
+  "rubyVersion": "3.4.5",
+  "rubyApiVersion": "3.4.0",
+  "gems": [
+    { "name": "prime", "version": "0.1.3", "sha256": "baf031c50d6ce923594913befc8ac86a3251bffb9d6a5e8b03687962054e53e3" },
+    { "name": "rexml", "version": "3.4.4", "sha256": "19e0a2c3425dfbf2d4fc1189747bdb2f849b6c5e74180401b15734bc97b5d142" },
+    { "name": "pairing_heap", "version": "3.1.3", "sha256": "3e40f765aa9312615dc1b4b84218c31f4eb30f8bbdc10d1018bcde21379ddbd5" },
+    { "name": "stream", "version": "0.5.6", "sha256": "2733607ce840d60c72eb181714d45f0a7b077ee62fec0a94510a29c39175610f" },
+    { "name": "ac-library-rb", "version": "1.2.0", "sha256": "8923d7daffaf92e623a2552e10ca0bb401b51790e078a676602fc7d1fbb3d8b3" },
+    { "name": "bitarray", "version": "1.3.1", "sha256": "6ec714933c4a6100b31dcb49a68135a0409524a1834c9d614b0bd929e3da0743" },
+    { "name": "faster_prime", "version": "1.0.2", "sha256": "78da3a4ae5fad9b685daf1dfc6e7f0e6013c33b84cf69a11bb6357de921d3ad6" },
+    { "name": "rgl", "version": "0.6.6", "sha256": "2611d75509bcf31be2955c0a14b063c7a198dabba3e95b6a67c8653bd30c5136" },
+    { "name": "sorted_containers", "version": "1.1.0", "sha256": "9928f6fbaf6d3cc1d0f8116df823d2f4e01ea6506839baa7029233c40039141c" }
+  ]
+}

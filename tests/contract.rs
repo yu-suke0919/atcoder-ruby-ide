@@ -77,6 +77,21 @@ fn ruby() -> PathBuf {
 }
 
 #[test]
+fn m19_atcoder_ruby_and_portable_gems_execute_with_standard_libraries() {
+    let result = Runner::new(Duration::from_secs(5), 1048576)
+        .prepare(request(
+            include_str!("fixtures/runtime-gems.rb"),
+            "日本語\n",
+        ))
+        .unwrap()
+        .execute(&ruby(), |_| {})
+        .unwrap();
+    assert_eq!(result.status, "completed", "{}", result.stderr);
+    assert_eq!(result.stdout, include_str!("fixtures/runtime-gems.txt"));
+    assert_eq!(result.stderr, "");
+}
+
+#[test]
 fn m15_run_result_serializes_the_same_comparison_and_difference() {
     for (code, expected, comparison, difference) in [
         (

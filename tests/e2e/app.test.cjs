@@ -558,6 +558,22 @@ test('R06: overwrite during execution preserves the eventual comparison', async 
   }
 });
 
+test('M19: AtCoder gems run from unsaved and Japanese-path sources', async () => {
+  const code = await readFile(path.join(__dirname, '../fixtures/runtime-gems.rb'), 'utf8');
+  const expected = await readFile(path.join(__dirname, '../fixtures/runtime-gems.txt'), 'utf8');
+  await page.getByTestId('code-editor').fill(code);
+  await page.locator('#stdin').fill('日本語\n');
+  await page.locator('#compare-output').check();
+  await page.locator('#expected-output').fill(expected);
+  await runAndWait();
+  assert.equal(await page.getByTestId('stdout').textContent(), expected);
+  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
+  await saveAs(path.join(root, '追加gem 解答.rb'));
+  await runAndWait();
+  assert.equal(await page.getByTestId('stdout').textContent(), expected);
+  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
+});
+
 test('M07/M12: JSON and saved-directory files work with the configured Ruby runtime', async () => {
   await saveAs(path.join(root, 'JSON 解答.rb'));
   await writeFile(path.join(root, '入力.json'), '{"message":"日本語"}', 'utf8');

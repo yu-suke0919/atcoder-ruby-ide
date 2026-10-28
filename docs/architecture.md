@@ -32,6 +32,7 @@ Windows のデスクトップアプリは開発時・配布版とも resource di
 Linux のデスクトップアプリと、両OSの共通テスト・ブラウザー用テストホストは RUBY_PATH または PATH の Ruby を使う。Windows CI の共通テストでは RUBY_PATH に準備済みの vendor/ruby/bin/ruby.exe を指定する。
 起動時の Ruby 確認は本実行と同じ 5 秒を上限とする。確認失敗時は「Ruby を再確認」から再試行でき、確認中は重複確認と実行を抑止する。ファイル編集・保存は確認の成否に依存しない。
 Ruby は SHA-256 を固定した RubyInstaller から実行用ファイルを用意する。bin/・lib/ とライセンスを保持し、share/・include/ は除外する。share 内の COPYING・LEGAL は licenses/ruby/ に退避する。ネイティブ gem のビルドと同梱オフラインマニュアルは対象外。
+Rubyは3.4.5、追加gemはconfig/atcoder-runtime.jsonの固定情報を使う。RubyGemsのアーカイブをSHA-256検証し、C拡張のない採用gemと依存gemをローカルインストールする。WindowsはステージングしたRubyの標準gemディレクトリへ追加してから配置し、取得元またはgem構成が変われば作り直す。Linuxはprepare:gemsで選択したRubyへ同じ構成を用意する。[AtCoderとの比較](atcoder-runtime.md)を参照する。
 
 ## 文書と比較状態
 
