@@ -2,7 +2,7 @@ require 'json'
 require 'rubygems/installer'
 
 directory = ARGV.fetch(0)
-directory = Gem.dir if directory.empty?
+directory = Gem.default_dir if directory.empty?
 packages = JSON.parse(ARGV.fetch(1))
 
 # Inspect every verified package before changing the installation directory.

@@ -157,7 +157,7 @@ impl PreparedRun {
         let source = directory.path().join("solution.rb");
         let bootstrap = directory.path().join("stdio.rb");
         std::fs::write(&source, &self.request.code).map_err(|e| e.to_string())?;
-        std::fs::write(&bootstrap, "[STDIN, STDOUT, STDERR].each { |io| io.binmode; io.set_encoding(Encoding::UTF_8) }; STDOUT.sync = true; STDERR.sync = true\n").map_err(|e| e.to_string())?;
+        std::fs::write(&bootstrap, "Gem.use_paths(Gem.default_dir); [STDIN, STDOUT, STDERR].each { |io| io.binmode; io.set_encoding(Encoding::UTF_8) }; STDOUT.sync = true; STDERR.sync = true\n").map_err(|e| e.to_string())?;
         let mut command = Command::new(ruby);
         command
             .args(["-EUTF-8:UTF-8", "-r"])

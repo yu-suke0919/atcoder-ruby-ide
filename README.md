@@ -73,7 +73,7 @@ npm start
 `npm ci` は数式用資産とCodeMirrorのバンドル・ライセンスを `src/vendor/` に生成します。エディタの依存や `scripts/codemirror.mjs` を変更した場合は `npm run prepare:editor` で再生成します。表示時にCDNや外部サービスへ接続しません。
 
 Windows のデスクトップアプリは `npm start` による開発時も同梱 Ruby を使います。`RUBY_PATH` や PATH の別の Ruby には切り替わりません。
-共通テスト（`npm test`）とブラウザー用テストホストは、OS にかかわらず `RUBY_PATH`、未指定なら PATH の `ruby` を使います。LinuxではRuby 3.4.5を用意して `npm run prepare:gems` でそのRubyへ固定gemを追加します。Windows の共通テストでは、CI と同じく準備済みの同梱 Ruby を指定します。
+共通テスト（`npm test`）とブラウザー用テストホストは、OS にかかわらず `RUBY_PATH`、未指定なら PATH の `ruby` を使います。Linuxでは書き込み可能なRuby 3.4.5を用意して `npm run prepare:gems` でそのRubyの標準gemディレクトリへ固定gemを追加します。実行時も同じディレクトリだけを探索し、GEM_HOME・GEM_PATHやユーザー用gemの影響を受けません。Windows の共通テストでは、CI と同じく準備済みの同梱 Ruby を指定します。
 
 ```powershell
 npm run prepare:ruby

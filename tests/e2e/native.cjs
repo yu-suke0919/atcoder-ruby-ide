@@ -22,6 +22,8 @@ async function launch(root) {
   }
   env.Path = `${path.join(process.env.SystemRoot, 'System32')};${process.env.SystemRoot}`;
   env.RUBY_PATH = 'C:\\no-system-ruby\\ruby.exe';
+  env.GEM_HOME = path.join(root, 'external-gems');
+  env.GEM_PATH = env.GEM_HOME;
   env.ATCODER_IDE_TEST_PORT = String(port);
   env.WEBVIEW2_USER_DATA_FOLDER = path.join(root, 'webview-profile');
   await assert.rejects(execute(system('where.exe'), ['ruby'], { env }), error => error.code === 1);

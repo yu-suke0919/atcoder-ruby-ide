@@ -214,3 +214,4 @@ Windows CI の初回では、HTML固定データがCRLFでチェックアウト�
 - Windows用RubyInstallerのアーカイブをSHA-256検証して展開し、追加gemとライセンスを組み込んだ。ローカルで生成したWindowsランタイムは2,944ファイル・48,151,410 bytes。Windows CIではポータブル版の全GUIに加え、NSISインストール後も同じ代表コードを実行する。
 - rustfmt、JavaScript・Ruby構文、差分の空白検査が成功した。アプリ実行時のダウンロードやgemのビルドは追加していない。
 - 最初のCIでLinuxの全76件が成功した。Windowsでは代表コードの出力が正しい一方、期待値ファイルだけがチェックアウトでCRLFに変換されて比較に失敗したため、.gitattributesでそのファイルをLFへ固定した。最終結果はPRの最新CIを参照する。
+- セルフレビューで、端末のGEM_HOME・GEM_PATHが別環境を指すと同梱gemを読み込めないことを再現した。実Runnerを通す回帰テストが修正前にLoadErrorで失敗し、Gem.default_dirだけを探索する修正後に成功した。追加先も同じディレクトリへ揃え、別環境のGEM_HOMEへ書き込まないことを確認した。Rust 67件・Node 37件とM19のGUIが成功した。Windowsのポータブル・NSIS両方のテスト起動にも外部gem設定を渡し、最新CIで検証する。
