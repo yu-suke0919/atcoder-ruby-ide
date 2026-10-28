@@ -42,6 +42,7 @@ const theme = EditorView.theme({
   '.cm-panels': { backgroundColor: '#202735', color: '#e7edf6' },
   '.cm-searchMatch': { backgroundColor: '#725a2c' },
   '.cm-searchMatch-selected': { backgroundColor: '#986c39', outline: '1px solid #efbe8b' },
+  '.cm-completionInfo': { maxWidth: 'min(360px, calc(100vw - 24px))', maxHeight: 'min(240px, calc(100vh - 24px))', overflow: 'auto', overflowWrap: 'anywhere' },
 }, { dark: true });
 const phrases = {
   Find: '検索', Replace: '置換', next: '次へ', previous: '前へ', all: 'すべて選択',

@@ -67,3 +67,55 @@ test('Ruby completion replaces identifier suffixes while preserving comparison o
     assert.equal(view.state.doc.toString(), expected, doc);
   }
 });
+
+test('Ruby literal receivers select String, Array and Hash methods with argument hints', async () => {
+  for (const [doc, owner, present, absent] of [
+    ['"abc".up', 'String', ['upcase', 'split', 'chars'], ['each', 'keys', 'push', 'each do … end']],
+    ["'abc'.", 'String', ['upcase', 'chomp'], ['each', 'keys']],
+    ['[1, 2].ea', 'Array', ['each', 'map', 'push', 'each do … end'], ['split', 'keys', 'upcase']],
+    ['{a: 1}.ke', 'Hash', ['keys', 'values', 'fetch', 'each do … end'], ['push', 'split', 'upcase']],
+  ]) {
+    const result = await complete(doc);
+    const labels = result.options.map(option => option.label);
+    for (const label of present) assert.ok(labels.includes(label), `${doc}: ${label}`);
+    for (const label of absent) assert.ok(!labels.includes(label), `${doc}: ${label}`);
+    for (const option of result.options.filter(o => o.type === 'method')) {
+      assert.ok(option.info.startsWith(`${owner}#`), `${doc}: ${option.label}`);
+      assert.ok(option.info.includes('\n'), `${doc}: description for ${option.label}`);
+    }
+    assert.equal(new Set(labels).size, labels.length);
+  }
+  const array = (await complete('[].fe')).options.find(o => o.label === 'fetch');
+  const hash = (await complete('{}.fe')).options.find(o => o.label === 'fetch');
+  assert.match(array.info, /fetch\(index/);
+  assert.match(hash.info, /fetch\(key/);
+});
+
+test('Ruby receiver detection handles nesting, comments, quoted brackets, grouping and safe navigation', async () => {
+  for (const doc of ['a = ["a]", {x: [1, 2]}].ea', '[1, # ] ignored\n2].ea', '([[1]])&.ea', 'f([1].ea', '([1]) .ea']) {
+    const labels = (await complete(doc)).options.map(o => o.label);
+    assert.ok(labels.includes('push'), doc);
+    assert.ok(!labels.includes('keys'), doc);
+  }
+  assert.ok(!(await complete('("abc")&.up')).options.some(o => o.label === 'keys'));
+  assert.ok(!(await complete('f(a: {x: 1}.ke')).options.some(o => o.label === 'push'));
+});
+
+test('Ruby uncertain or overly large receivers keep general method completion', async () => {
+  for (const doc of ['values.ea', 'values[0].ea', '[1][0].ea', 'f("abc").ea', 'items.each { 1 }.ea', '-> {}.ea', '"#{name}".ea', '"#{}".ea', '"#{"a"}".ea', '"#@value".ea', '"#$global".ea', '%w[a b].ea', ':"abc".ea', '/abc/.ea', '[1}.ea', '["' + 'x'.repeat(4200) + '"].ea', '('.repeat(10) + '[]' + ')'.repeat(10) + '.ea']) {
+    const labels = (await complete(doc)).options.map(o => o.label);
+    assert.ok(labels.includes('keys'), doc.slice(0, 80));
+    assert.ok(labels.includes('push'), doc.slice(0, 80));
+    assert.ok(labels.includes('each do … end'), doc.slice(0, 80));
+    assert.ok(!labels.includes('if'));
+  }
+});
+
+test('Ruby completion invalidates cached literal methods when the receiver changes', async () => {
+  const { EditorState, StreamLanguage, ruby } = await import('../../src/vendor/editor/codemirror.mjs');
+  const result = await complete('"abc".');
+  const state = doc => EditorState.create({ doc, extensions: [StreamLanguage.define(ruby)] });
+  assert.equal(result.validFor('up', 6, 8, state('"abc".up')), true);
+  assert.equal(result.validFor('ea', 3, 5, state('[].ea')), false);
+  assert.equal(result.validFor('', 6, 6, state('value.')), false);
+});
