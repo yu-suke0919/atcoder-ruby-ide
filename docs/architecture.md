@@ -26,6 +26,8 @@ Rust は上限内の stdout / stderr を保持し、完了時の表示・比較�
 Windows は kill-on-close の Job Object、POSIX はプロセスグループを使う。親 Ruby が先に終了しても子プロセスを管理する。停止・時間制限・出力上限ではプロセス群を終了する。終了後の削除に失敗しても実行予約を解除する。
 Windows の一時的な共有違反・ロック・削除競合は短い待機で最大 3 回再試行する。
 
+異常終了時は確定したstderrから実行ソースの絶対パスに一致する最初の有効な行番号を抽出し、RunResult.errorLineで返す。ケースモデルは比較結果と同じリビジョンで位置を失効させる。editor.mjsは専用のStateFieldでエラー行を強調し、コード変更時はそのトランザクション内で強調を解除する。行番号の抽出とジャンプの仕様は[実行エラー](run-errors.md)を参照する。
+
 Windows のデスクトップアプリは開発時・配布版とも resource directory の ruby/bin/ruby.exe を直接使い、外部の RUBY_PATH や PATH に依存しない。
 Linux のデスクトップアプリと、両OSの共通テスト・ブラウザー用テストホストは RUBY_PATH または PATH の Ruby を使う。Windows CI の共通テストでは RUBY_PATH に準備済みの vendor/ruby/bin/ruby.exe を指定する。
 起動時の Ruby 確認は本実行と同じ 5 秒を上限とする。確認失敗時は「Ruby を再確認」から再試行でき、確認中は重複確認と実行を抑止する。ファイル編集・保存は確認の成否に依存しない。

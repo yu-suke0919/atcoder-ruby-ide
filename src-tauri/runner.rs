@@ -31,6 +31,7 @@ pub struct RunResult {
     pub duration_ms: u64,
     pub comparison: Option<bool>,
     pub difference: Option<OutputDifference>,
+    pub error_line: Option<usize>,
     pub output_limit_reached: bool,
 }
 
@@ -148,6 +149,7 @@ impl PreparedRun {
                 duration_ms: 0,
                 comparison: None,
                 difference: None,
+                error_line: None,
                 output_limit_reached: false,
             });
         }
@@ -260,6 +262,11 @@ impl PreparedRun {
             }
             _ => (None, None),
         };
+        let error_line = if status == "failed" {
+            source_error_line(&stderr, &source, self.request.code.split('\n').count())
+        } else {
+            None
+        };
         Ok(RunResult {
             status: status.into(),
             stdout,
@@ -268,6 +275,7 @@ impl PreparedRun {
             duration_ms: started.elapsed().as_millis() as u64,
             comparison,
             difference,
+            error_line,
             output_limit_reached: capped,
         })
     }
@@ -316,6 +324,22 @@ impl PreparedRun {
     }
 }
 
+fn source_error_line(stderr: &str, source: &Path, line_count: usize) -> Option<usize> {
+    let source = source.to_str()?.replace('\\', "/");
+    let normalized = stderr.replace('\\', "/");
+    normalized.lines().find_map(|line| {
+        let line = line.trim_start();
+        let frame = line.strip_prefix("from ").unwrap_or(line);
+        let rest = frame.strip_prefix(&source)?.strip_prefix(':')?;
+        let (number, message) = rest.split_once(':')?;
+        if message.trim_start().starts_with("warning:") {
+            return None;
+        }
+        let number = number.parse::<usize>().ok()?;
+        (number > 0 && number <= line_count).then_some(number)
+    })
+}
+
 fn cleanup(directory: &Path) -> std::io::Result<()> {
     for attempt in 0..=3 {
         match std::fs::remove_dir_all(directory) {
@@ -331,4 +355,53 @@ fn cleanup(directory: &Path) -> std::io::Result<()> {
         }
     }
     unreachable!()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_frames_match_the_exact_source_and_skip_prism_headers() {
+        let source = Path::new("/tmp/日本語 space/solution.rb");
+        let stderr = "/tmp/日本語 space/solution.rb: --> /tmp/日本語 space/solution.rb\n\n/tmp/日本語 space/solution.rb:2: syntax errors found (SyntaxError)\n";
+        assert_eq!(source_error_line(stderr, source, 3), Some(2));
+        assert_eq!(
+            source_error_line(
+                "/lib/json.rb:9:in parse\n\tfrom /tmp/日本語 space/solution.rb:3:in main\n",
+                source,
+                3
+            ),
+            Some(3)
+        );
+        assert_eq!(source_error_line("/tmp/日本語 space/solution.rb:1: warning: already initialized constant A\n/tmp/日本語 space/solution.rb:2:in main: boom", source, 3), Some(2));
+    }
+
+    #[test]
+    fn error_frames_accept_windows_path_separators_and_drive_letters() {
+        let source = Path::new(r"C:\Users\日本語 space\solution.rb");
+        for stderr in [
+            "C:/Users/日本語 space/solution.rb:2:in main",
+            "\tfrom C:\\Users\\日本語 space\\solution.rb:2:in main",
+        ] {
+            assert_eq!(source_error_line(stderr, source, 3), Some(2));
+        }
+    }
+
+    #[test]
+    fn error_frames_reject_unrelated_paths_text_and_invalid_lines() {
+        let source = Path::new("/tmp/main/solution.rb");
+        for stderr in [
+            "/tmp/other/solution.rb:1:in main",
+            "warning mentions /tmp/main/solution.rb:1:in main",
+            "x/tmp/main/solution.rb:1:in main",
+            "/tmp/main/solution.rb:0:in main",
+            "/tmp/main/solution.rb:4:in main",
+            "/tmp/main/solution.rb:-1:in main",
+            "/tmp/main/solution.rb:99999999999999999999999999:in main",
+            "/tmp/main/solution.rb:2bad:in main",
+        ] {
+            assert_eq!(source_error_line(stderr, source, 3), None, "{stderr}");
+        }
+    }
 }

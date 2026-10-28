@@ -1,5 +1,5 @@
 import {
-  EditorState, Compartment, EditorView, keymap, lineNumbers, drawSelection,
+  EditorState, Compartment, StateEffect, StateField, EditorView, Decoration, keymap, lineNumbers, drawSelection,
   StreamLanguage, ruby, indentUnit, indentOnInput, bracketMatching,
   syntaxHighlighting, HighlightStyle, tags, history, historyKeymap, defaultKeymap,
   indentMore, indentLess, redo, closeBrackets, closeBracketsKeymap,
@@ -7,6 +7,17 @@ import {
   search, searchKeymap, openSearchPanel,
 } from './vendor/editor/codemirror.mjs';
 import { rubyCompletions } from './ruby-completion.mjs';
+
+const setErrorPosition = StateEffect.define();
+const errorPosition = StateField.define({
+  create: () => null,
+  update(position, transaction) {
+    if (transaction.docChanged) position = null;
+    for (const effect of transaction.effects) if (effect.is(setErrorPosition)) position = effect.value;
+    return position;
+  },
+  provide: field => EditorView.decorations.from(field, position => position === null ? Decoration.none : Decoration.set([Decoration.line({ class: 'cm-run-error-line' }).range(position)])),
+});
 
 const colors = HighlightStyle.define([
   { tag: tags.keyword, color: '#c5a3ff' },
@@ -27,6 +38,7 @@ const theme = EditorView.theme({
   '.cm-cursor': { borderLeftColor: '#e7edf6' },
   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: '#493e6b' },
   '.cm-matchingBracket': { backgroundColor: '#3d5262', outline: '1px solid #8fccec' },
+  '.cm-run-error-line': { backgroundColor: '#57313e', boxShadow: 'inset 3px 0 #f5a3b2' },
   '.cm-panels': { backgroundColor: '#202735', color: '#e7edf6' },
   '.cm-searchMatch': { backgroundColor: '#725a2c' },
   '.cm-searchMatch-selected': { backgroundColor: '#986c39', outline: '1px solid #efbe8b' },
@@ -51,7 +63,7 @@ export function createEditor(parent, initial, onChange, onCursor) {
   const state = doc => EditorState.create({ doc, extensions: [
     writable.of(editable()), EditorState.tabSize.of(2), indentUnit.of('  '),
     EditorView.contentAttributes.of({ id: 'code-editor', 'data-testid': 'code-editor', 'aria-label': 'Ruby コード', tabindex: '0', spellcheck: 'false', autocapitalize: 'off' }),
-    lineNumbers(), drawSelection(), history(), StreamLanguage.define(ruby), indentOnInput(),
+    lineNumbers(), drawSelection(), history(), errorPosition, StreamLanguage.define(ruby), indentOnInput(),
     bracketMatching(), closeBrackets(), syntaxHighlighting(colors), theme,
     autocompletion({ override: [rubyCompletions], activateOnTyping: false, defaultKeymap: false, filterStrict: true }),
     EditorView.domEventHandlers({ compositionstart: (_event, view) => { closeCompletion(view); return false; } }),
@@ -82,6 +94,16 @@ export function createEditor(parent, initial, onChange, onCursor) {
   return {
     get value() { return view.state.doc.toString(); },
     set value(value) { view.setState(state(value)); },
+    set errorLine(line) {
+      const position = Number.isInteger(line) && line > 0 && line <= view.state.doc.lines ? view.state.doc.line(line).from : null;
+      if (view.state.field(errorPosition) !== position) view.dispatch({ effects: setErrorPosition.of(position) });
+    },
+    jumpToError() {
+      const position = view.state.field(errorPosition);
+      if (position === null) return;
+      view.dispatch({ selection: { anchor: position }, effects: EditorView.scrollIntoView(position, { y: 'center' }) });
+      view.focus();
+    },
     get cursor() { const pos = view.state.selection.main.head; const line = view.state.doc.lineAt(pos); return { line: line.number, column: pos - line.from + 1 }; },
     set readOnly(value) { if (readOnly === value) return; readOnly = value; if (value) closeCompletion(view); view.dispatch({ effects: writable.reconfigure(editable()) }); },
     focus() { view.focus(); },

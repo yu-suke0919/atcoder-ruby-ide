@@ -3,6 +3,7 @@ export const MAX_CASES = 100;
 function resetComparison(item) {
   item.comparison = item.compare ? 'pending' : 'none';
   item.difference = null;
+  item.errorLine = null;
 }
 
 function clearResult(item, status = null) {
@@ -85,6 +86,7 @@ export class SampleCases {
   finish({ item, revision, compare }, result) {
     const { stdout, stderr, status, exitCode, durationMs } = result;
     Object.assign(item, { stdout, stderr, status, exitCode, durationMs });
+    item.errorLine = item.revision === revision && status === 'failed' ? result.errorLine ?? null : null;
     if (item.revision === revision && compare) {
       item.comparison = result.comparison === null ? 'unavailable' : result.comparison ? 'matched' : 'mismatched';
       item.difference = result.difference;
@@ -94,6 +96,7 @@ export class SampleCases {
   fail({ item, revision, compare }, message) {
     item.status = 'error';
     item.stderr = message;
+    item.errorLine = null;
     if (item.revision === revision && compare) {
       item.comparison = 'unavailable';
       item.difference = null;
