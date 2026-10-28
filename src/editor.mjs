@@ -2,7 +2,7 @@ import {
   EditorState, Compartment, EditorView, keymap, lineNumbers, drawSelection,
   StreamLanguage, ruby, indentUnit, indentOnInput, bracketMatching,
   syntaxHighlighting, HighlightStyle, tags, history, historyKeymap, defaultKeymap,
-  indentMore, indentLess, closeBrackets, closeBracketsKeymap,
+  indentMore, indentLess, redo, closeBrackets, closeBracketsKeymap,
   search, searchKeymap, openSearchPanel,
 } from './vendor/editor/codemirror.mjs';
 
@@ -56,6 +56,7 @@ export function createEditor(parent, initial, onChange, onCursor) {
       { key: 'Shift-Tab', run: indentLess },
       { key: 'Escape', run: view => { view.setTabFocusMode(2000); return false; } },
       { key: 'Mod-h', run: openSearchPanel, scope: 'editor search-panel' },
+      { key: 'Mod-Shift-z', run: redo, preventDefault: true },
       ...closeBracketsKeymap, ...searchKeymap, ...historyKeymap,
       // Let the application handle Run instead of CodeMirror's insertBlankLine.
       ...defaultKeymap.filter(binding => binding.key !== 'Mod-Enter'),

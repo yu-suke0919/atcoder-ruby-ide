@@ -53,6 +53,8 @@ test('E02: Ruby newline indentation, selected line indent and undo redo', async 
   assert.equal(await editorText(page), '  puts 1\n  puts 2');
   await code().press('Control+z'); assert.equal(await editorText(page), 'puts 1\nputs 2');
   await code().press('Control+y'); assert.equal(await editorText(page), '  puts 1\n  puts 2');
+  await code().press('Control+z'); assert.equal(await editorText(page), 'puts 1\nputs 2');
+  await code().press('Control+Shift+Z'); assert.equal(await editorText(page), '  puts 1\n  puts 2');
   await code().press('Shift+Tab'); assert.equal(await editorText(page), 'puts 1\nputs 2');
   await code().press('Escape'); await page.keyboard.press('Tab');
   assert.equal(await code().evaluate(el => el.contains(document.activeElement)), false);
