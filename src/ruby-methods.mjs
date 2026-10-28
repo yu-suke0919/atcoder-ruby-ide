@@ -134,7 +134,10 @@ export function receiverType(state, tree, from) {
   while (before > boundary && /[ \t\r]/.test(state.sliceDoc(before - 1, before))) before--;
   if (before === 0) return result.type;
   if (before === boundary) return null;
-  if (/[\n=,;([{:]$/.test(state.sliceDoc(before - 1, before))) return result.type;
   const token = tree.resolveInner(before, -1);
+  const previous = state.sliceDoc(before - 1, before);
+  if (previous === ':' && token.name !== 'atom') return null;
+  if (previous === '\n' && /\\\r?\n$/.test(state.sliceDoc(Math.max(0, before - 3), before))) return null;
+  if (/[\n=,;([{:]$/.test(previous)) return result.type;
   return token.name === 'keyword' && /^(return|yield|then|else)$/.test(state.sliceDoc(token.from, token.to)) ? result.type : null;
 }

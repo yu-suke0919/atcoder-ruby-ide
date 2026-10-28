@@ -119,3 +119,16 @@ test('Ruby completion invalidates cached literal methods when the receiver chang
   assert.equal(result.validFor('ea', 3, 5, state('[].ea')), false);
   assert.equal(result.validFor('', 6, 6, state('value.')), false);
 });
+
+test('Ruby symbol operators and indexing across explicit line continuations keep general methods', async () => {
+  for (const doc of [':[].ea', ':[]&.ea', 'value\\\n[0].ea', 'value\\\n  [0]&.ea']) {
+    const labels = (await complete(doc)).options.map(o => o.label);
+    assert.ok(labels.includes('keys'), doc);
+    assert.ok(labels.includes('upcase'), doc);
+  }
+  const hashLabel = (await complete('f(a: [].ea')).options.map(o => o.label);
+  assert.ok(hashLabel.includes('push'));
+  assert.ok(!hashLabel.includes('keys'));
+  const nextLine = (await complete('value\n[0].ea')).options.map(o => o.label);
+  assert.ok(!nextLine.includes('keys'));
+});
