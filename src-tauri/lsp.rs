@@ -76,7 +76,7 @@ impl RubyLsp {
         Ok(info)
     }
 
-    /// Position uses zero-based UTF-16 code units, as in the editor and LSP.
+    /// Public positions use zero-based UTF-16 code units, matching CodeMirror.
     pub fn complete(&self, code: &str, line: u32, character: u32) -> Result<Value, String> {
         let column = byte_column(code, line, character)?;
         let mut active = self.session.lock().unwrap();

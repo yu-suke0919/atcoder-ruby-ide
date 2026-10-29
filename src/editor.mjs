@@ -62,9 +62,7 @@ export function createEditor(parent, initial, onChange, onCursor, completionClie
   let readOnly = false;
   let revision = 0;
   const editable = () => [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)];
-  const state = doc => {
-    const currentRevision = revision;
-    return EditorState.create({ doc, extensions: [
+  const state = (doc, currentRevision = revision) => EditorState.create({ doc, extensions: [
     writable.of(editable()), EditorState.tabSize.of(2), indentUnit.of('  '),
     EditorView.contentAttributes.of({ id: 'code-editor', 'data-testid': 'code-editor', 'aria-label': 'Ruby コード', tabindex: '0', spellcheck: 'false', autocapitalize: 'off' }),
     lineNumbers(), drawSelection(), history(), errorPosition, StreamLanguage.define(ruby), indentOnInput(),
@@ -97,7 +95,7 @@ export function createEditor(parent, initial, onChange, onCursor, completionClie
       if (update.docChanged) onChange();
       else if (update.selectionSet) onCursor();
     }),
-  ] }); };
+  ] });
   const view = new EditorView({ parent, state: state(initial) });
   return {
     get value() { return view.state.doc.toString(); },
