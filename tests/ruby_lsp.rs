@@ -28,20 +28,30 @@ fn real_lsp_syncs_unsaved_utf16_code_and_restarts_without_affecting_competition_
     let info = lsp.start(&ruby(), &resources()).unwrap();
     assert_eq!(info.position_encoding, "utf-16");
     assert_eq!(lsp.start(&ruby(), &resources()).unwrap().pid, info.pid);
-    let code = "class IdeUnsaved; def unique_ide_method; end; end\nIdeUnsaved.new.unique_ide_";
-    let result = lsp.complete(code, 1, 26).unwrap();
+    let code =
+        "limit = 10\nclass IdeUnsaved; def unique_ide_method; end; end\nIdeUnsaved.new.unique_ide_";
+    let result = lsp.complete(code, 2, 26).unwrap();
     assert!(has_label(&result, "unique_ide_method"), "{result}");
-    let code = "class IdeChanged; def changed_ide_method; end; end\n\"😀日本語\"; IdeChanged.new.changed_ide_";
-    let character = code.lines().nth(1).unwrap().encode_utf16().count() as u32;
-    let result = lsp.complete(code, 1, character).unwrap();
+    let code = "limit = 20\nclass IdeChanged; def changed_ide_method; end; end\n\"😀日本語\"; IdeChanged.new.changed_ide_";
+    let character = code.lines().nth(2).unwrap().encode_utf16().count() as u32;
+    let result = lsp.complete(code, 2, character).unwrap();
     assert!(has_label(&result, "changed_ide_method"), "{result}");
     assert!(!has_label(&result, "unique_ide_method"), "{result}");
-    assert!(lsp.complete(code, 1, 2).is_err()); // Inside the surrogate pair.
+    let removed = "limit = 30\nclass IdeChanged; end\nIdeChanged.new.changed_ide_";
+    let result = lsp
+        .complete(
+            removed,
+            2,
+            removed.lines().last().unwrap().encode_utf16().count() as u32,
+        )
+        .unwrap();
+    assert!(!has_label(&result, "changed_ide_method"), "{result}");
+    assert!(lsp.complete(code, 2, 2).is_err()); // Inside the surrogate pair.
     assert!(lsp.complete(code, 5, 0).is_err());
     assert!(lsp.complete(&"a".repeat(1048577), 0, 0).is_err());
     // Invalid caller input must leave the running session usable.
     assert!(has_label(
-        &lsp.complete(code, 1, character).unwrap(),
+        &lsp.complete(code, 2, character).unwrap(),
         "changed_ide_method"
     ));
     let runner = Runner::new(Duration::from_secs(5), 16384);
@@ -53,7 +63,7 @@ fn real_lsp_syncs_unsaved_utf16_code_and_restarts_without_affecting_competition_
     assert_eq!(result.status, "completed", "{}", result.stderr);
     assert!(lsp.stop());
     assert!(!lsp.stop());
-    assert!(lsp.complete(code, 1, character).is_err());
+    assert!(lsp.complete(code, 2, character).is_err());
     let next = lsp.start(&ruby(), &resources()).unwrap();
     assert_ne!(next.pid, info.pid);
     // Simulate the language server crashing, independently of the application.
@@ -66,7 +76,7 @@ fn real_lsp_syncs_unsaved_utf16_code_and_restarts_without_affecting_competition_
         .status()
         .unwrap();
     assert!(status.success());
-    assert!(lsp.complete(code, 1, character).is_err());
+    assert!(lsp.complete(code, 2, character).is_err());
     assert!(lsp.start(&ruby(), &resources()).is_ok());
     assert!(lsp.stop());
 }

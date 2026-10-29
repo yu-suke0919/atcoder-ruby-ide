@@ -34,7 +34,6 @@ impl RubyLsp {
         }
         active.take();
         let mut session = Session::spawn(ruby, resources)?;
-        let uri = session.uri.clone();
         let root = url::Url::from_directory_path(session.directory.path())
             .map_err(|_| "LSPの作業場所をURIに変換できません")?
             .to_string();
@@ -51,7 +50,7 @@ impl RubyLsp {
                     "window": {"workDoneProgress": true}
                 },
                 "initializationOptions": {
-                    "enabledFeatures": ["completion", "documentSymbols", "workspaceSymbol"], "formatter": "none", "linters": [],
+                    "enabledFeatures": ["completion", "documentSymbols"], "formatter": "none", "linters": [],
                     "indexing": {"excludedPatterns": ["**/ruby-lsp/**"]}
                 }
             }),
@@ -72,13 +71,6 @@ impl RubyLsp {
             }
             session.respond(&message, deadline)?;
         }
-        session.notify(
-            "textDocument/didOpen",
-            json!({"textDocument": {
-                "uri": uri, "languageId": "ruby", "version": 0, "text": ""
-            }}),
-            deadline,
-        )?;
         let info = session.info();
         *active = Some(session);
         Ok(info)
@@ -90,26 +82,21 @@ impl RubyLsp {
         let mut active = self.session.lock().unwrap();
         let session = active.as_mut().ok_or("Ruby LSPが起動していません")?;
         let deadline = Instant::now() + REQUEST_TIMEOUT;
-        session.version += 1;
         let uri = session.uri.clone();
         let result = (|| {
+            if session.version > 0 {
+                session.notify(
+                    "textDocument/didClose",
+                    json!({"textDocument": {"uri": uri}}),
+                    deadline,
+                )?;
+            }
+            session.version += 1;
+            // Each call supplies a full snapshot. Reopen it to avoid Ruby LSP's incremental
+            // edit heuristic skipping declarations beyond the start of a whole-file edit.
             session.notify(
-                "textDocument/didChange",
-                json!({
-                    "textDocument": {"uri": uri, "version": session.version},
-                    "contentChanges": [{"text": code, "range": {
-                        "start": {"line": 0, "character": 0},
-                        "end": {"line": session.end_position.0, "character": session.end_position.1}
-                    }}]
-                }),
-                deadline,
-            )?;
-            session.end_position = end_position(code);
-            // The reader parses document requests while the worker applies edits. A request
-            // without a document URI acknowledges preceding edits before parsing the document.
-            session.request(
-                "workspace/symbol",
-                json!({"query": "__atcoder_sync_barrier__"}),
+                "textDocument/didOpen",
+                json!({"textDocument": {"uri": uri, "languageId": "ruby", "version": session.version, "text": code}}),
                 deadline,
             )?;
             // Combined document requests refresh the index of unsaved declarations.
@@ -164,17 +151,6 @@ fn validate_position(code: &str, line: u32, character: u32) -> Result<(), String
     }
 }
 
-fn end_position(code: &str) -> (u32, u32) {
-    let mut lines = code.split('\n');
-    let first = lines.next().unwrap();
-    let (line, text) = lines
-        .enumerate()
-        .last()
-        .map(|(line, text)| (line as u32 + 1, text))
-        .unwrap_or((0, first));
-    (line, text.encode_utf16().count() as u32)
-}
-
 type WriteTask = (Vec<u8>, mpsc::Sender<Result<(), String>>);
 struct Session {
     child: Child,
@@ -186,7 +162,6 @@ struct Session {
     directory: tempfile::TempDir,
     uri: String,
     version: u64,
-    end_position: (u32, u32),
     request_id: u64,
 }
 
@@ -291,7 +266,6 @@ impl Session {
             directory,
             uri,
             version: 0,
-            end_position: (0, 0),
             request_id: 0,
         })
     }

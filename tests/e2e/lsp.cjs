@@ -8,7 +8,7 @@ async function verifyLsp(page) {
   try {
     for (const [name, method] of [['IdeFirst', 'first_ide_method'], ['IdeChanged', 'changed_ide_method']]) {
       const line = `"😀日本語"; ${name}.new.${method.slice(0, -6)}`;
-      const result = await invoke('lsp_complete', { code: `class ${name}; def ${method}; end; end\n${line}`, line: 1, character: line.length });
+      const result = await invoke('lsp_complete', { code: `limit = 10\nclass ${name}; def ${method}; end; end\n${line}`, line: 2, character: line.length });
       const items = Array.isArray(result) ? result : result.items;
       assert.ok(items.some(item => item.label.startsWith(method)), JSON.stringify(result));
     }
