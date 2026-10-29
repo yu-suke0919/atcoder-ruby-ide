@@ -49,16 +49,17 @@ function position(doc, point) {
 function remoteOption(item, context, current, fallback) {
   if (!item || typeof item.label !== 'string' || !item.label || item.insertTextFormat === 2 || item.command || item.additionalTextEdits && (!Array.isArray(item.additionalTextEdits) || item.additionalTextEdits.length)) return null;
   const { state, pos } = context;
+  const line = state.doc.lineAt(pos);
   const edit = item.textEdit;
   const range = edit?.range || edit?.replace;
   if (edit && !range) return null;
   const from = range ? position(state.doc, range.start) : fallback.from;
-  const to = range ? position(state.doc, range.end) : pos + state.sliceDoc(pos, state.doc.lineAt(pos).to).match(/^[\p{L}\p{N}_]*(?:\?|!(?![=~]))?/u)[0].length;
+  const to = range ? position(state.doc, range.end) : pos + state.sliceDoc(pos, line.to).match(/^[\p{L}\p{N}_]*(?:\?|!(?![=~]))?/u)[0].length;
   const text = edit?.newText ?? item.insertText ?? item.label;
-  if (from === null || to === null || from > pos || to < pos || from > to || typeof text !== 'string') return null;
+  if (from === null || to === null || from < line.from || to > line.to || from > pos || to < pos || from > to || typeof text !== 'string') return null;
   const known = fallback.options.find(option => option.label === item.label);
   const owner = item.data?.owner_name;
-  const summary = typeof known?.info === 'string' ? known.info.split('\n\n').find(text => text.startsWith(`${owner}#`)) : null;
+  const summary = typeof known?.info === 'string' ? known.info.split('\n\n').filter(text => text.startsWith(`${owner}#`) || owner === 'Enumerable' && /^(Array|Hash)#/.test(text)).join('\n\n') : null;
   const signature = `${owner ? `${owner}#` : ''}${item.label}${item.labelDetails?.detail || ''}`;
   const documentation = typeof item.documentation === 'string' ? item.documentation : item.documentation?.value;
   return {
@@ -77,11 +78,13 @@ function remoteOption(item, context, current, fallback) {
 
 export function lspCompletions(client, active = () => true) {
   return async context => {
-    const fallback = rubyCompletions(context);
-    if (!fallback) return null;
+    const basic = rubyCompletions(context);
+    if (!basic) return null;
     let canceled = false;
     context.addEventListener('abort', () => { canceled = true; }, { onDocChange: true });
     const { state, pos, view } = context;
+    const validFor = (_text, _from, _to, next) => next.doc === state.doc && next.selection.main.head === pos && !next.readOnly;
+    const fallback = { ...basic, validFor };
     const current = () => !canceled && !context.aborted && active() && (!view || view.state.doc === state.doc && view.state.selection.main.head === pos && !view.state.readOnly && !view.compositionStarted);
     if (!current()) return null;
     const line = state.doc.lineAt(pos);
@@ -103,6 +106,6 @@ export function lspCompletions(client, active = () => true) {
     for (const option of fallback.options) {
       if ((!member || option.type === 'snippet') && !remote.has(option.label)) options.push(option);
     }
-    return { from, options, validFor: (_text, _from, _to, next) => next.doc === state.doc && next.selection.main.head === pos && !next.readOnly };
+    return { from, options, validFor };
   };
 }

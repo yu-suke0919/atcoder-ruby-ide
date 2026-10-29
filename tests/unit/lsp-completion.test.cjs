@@ -49,6 +49,30 @@ test('LSP user-defined methods do not inherit unrelated standard-library documen
   assert.doesNotMatch(option.info, /String#/);
 });
 
+test('LSP Enumerable methods retain Japanese Array and Hash summaries without matching String methods', async () => {
+  const { lspCompletions } = await import('../../src/lsp-completion.mjs');
+  for (const [doc, label, owner] of [
+    ['[1, 2].each_with_in', 'each_with_index', 'Array'],
+    ['[].sort_b', 'sort_by', 'Array'],
+    ['[].red', 'reduce', 'Array'],
+    ['[].fi', 'find', 'Array'],
+    ['{a: 1}.ma', 'map', 'Hash'],
+    ['{}.so', 'sort', 'Hash'],
+    ['{}.mi', 'min', 'Hash'],
+    ['{}.max', 'max', 'Hash'],
+    ['{}.su', 'sum', 'Hash'],
+    ['{}.co', 'count', 'Hash'],
+  ]) {
+    const f = await fixture(doc);
+    const from = doc.lastIndexOf('.') + 1;
+    const result = await lspCompletions({ complete: async () => [item(label, from, doc.length, { data: { owner_name: 'Enumerable' } })] })(f.context);
+    const option = result.options.find(o => o.label === label);
+    assert.match(option.info, new RegExp(`^${owner}#${label}`), doc);
+    assert.match(option.info, /[\u3040-\u30ff\u4e00-\u9fff]/u, doc);
+    assert.doesNotMatch(option.info, /String#/, doc);
+  }
+});
+
 test('LSP qualified constants filter over the edit range including their namespace', async () => {
   const { lspCompletions } = await import('../../src/lsp-completion.mjs');
   const f = await fixture('Math::P');
@@ -70,6 +94,24 @@ test('LSP merges general words and templates without duplicate labels and keeps 
     result = await lspCompletions({ complete: async () => { if (response === 'failed') throw Error('offline'); return response; } })(f.context);
     assert.ok(result.options.some(o => o.label === 'upcase'));
     assert.ok(!result.options.some(o => o.label === 'keys'));
+  }
+});
+
+test('LSP and every fallback response invalidate cached results after document, cursor or readonly changes', async () => {
+  const { lspCompletions } = await import('../../src/lsp-completion.mjs');
+  const { EditorState, StateEffect } = await import('../../src/vendor/editor/codemirror.mjs');
+  for (const response of [[], null, { items: {} }, [item('invalid', 0, 1)], 'failed', [item('each', 16, 18)]]) {
+    const f = await fixture('EditorProbe.new.ea');
+    const result = await lspCompletions({ complete: async () => { if (response === 'failed') throw Error('offline'); return response; } })(f.context);
+    const { state } = f.view;
+    const from = result.from;
+    assert.equal(result.validFor('ea', from, f.context.pos, state), true);
+    const changed = state.update({ changes: { from, to: f.context.pos, insert: 'unique_' }, selection: { anchor: from + 7 } }).state;
+    assert.equal(result.validFor('unique_', from, from + 7, changed), false, JSON.stringify(response));
+    const moved = state.update({ selection: { anchor: f.context.pos - 1 } }).state;
+    assert.equal(result.validFor('e', from, f.context.pos - 1, moved), false, JSON.stringify(response));
+    const readonly = state.update({ effects: StateEffect.appendConfig.of(EditorState.readOnly.of(true)) }).state;
+    assert.equal(result.validFor('ea', from, f.context.pos, readonly), false, JSON.stringify(response));
   }
 });
 
@@ -102,6 +144,23 @@ test('LSP rejects unsafe edit shapes and stale candidates before insertion', asy
   f.view.dispatch({ changes: { from: 0, insert: 'changed ' } });
   option.apply(f.view, option, result.from, 7);
   assert.equal(f.view.state.doc.toString(), 'changed obj.uni');
+});
+
+test('LSP rejects edits that cross the cursor line and preserves surrounding lines on valid insertion', async () => {
+  const { lspCompletions } = await import('../../src/lsp-completion.mjs');
+  const f = await fixture('before\nobj.uni\nafter', 'before\nobj.uni'.length);
+  const edit = (label, start, end) => ({ label, kind: 2, textEdit: { newText: label, range: { start, end } } });
+  const candidates = [
+    edit('bad_start', { line: 0, character: 0 }, { line: 1, character: 7 }),
+    edit('bad_end', { line: 1, character: 4 }, { line: 2, character: 5 }),
+    edit('bad_both', { line: 0, character: 0 }, { line: 2, character: 5 }),
+    edit('unique_name', { line: 1, character: 4 }, { line: 1, character: 7 }),
+  ];
+  const result = await lspCompletions({ complete: async () => candidates })(f.context);
+  assert.ok(!result.options.some(o => o.label.startsWith('bad_')));
+  const option = result.options.find(o => o.label === 'unique_name');
+  option.apply(f.view, option, result.from, f.context.pos);
+  assert.equal(f.view.state.doc.toString(), 'before\nobj.unique_name\nafter');
 });
 
 test('LSP client serializes work, skips obsolete queued requests and retries after failure', async () => {

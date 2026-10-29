@@ -318,7 +318,7 @@ test('E15: literal method completion shows offline argument hints and preserves 
   assert.equal(await editorText(page), '"abc".upcase');
   await code().press('Control+z'); assert.equal(await editorText(page), '"abc".up');
   await code().press('Control+Shift+Z'); assert.equal(await editorText(page), '"abc".upcase');
-  for (const [doc, label, signature] of [['[].fe', 'fetch', 'Array#fetch(index'], ['{}.fe', 'fetch', 'Hash#fetch(key'], ['unknown.sp', 'split', 'String#split']]) {
+  for (const [doc, label, signature] of [['[].fe', 'fetch', 'Array#fetch(index'], ['{}.fe', 'fetch', 'Hash#fetch(key'], ['[1, 2].each_with_in', 'each_with_index', 'Array#each_with_index'], ['{a: 1}.ma', 'map', 'Hash#map'], ['unknown.sp', 'split', 'String#split']]) {
     await code().fill(doc); await page.locator('#editor-complete').click(); await completions();
     await option(label).waitFor(); await info.filter({ hasText: signature }).waitFor();
     await option(label).click(); assert.equal(await editorText(page), doc.replace(/\w+$/, label));
@@ -507,6 +507,19 @@ test('E20: LSP startup keeps editing, saving and execution available and skips a
   await page.locator('#completion-state[data-state="ready"]').waitFor();
   assert.equal(await page.evaluate(() => window.startupCalls.includes('obj.old')), false);
   assert.equal(await editorText(page), 'puts "startup edit"');
+});
+
+test('E21: changing a fallback prefix re-queries LSP and finds an unsaved method', async () => {
+  const doc = 'class CacheProbe; def unique_cache_method; end; end\nCacheProbe.new.ea';
+  await code().fill(doc); await code().press('Control+End'); await code().press('Control+Space'); await completions();
+  await option('each').waitFor();
+  assert.equal(await option('unique_cache_method').count(), 0);
+  await code().press('Backspace'); await code().press('Backspace');
+  await page.keyboard.insertText('unique_');
+  await option('unique_cache_method').waitFor(); await completions();
+  assert.match(await option('unique_cache_method').textContent(), /LSP/);
+  await option('unique_cache_method').click();
+  assert.equal(await editorText(page), doc.replace(/ea$/, 'unique_cache_method'));
 });
 
 test('E11: runtime and syntax errors navigate without changing code, saved state or history', async () => {
