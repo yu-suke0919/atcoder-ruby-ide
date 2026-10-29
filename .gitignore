@@ -1,6 +1,7 @@
 node_modules/
 dist/
 vendor/ruby/
+vendor/ruby-lsp/
 .cache/
 test-results/
 *.log

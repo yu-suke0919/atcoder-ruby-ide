@@ -1,7 +1,7 @@
 //! Test-only stdio transport. All execution and document behavior comes from the app library.
 use atcoder_ruby_ide::{
-    load_samples, save_samples, CollectionLibrary, DocumentStore, ProblemLibrary, RunEvent,
-    RunRequest, Runner,
+    load_samples, save_samples, CollectionLibrary, DocumentStore, ProblemLibrary, RubyLsp,
+    RunEvent, RunRequest, Runner,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -70,6 +70,7 @@ fn main() {
         "ATCODER_IDE_UI_TIMEOUT_MS must be 1..=5000"
     );
     let runner = Runner::new(Duration::from_millis(timeout_ms), 1048576);
+    let lsp = RubyLsp::default();
     let mut cleanup = RunnerCleanup {
         runner: &runner,
         worker: None,
@@ -82,6 +83,16 @@ fn main() {
         let request: Request = serde_json::from_str(&line.unwrap()).unwrap();
         let args = request.args;
         let result: Result<Value, String> = (|| match request.command.as_str() {
+            "lsp_start" => Ok(json!(lsp.start(
+                &ruby,
+                &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../vendor/ruby-lsp")
+            )?)),
+            "lsp_complete" => Ok(lsp.complete(
+                args["code"].as_str().ok_or("コードがありません")?,
+                serde_json::from_value(args["line"].clone()).map_err(|e| e.to_string())?,
+                serde_json::from_value(args["character"].clone()).map_err(|e| e.to_string())?,
+            )?),
+            "lsp_stop" => Ok(json!(lsp.stop())),
             "ruby_info" => {
                 let result = Runner::new(Duration::from_secs(5), 16384)
                     .prepare(RunRequest {
@@ -189,6 +200,7 @@ fn main() {
                 serde_json::from_value(args["cases"].clone()).map_err(|e| e.to_string())?
             )?)),
             "shutdown" => {
+                lsp.stop();
                 cleanup.stop_and_wait();
                 Ok(Value::Null)
             }

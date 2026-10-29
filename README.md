@@ -12,6 +12,7 @@ Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使
 - [AtCoder 問題の取り込みと保存](docs/problem-library.md)
 - [問題文の数式と画像](docs/problem-presentation.md)
 - [Rubyエディタの編集支援](docs/code-editor.md)
+- [Ruby LSP起動基盤（画面への接続は次の段階）](docs/ruby-lsp.md)
 - [AtCoderとのRuby実行環境の整合と残る差](docs/atcoder-runtime.md)
 - [実行エラーからコードへ移動](docs/run-errors.md)
 
@@ -69,6 +70,7 @@ Rust は `rust-toolchain.toml`、npm と Cargo の依存は各ロックファイ
 ```powershell
 npm ci
 npm run prepare:ruby
+npm run prepare:lsp
 npm start
 ```
 
@@ -80,6 +82,7 @@ Windows のデスクトップアプリは `npm start` による開発時も同�
 ```powershell
 npm run prepare:ruby
 $env:RUBY_PATH = (Resolve-Path vendor/ruby/bin/ruby.exe).Path
+npm run prepare:lsp
 npm test
 cargo fmt --all --check
 ```
@@ -90,6 +93,7 @@ Linux の共通・画面テストは次のコマンドで実行します。
 
 ```bash
 npm run prepare:gems
+npm run prepare:lsp
 npm test
 cargo fmt --all --check
 npm run test:e2e
@@ -139,7 +143,7 @@ npm run package:win
 ```
 
 Ruby は公式配布元から取得し、[固定した SHA-256](config/ruby-windows.json) を検証します。
-配布物は `artifacts/`、容量と Ruby 全ファイルのハッシュは `artifacts/reports/` に生成します。
+配布物は `artifacts/`、容量とRuby・LSPの全ファイルのハッシュは `artifacts/reports/` に生成します。`ruby-lsp/`の固定bundleも両配布物へ同梱し、画面への接続に先立って未保存コードからの補完取得を検証します。
 [GitHub Actions](.github/workflows/ci.yml) は Linux の共通・画面テストと、Windows の共通テスト・ビルド・ZIP 展開相当のアプリ・NSIS インストール後のアプリ起動スモークテストを実行します。
 成功した Windows ジョブの Artifacts から ZIP またはインストーラーを取得できます。
 
