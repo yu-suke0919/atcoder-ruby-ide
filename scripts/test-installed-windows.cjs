@@ -5,6 +5,7 @@ const path = require('node:path');
 const { tmpdir } = require('node:os');
 const assert = require('node:assert/strict');
 const { launch, close } = require('../tests/e2e/native.cjs');
+const { verifyLsp } = require('../tests/e2e/lsp.cjs');
 const execute = promisify(execFile);
 
 async function main() {
@@ -22,8 +23,10 @@ async function main() {
   let app;
   try {
     process.env.APP_EXE = executable;
-    app = await launch(profile); // Removes Ruby from PATH and verifies the app's actual Ruby path.
+    app = await launch(profile, { hostEnv: { HTTP_PROXY: 'http://127.0.0.1:1', HTTPS_PROXY: 'http://127.0.0.1:1' } }); // Removes Ruby from PATH and verifies the app's actual Ruby path.
     const page = app.page;
+    await page.context().setOffline(true);
+    await verifyLsp(page);
     await page.getByRole('button', { name: '実行', exact: true }).click();
     await page.getByTestId('run-status').filter({ hasText: '正常終了' }).waitFor();
     assert.equal(await page.getByTestId('stdout').textContent(), '6 test\n');
@@ -36,7 +39,7 @@ async function main() {
     await page.getByRole('button', { name: '実行', exact: true }).click();
     await page.getByTestId('run-status').filter({ hasText: '正常終了' }).waitFor();
     assert.equal(await page.getByTestId('stdout').textContent(), await readFile(path.join(root, 'tests/fixtures/runtime-gems.txt'), 'utf8'));
-    console.log('NSIS smoke passed: installed exe, runtime files, sample, bundled extensions and AtCoder gems without system Ruby');
+    console.log('NSIS smoke passed: installed exe, runtime files, offline LSP, sample, bundled extensions and AtCoder gems without system Ruby');
   } finally {
     if (app) await close(app);
     await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });

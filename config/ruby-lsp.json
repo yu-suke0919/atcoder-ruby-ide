@@ -1,0 +1,13 @@
+{
+  "source": "https://github.com/Shopify/ruby-lsp/tree/v0.26.11",
+  "gems": [
+    { "name": "ruby-lsp", "version": "0.26.11", "sha256": "4cc8f1587237ff8c9031680b5491df901a82559eeaa1ae96863ffe700b32583d" },
+    { "name": "language_server-protocol", "version": "3.17.0.6", "sha256": "5ef2c0c138f8267e1bc631d3328347d354f96724b0af22f2c79516120443b7f0" }
+  ],
+  "bundledGems": [
+    { "name": "prism", "version": "1.5.3" },
+    { "name": "rbs", "version": "3.8.0" },
+    { "name": "logger", "version": "1.6.4" },
+    { "name": "bundler", "version": "2.6.9" }
+  ]
+}

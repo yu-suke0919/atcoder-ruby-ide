@@ -9,14 +9,14 @@ const execute = promisify(execFile);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const system = name => path.join(process.env.SystemRoot, 'System32', name);
 
-async function launch(root) {
+async function launch(root, { hostEnv = {} } = {}) {
   assert.equal(process.platform, 'win32', 'Native GUI tests require Windows');
   const executable = path.resolve(process.env.APP_EXE);
   const server = net.createServer();
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
   await new Promise(resolve => server.close(resolve));
-  const env = { ...process.env };
+  const env = { ...process.env, ...hostEnv };
   for (const key of Object.keys(env)) {
     if (['PATH', 'RUBY_PATH', 'RUBYOPT', 'RUBYLIB', 'BUNDLE_GEMFILE', 'GEM_HOME', 'GEM_PATH'].includes(key.toUpperCase())) delete env[key];
   }

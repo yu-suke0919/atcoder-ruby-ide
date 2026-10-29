@@ -45,3 +45,6 @@ path = "../tests/contract.rs"
 [[test]]
 name = "library"
 path = "../tests/library.rs"
+[[test]]
+name = "ruby_lsp"
+path = "../tests/ruby_lsp.rs"

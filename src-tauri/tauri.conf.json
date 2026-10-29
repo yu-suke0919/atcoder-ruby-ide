@@ -14,7 +14,7 @@
     "active": true,
     "targets": ["nsis"],
     "icon": ["icons/32x32.png", "icons/icon.ico"],
-    "resources": { "../vendor/ruby/": "ruby/" },
+    "resources": { "../vendor/ruby/": "ruby/", "../vendor/ruby-lsp/": "ruby-lsp/" },
     "windows": { "webviewInstallMode": { "type": "downloadBootstrapper" }, "nsis": { "installMode": "currentUser", "compression": "lzma" } }
   }
 }

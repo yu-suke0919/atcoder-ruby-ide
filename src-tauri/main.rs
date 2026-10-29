@@ -2,8 +2,8 @@
 
 use atcoder_ruby_ide::{
     load_samples, save_samples, CollectionLibrary, CollectionView, DocumentResult, DocumentStore,
-    Problem, ProblemLibrary, ProblemWorkspace, RegisteredCollection, RepairedCollectionTask,
-    RunEvent, RunRequest, Runner, SampleCase, SampleResult,
+    LspInfo, Problem, ProblemLibrary, ProblemWorkspace, RegisteredCollection,
+    RepairedCollectionTask, RubyLsp, RunEvent, RunRequest, Runner, SampleCase, SampleResult,
 };
 use serde::Serialize;
 use std::path::PathBuf;
@@ -16,6 +16,55 @@ struct AppState {
     runner: Arc<Runner>,
     documents: Arc<Mutex<DocumentStore>>,
     collection_lock: Arc<Mutex<()>>,
+    lsp: Arc<RubyLsp>,
+}
+
+fn lsp_resources(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    #[cfg(windows)]
+    {
+        app.path()
+            .resolve("ruby-lsp", tauri::path::BaseDirectory::Resource)
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../vendor/ruby-lsp"))
+    }
+}
+
+#[tauri::command]
+async fn lsp_start(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<LspInfo, String> {
+    let lsp = Arc::clone(&state.lsp);
+    let ruby = ruby_path(&app)?;
+    let resources = lsp_resources(&app)?;
+    tauri::async_runtime::spawn_blocking(move || lsp.start(&ruby, &resources))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn lsp_complete(
+    state: tauri::State<'_, AppState>,
+    code: String,
+    line: u32,
+    character: u32,
+) -> Result<serde_json::Value, String> {
+    let lsp = Arc::clone(&state.lsp);
+    tauri::async_runtime::spawn_blocking(move || lsp.complete(&code, line, character))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn lsp_stop(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    let lsp = Arc::clone(&state.lsp);
+    tauri::async_runtime::spawn_blocking(move || lsp.stop())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 fn ruby_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -393,9 +442,13 @@ fn main() {
             runner: Runner::new(Duration::from_secs(5), 1048576),
             documents: Arc::new(Mutex::new(DocumentStore::default())),
             collection_lock: Arc::new(Mutex::new(())),
+            lsp: Arc::new(RubyLsp::default()),
         })
         .invoke_handler(tauri::generate_handler![
             ruby_info,
+            lsp_start,
+            lsp_complete,
+            lsp_stop,
             run_ruby,
             stop_ruby,
             document_open,
@@ -420,6 +473,7 @@ fn main() {
                 let state = app.state::<AppState>();
                 state.runner.stop();
                 state.runner.wait_idle();
+                state.lsp.stop();
             }
         });
 }

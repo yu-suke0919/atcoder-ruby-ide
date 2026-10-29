@@ -20,16 +20,21 @@ async function main() {
     await mkdir(portable, { recursive: true });
     await cp(path.join(root, 'target/release/atcoder-ruby-ide.exe'), path.join(portable, 'atcoder-ruby-ide.exe'));
     await cp(path.join(root, 'vendor/ruby'), path.join(portable, 'ruby'), { recursive: true });
+    await cp(path.join(root, 'vendor/ruby-lsp'), path.join(portable, 'ruby-lsp'), { recursive: true });
     const source = await createManifest(path.join(root, 'vendor/ruby'));
+    const lsp = await createManifest(path.join(root, 'vendor/ruby-lsp'));
     const { productName } = require('../src-tauri/tauri.conf.json');
     const installer = `${productName}_${version}_x64-setup.exe`;
     await cp(path.join(root, 'target/release/bundle/nsis', installer), path.join(artifacts, `${baseName}-setup.exe`));
     await mkdir(path.join(artifacts, 'reports'), { recursive: true });
     await writeFile(path.join(artifacts, 'reports/ruby-manifest.json'), JSON.stringify(source, null, 2));
+    await writeFile(path.join(artifacts, 'reports/lsp-manifest.json'), JSON.stringify(lsp, null, 2));
     return;
   }
   const source = JSON.parse(await readFile(path.join(artifacts, 'reports/ruby-manifest.json'), 'utf8'));
   await verifyRuntime(path.join(portable, 'ruby'), source);
+  const lsp = JSON.parse(await readFile(path.join(artifacts, 'reports/lsp-manifest.json'), 'utf8'));
+  await verifyRuntime(path.join(portable, 'ruby-lsp'), lsp);
   const zip = path.join(artifacts, `${baseName}-portable.zip`);
   await rm(zip, { force: true });
   await execute(require('7zip-bin').path7za, ['a', '-tzip', '-mx9', '-mmt2', '-bd', '-bsp0', zip, '.'], { cwd: portable, maxBuffer: 1024 * 1024 });
@@ -38,7 +43,10 @@ async function main() {
     ruby: require('../config/ruby-windows.json'),
     rubyFileCount: Object.keys(source).length,
     rubyBytes: bytes(source),
-    expandedBytes: bytes(source) + (await stat(path.join(portable, 'atcoder-ruby-ide.exe'))).size,
+    lsp: require('../config/ruby-lsp.json'),
+    lspFileCount: Object.keys(lsp).length,
+    lspBytes: bytes(lsp),
+    expandedBytes: bytes(source) + bytes(lsp) + (await stat(path.join(portable, 'atcoder-ruby-ide.exe'))).size,
     executableBytes: (await stat(path.join(portable, 'atcoder-ruby-ide.exe'))).size,
     portableZipBytes: (await stat(zip)).size,
     installerBytes: (await stat(path.join(artifacts, `${baseName}-setup.exe`))).size

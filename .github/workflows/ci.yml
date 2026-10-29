@@ -33,6 +33,7 @@ jobs:
           ruby-version: ${{ steps.ruby.outputs.version }}
       - run: npm ci
       - run: npm run prepare:gems
+      - run: npm run prepare:lsp
       - run: cargo fmt --all --check
       - run: npm test
       - run: npx playwright install --with-deps chromium
@@ -62,6 +63,7 @@ jobs:
           key: tauri-desktop
       - run: npm ci
       - run: npm run prepare:ruby
+      - run: npm run prepare:lsp
       - name: Unit tests with the bundled Ruby
         shell: pwsh
         run: |
