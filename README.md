@@ -12,13 +12,13 @@ Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使
 - [AtCoder 問題の取り込みと保存](docs/problem-library.md)
 - [問題文の数式と画像](docs/problem-presentation.md)
 - [Rubyエディタの編集支援](docs/code-editor.md)
-- [Ruby LSP起動基盤（画面への接続は次の段階）](docs/ruby-lsp.md)
+- [Ruby LSPによる補完](docs/ruby-lsp.md)
 - [AtCoderとのRuby実行環境の整合と残る差](docs/atcoder-runtime.md)
 - [実行エラーからコードへ移動](docs/run-errors.md)
 
 ## 機能
 
-- Rubyの色分け、行番号、自動インデントと選択行の字下げ・解除、括弧補完、標準型のメソッド補完・引数ヒント・定型コード、検索・置換、Undo／Redo
+- Rubyの色分け、行番号、自動インデントと選択行の字下げ・解除、括弧補完、Ruby LSPと標準型のメソッド補完・引数ヒント・定型コード、検索・置換、Undo／Redo
 - UTF-8 ファイルの読み込み、上書き保存、名前を付けて保存
 - 標準入力付き実行、stdout / stderr の逐次表示、実行時間の表示
 - 構文・実行時エラーの行番号表示と、コードの該当行へのジャンプ・強調
@@ -143,7 +143,7 @@ npm run package:win
 ```
 
 Ruby は公式配布元から取得し、[固定した SHA-256](config/ruby-windows.json) を検証します。
-配布物は `artifacts/`、容量とRuby・LSPの全ファイルのハッシュは `artifacts/reports/` に生成します。`ruby-lsp/`の固定bundleも両配布物へ同梱し、画面への接続に先立って未保存コードからの補完取得を検証します。
+配布物は `artifacts/`、容量とRuby・LSPの全ファイルのハッシュは `artifacts/reports/` に生成します。`ruby-lsp/`の固定bundleも両配布物へ同梱し、画面とバックエンドの両方で未保存コードからの補完取得を検証します。
 [GitHub Actions](.github/workflows/ci.yml) は Linux の共通・画面テストと、Windows の共通テスト・ビルド・ZIP 展開相当のアプリ・NSIS インストール後のアプリ起動スモークテストを実行します。
 成功した Windows ジョブの Artifacts から ZIP またはインストーラーを取得できます。
 
@@ -160,5 +160,5 @@ Ruby は公式配布元から取得し、[固定した SHA-256](config/ruby-wind
 | 元に戻す／やり直す | Ctrl+Z / Ctrl+Y（Ctrl+Shift+Z） |
 
 コードは UTF-8 で保存します。標準入力はソースと別に、その実行時だけ渡します。
-補完候補は手動で開き、上下キーで選択、Enterで挿入、Escで閉じます。Tabは字下げに使います。キーワード・標準メソッド・文書内の単語と、if／each／整数列入力の定型コードをオフラインで提供します。文字列・配列・ハッシュのリテラルと、単純な直接代入に続くローカル変数には型別のメソッド候補・引数説明を表示します。詳細は[エディタ仕様](docs/code-editor.md)を参照してください。
+補完候補は手動で開き、上下キーで選択、Enterで挿入、Escで閉じます。初回に同梱Ruby LSPを起動し、自作クラスの未保存の定義も補完に使います。候補がない場合や接続失敗時は基本候補を使い、「再試行」から復旧できます。Tabは字下げに使います。キーワード・標準メソッド・文書内の単語と、if／each／整数列入力の定型コードをオフラインで提供します。文字列・配列・ハッシュのリテラルと、単純な直接代入に続くローカル変数には型別のメソッド候補・引数説明を表示します。詳細は[エディタ仕様](docs/code-editor.md)を参照してください。
 EOF を含む標準入力や日本語出力も Ruby の事前インストールなしで利用できます。

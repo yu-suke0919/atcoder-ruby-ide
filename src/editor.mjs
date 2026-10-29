@@ -6,7 +6,7 @@ import {
   autocompletion, completionKeymap, startCompletion, closeCompletion,
   search, searchKeymap, openSearchPanel,
 } from './vendor/editor/codemirror.mjs';
-import { rubyCompletions } from './ruby-completion.mjs';
+import { lspCompletions } from './lsp-completion.mjs';
 
 const setErrorPosition = StateEffect.define();
 const errorPosition = StateField.define({
@@ -57,16 +57,17 @@ function complete(view) {
   return startCompletion(view);
 }
 
-export function createEditor(parent, initial, onChange, onCursor) {
+export function createEditor(parent, initial, onChange, onCursor, completionClient) {
   const writable = new Compartment();
   let readOnly = false;
+  let revision = 0;
   const editable = () => [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)];
-  const state = doc => EditorState.create({ doc, extensions: [
+  const state = (doc, currentRevision = revision) => EditorState.create({ doc, extensions: [
     writable.of(editable()), EditorState.tabSize.of(2), indentUnit.of('  '),
     EditorView.contentAttributes.of({ id: 'code-editor', 'data-testid': 'code-editor', 'aria-label': 'Ruby コード', tabindex: '0', spellcheck: 'false', autocapitalize: 'off' }),
     lineNumbers(), drawSelection(), history(), errorPosition, StreamLanguage.define(ruby), indentOnInput(),
     bracketMatching(), closeBrackets(), syntaxHighlighting(colors), theme,
-    autocompletion({ override: [rubyCompletions], activateOnTyping: false, defaultKeymap: false, filterStrict: true }),
+    autocompletion({ override: [lspCompletions(completionClient, () => revision === currentRevision)], activateOnTyping: false, defaultKeymap: false, filterStrict: true }),
     EditorView.domEventHandlers({ compositionstart: (_event, view) => { closeCompletion(view); return false; } }),
     search({ top: true }), EditorState.phrases.of(phrases),
     keymap.of([
@@ -98,7 +99,7 @@ export function createEditor(parent, initial, onChange, onCursor) {
   const view = new EditorView({ parent, state: state(initial) });
   return {
     get value() { return view.state.doc.toString(); },
-    set value(value) { view.setState(state(value)); },
+    set value(value) { revision++; view.setState(state(value)); },
     set errorLine(line) {
       const position = Number.isInteger(line) && line > 0 && line <= view.state.doc.lines ? view.state.doc.line(line).from : null;
       if (view.state.field(errorPosition) !== position) view.dispatch({ effects: setErrorPosition.of(position) });

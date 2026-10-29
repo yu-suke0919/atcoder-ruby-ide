@@ -3,6 +3,9 @@ const invoke = (...args) => nativeInvoke(...args).catch(error => { throw new Err
 const appWindow = window.__TAURI__.window.getCurrentWindow();
 
 export const ide = {
+  lspStart: () => invoke('lsp_start'),
+  lspComplete: (code, line, character) => invoke('lsp_complete', { code, line, character }),
+  lspStop: () => invoke('lsp_stop'),
   listCollections: () => invoke('collection_list'),
   registerCollection: url => invoke('collection_register', { url }),
   fetchCollectionTask: (url, task) => invoke('collection_fetch_task', { url, task }),

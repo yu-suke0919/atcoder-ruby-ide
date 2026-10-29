@@ -28,6 +28,7 @@
           <div class="library-actions"><button id="collections" class="quiet-button" disabled>問題集</button><button id="problem-library" class="quiet-button" disabled>AtCoder の問題</button><button id="problem-toggle" class="quiet-button" aria-controls="problem-panel" aria-expanded="false" disabled>問題文を表示する</button></div>
         </div>
         <div id="editor-host" class="editor-container"></div>
+        <div class="completion-state"><span id="completion-state" data-state="idle" role="status" aria-live="polite">補完は初回利用時に準備します</span><button id="completion-retry" class="quiet-button" hidden>再試行</button></div>
         <div class="editor-footer"><span id="file-path" title="未保存のファイル">無題.rb</span><button id="editor-complete" class="quiet-button" title="Ctrl+Space">補完</button><button id="editor-search" class="quiet-button" title="Ctrl+F / Ctrl+H">検索・置換</button><span id="cursor-position">Ln 1, Col 1</span></div>
       </section>
 
