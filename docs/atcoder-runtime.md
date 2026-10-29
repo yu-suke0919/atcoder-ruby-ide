@@ -9,8 +9,16 @@
 - [新ジャッジシステムの運用開始告知](https://atcoder.jp/posts/1594)
 - [RubyInstaller公式の配布情報とSHA-256](https://github.com/oneclick/rubyinstaller.org-website/blob/master/_data/downloads.yaml)
 
-対象はCRubyの `Ruby 3.4 (ruby 3.4.5)`。Windows同梱版をRubyInstaller 3.4.5-1 x64、Linux CIをRuby 3.4.5へ揃える。TruffleRubyは対象外。
+AtCoderの公開環境はCRubyの `Ruby 3.4 (ruby 3.4.5)`。本アプリは3.4系の最新安定パッチを検証して採用し、Windows同梱版とLinux CIを同じパッチへ揃える。パッチ差による修正・標準ライブラリ・性能の違いは許容し、AtCoderと完全一致する実行環境とは扱わない。TruffleRubyは対象外。
 公式情報の取得は開発時に行い、参照元・確認日・採用バージョンを設定とこの資料へ残す。アプリの利用時は通信せず、配布物だけでRubyと採用gemを実行する。
+
+## Rubyのパッチ更新
+
+`npm run update:ruby` は[Ruby公式のリリース一覧](https://github.com/ruby/www.ruby-lang.org/blob/master/_data/releases.yml)から最新の安定版3.4.xを選び、RubyInstaller公式の配布一覧から同じパッチのWindows x64・Devkitなし7zを取得する。同じパッチのInstaller再リリースは数値で比較して最新を選ぶ。3.5・4.x・プレビュー版・別アーキテクチャへは更新しない。対応するWindows版や正しいSHA-256がない場合、既存バージョンへ戻る場合はエラーにする。
+
+アーカイブのSHA-256を検証し、gemの準備まで成功してから `config/ruby-windows.json` の採用バージョン・取得元・ハッシュを更新する。取得や検証の失敗時は固定情報と既存ランタイムを維持する。更新後の差分と両OSのテストを確認して採用する。
+
+通常の `prepare:ruby`・ビルド・CIは固定情報だけを使い、最新版の探索や自動更新を行わない。Linux CIも同じ設定からRubyのパッチを読み取る。開発用Rubyもそのパッチへ揃える。AtCoderの公開バージョンと追加gemの固定情報は `config/atcoder-runtime.json` に分けて残し、Ruby本体の更新で追加gemを自動更新しない。
 
 ## 追加するgem
 
@@ -24,7 +32,7 @@ WindowsでC拡張のビルドや外部DLLの追加が不要な次の5つを、�
 | rgl | 0.6.6 | グラフ |
 | sorted_containers | 1.1.0 | ソート済み集合・配列など |
 
-必要な依存gemも固定する。prime 0.1.3、rexml 3.4.4、pairing_heap 3.1.3、stream 0.5.6を採用する。依存gemの具体的なバージョンはAtCoder資料で保証されていないため、このプロジェクトで動作確認した組合せとして扱う。primeが依存するforwardableとsingletonはRuby 3.4.5の標準同梱版を使う。
+必要な依存gemも固定する。prime 0.1.3、rexml 3.4.4、pairing_heap 3.1.3、stream 0.5.6を採用する。依存gemの具体的なバージョンはAtCoder資料で保証されていないため、このプロジェクトで動作確認した組合せとして扱う。primeが依存するforwardableとsingletonは採用Rubyの標準同梱版を使う。
 
 `config/atcoder-runtime.json`を取得元・バージョン・SHA-256の固定情報とする。RubyGemsから取得した `.gem` はすべてハッシュ検証してから、ネットワークで依存解決せずに指定先へインストールする。別プラットフォームのgemやC拡張は拒否する。
 WindowsはRubyの展開先へ追加してから配布し、Linuxの開発・CIは `npm run prepare:gems` で実行用Rubyへ同じgemを追加する。標準ライブラリの利用方法は変えない。
@@ -57,6 +65,7 @@ immutable-rubyとsorted_setはgem本体がRubyでも、依存先にrbtreeのC拡
 
 | 項目 | AtCoderの公式設定 | このアプリ |
 | --- | --- | --- |
+| Rubyのパッチ | 公開情報は3.4.5 | 検証して固定した3.4系の最新パッチ |
 | OS・ビルド | Linux上のCRuby | WindowsはRubyInstaller、Linux CIはsetup-rubyのCRuby |
 | JIT | `ruby --jit Main.rb` | JITを指定しない。速度・メモリ使用量は同一にならない |
 | スタック | `RUBY_THREAD_VM_STACK_SIZE`を問題のメモリ上限に設定 | Rubyの既定値を使う |
@@ -69,7 +78,7 @@ immutable-rubyとsorted_setはgem本体がRubyでも、依存先にrbtreeのC拡
 ## 検証
 
 - 不正なgemアーカイブ・別プラットフォーム・C拡張を拒否し、既存のWindowsランタイムを壊さないことを確認する。
-- 実RunnerからRuby 3.4.5と採用gemのバージョン、代表的な処理、標準ライブラリ、日本語を含む入出力を確認する。
+- 実Runnerから固定したRubyのパッチと採用gemのバージョン、代表的な処理、標準ライブラリ、日本語を含む入出力を確認する。
 - 共通GUIで未保存・日本語パスのソースから追加gemを使い、期待出力との比較まで確認する。
 - Windowsのポータブル版とNSIS版で、システムRubyに依存せず追加gemを実行できることを確認する。
 - RUBYOPTによる追加require・RubyGems無効化、RUBYLIBによる標準ライブラリの置換、Bundlerの外部Gemfile、GEM_HOME・GEM_PATHが別環境を指す場合も、実RunnerとWindows配布版が採用gemを同じバージョンで使えることを確認する。

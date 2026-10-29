@@ -50,8 +50,10 @@ Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使
 - `AtCoder-Ruby-IDE-0.2.0-x64-portable.zip`：展開して `atcoder-ruby-ide.exe` を起動
 - `AtCoder-Ruby-IDE-0.2.0-x64-setup.exe`：ユーザー単位の NSIS インストーラー
 
-どちらもAtCoderのCRubyと同じバージョンのRubyInstaller 3.4.5-1 x64を含み、同梱の `ruby/bin/ruby.exe` を直接起動します。
+どちらも検証済みのRuby 3.4系のパッチに対応するRubyInstaller x64を含み、同梱の `ruby/bin/ruby.exe` を直接起動します。採用パッチは `config/ruby-windows.json` へ固定し、AtCoderの公開環境（3.4.5）とのパッチ差を許容します。
 ac-library-rb 1.2.0、bitarray 1.3.1、faster_prime 1.0.2、rgl 0.6.6、sorted_containers 1.1.0と必要な依存gemも同梱します。対応範囲・未同梱gem・JITやOSの差は[実行環境の資料](docs/atcoder-runtime.md)を参照してください。
+
+Ruby本体を更新するときは `npm run update:ruby` を実行します。公式一覧から最新の安定版3.4.xと対応するWindows版を選び、SHA-256検証・gemの準備後に `config/ruby-windows.json` を更新します。その差分と両OSのテストを確認して採用してください。通常のビルド・CI・アプリ起動時には自動更新しません。
 Ruby の標準ライブラリ・同梱ネイティブ拡張・ライセンスを保持し、オフライン文書と C ヘッダ（share/・include/）は除外します。Ruby の COPYING・LEGAL は ruby/licenses/ruby/ に保存します。ネイティブ gem のビルドは対象外です。ZIP はフォルダー全体を保持してください。
 単体のアプリ exe だけを取り出すと Ruby を実行できません。
 
@@ -73,7 +75,7 @@ npm start
 `npm ci` は数式用資産とCodeMirrorのバンドル・ライセンスを `src/vendor/` に生成します。エディタの依存や `scripts/codemirror.mjs` を変更した場合は `npm run prepare:editor` で再生成します。表示時にCDNや外部サービスへ接続しません。
 
 Windows のデスクトップアプリは `npm start` による開発時も同梱 Ruby を使います。`RUBY_PATH` や PATH の別の Ruby には切り替わりません。
-共通テスト（`npm test`）とブラウザー用テストホストは、OS にかかわらず `RUBY_PATH`、未指定なら PATH の `ruby` を使います。Linuxでは書き込み可能なRuby 3.4.5を用意して `npm run prepare:gems` でそのRubyの標準gemディレクトリへ固定gemを追加します。実行時も同じディレクトリだけを探索し、GEM_HOME・GEM_PATHやユーザー用gemの影響を受けません。Windows の共通テストでは、CI と同じく準備済みの同梱 Ruby を指定します。
+共通テスト（`npm test`）とブラウザー用テストホストは、OS にかかわらず `RUBY_PATH`、未指定なら PATH の `ruby` を使います。Linuxでは `config/ruby-windows.json` の `rubyVersion` と同じ、書き込み可能なRubyを用意して `npm run prepare:gems` で標準gemディレクトリへ固定gemを追加します。実行時も同じディレクトリだけを探索し、GEM_HOME・GEM_PATHやユーザー用gemの影響を受けません。Windows の共通テストでは、CI と同じく準備済みの同梱 Ruby を指定します。
 
 ```powershell
 npm run prepare:ruby

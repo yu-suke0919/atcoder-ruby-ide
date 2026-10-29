@@ -11,7 +11,7 @@ require 'rgl/adjacency'
 require 'rgl/topsort'
 require 'sorted_containers'
 
-puts RUBY_VERSION
+puts RUBY_VERSION.split('.')[0, 2].join('.')
 %w[prime rexml pairing_heap stream ac-library-rb bitarray faster_prime rgl sorted_containers].each do |name|
   puts "#{name}:#{Gem.loaded_specs.fetch(name).version}"
 end
