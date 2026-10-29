@@ -479,20 +479,86 @@ fn temporary_source_is_removed() {
 }
 
 #[test]
-fn r04_output_cap_after_manual_stop_drops_incomplete_utf8() {
-    let runner = Runner::new(Duration::from_secs(5), 4);
-    let stopped = Arc::clone(&runner);
-    let result = runner
-        .prepare(request("print 'あ' * 200", ""))
-        .unwrap()
-        .execute(&ruby(), move |_| {
-            stopped.stop();
+fn r04_output_cap_precedes_notification_stop_and_drops_incomplete_utf8() {
+    for stream in ["STDOUT", "STDERR"] {
+        let runner = Runner::new(Duration::from_secs(5), 4);
+        let stopped = Arc::clone(&runner);
+        let result = runner
+            .prepare(request(&format!("{stream}.write('あ' * 200)"), ""))
+            .unwrap()
+            .execute(&ruby(), move |_| {
+                stopped.stop();
+            })
+            .unwrap();
+        assert_eq!(result.status, "output-limit", "{stream}");
+        assert!(result.output_limit_reached);
+        let (captured, other) = if stream == "STDOUT" {
+            (&result.stdout, &result.stderr)
+        } else {
+            (&result.stderr, &result.stdout)
+        };
+        assert_eq!(captured, "あ");
+        assert!(other.is_empty());
+        assert!(!runner.busy());
+    }
+}
+
+fn with_delayed_notification(code: &str, expected: &str) -> atcoder_ruby_ide::RunResult {
+    let runner = Runner::new(Duration::from_secs(5), 1048576);
+    let mut req = request(code, "");
+    req.expected_output = Some(expected.into());
+    let prepared = runner.prepare(req).unwrap();
+    let (entered, notified) = mpsc::channel();
+    let (release, waiting) = mpsc::channel();
+    let gate = Mutex::new(Some(waiting));
+    let chunks = Arc::new(Mutex::new((Vec::new(), Vec::new())));
+    let received = Arc::clone(&chunks);
+    let running = std::thread::spawn(move || {
+        prepared.execute(&ruby(), move |event| {
+            let first = gate.lock().unwrap().take();
+            if let Some(waiting) = first {
+                let _ = entered.send(event.bytes.len());
+                let _ = waiting.recv_timeout(Duration::from_secs(10));
+            }
+            let mut chunks = received.lock().unwrap();
+            if event.stream == "stdout" {
+                chunks.0.extend(event.bytes);
+            } else {
+                chunks.1.extend(event.bytes);
+            }
         })
-        .unwrap();
-    assert_eq!(result.status, "stopped");
-    assert!(result.output_limit_reached);
-    assert_eq!(result.stdout, "あ");
+    });
+    let first = notified.recv_timeout(Duration::from_secs(8));
+    if first.is_ok() {
+        // Hold the first notification beyond the real five-second process limit.
+        std::thread::sleep(Duration::from_secs(6));
+    }
+    let _ = release.send(());
+    let result = running.join().unwrap().unwrap();
+    assert!(first.unwrap() < 1048576);
+    let chunks = chunks.lock().unwrap();
+    assert_eq!(chunks.0, result.stdout.as_bytes());
+    assert_eq!(chunks.1, result.stderr.as_bytes());
     assert!(!runner.busy());
+    result
+}
+
+#[test]
+fn delayed_notification_does_not_block_output_limit_detection() {
+    let result = with_delayed_notification("STDOUT.write('x' * (1024 * 1024 + 1)); sleep 10", "");
+    assert_eq!(result.status, "output-limit");
+    assert!(result.output_limit_reached);
+    assert_eq!(result.stdout, "x".repeat(1048576));
+    assert_eq!(result.comparison, None);
+}
+
+#[test]
+fn delayed_notification_after_process_exit_does_not_cause_timeout() {
+    let result = with_delayed_notification("puts '通知の待機'", "通知の待機\n");
+    assert_eq!(result.status, "completed");
+    assert!(!result.output_limit_reached);
+    assert_eq!(result.stdout, "通知の待機\n");
+    assert_eq!(result.comparison, Some(true));
 }
 
 #[cfg(unix)]

@@ -4,7 +4,7 @@ use serde::Serialize;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 #[derive(Default)]
@@ -198,17 +198,24 @@ impl PreparedRun {
             tree.kill();
         }
         let capture = Arc::new(Mutex::new(Capture::default()));
-        let output = Arc::new(output);
+        // Readers enforce limits independently of a slow notification consumer. Only
+        // captured bytes enter this queue, so its payload cannot exceed output_limit.
+        let (events, notifications) = mpsc::channel();
+        let notifier = std::thread::spawn(move || {
+            for event in notifications {
+                output(event);
+            }
+        });
         let stdout = self.read_stream(
             child.stdout.take().unwrap(),
             "stdout",
-            Arc::clone(&output),
+            events.clone(),
             Arc::clone(&capture),
         );
         let stderr = self.read_stream(
             child.stderr.take().unwrap(),
             "stderr",
-            output,
+            events,
             Arc::clone(&capture),
         );
         let input = self.request.stdin.as_bytes().to_vec();
@@ -246,6 +253,7 @@ impl PreparedRun {
         stderr
             .join()
             .map_err(|_| "標準エラーの受信に失敗しました。")?;
+        notifier.join().map_err(|_| "出力の通知に失敗しました。")?;
         cleanup(directory.path()).map_err(|e| format!("一時ファイルを削除できません: {e}"))?;
         if let Some(error) = wait_error {
             return Err(error);
@@ -285,16 +293,15 @@ impl PreparedRun {
         })
     }
 
-    fn read_stream<R, F>(
+    fn read_stream<R>(
         &self,
         mut reader: R,
         stream: &'static str,
-        output: Arc<F>,
+        output: mpsc::Sender<Output>,
         capture: Arc<Mutex<Capture>>,
     ) -> std::thread::JoinHandle<()>
     where
         R: Read + Send + 'static,
-        F: Fn(Output) + Send + Sync + 'static,
     {
         let runner = Arc::clone(&self.runner);
         std::thread::spawn(move || {
@@ -318,11 +325,11 @@ impl PreparedRun {
                         previous < runner.output_limit && data.bytes >= runner.output_limit;
                     (bytes, reached)
                 };
-                if !bytes.is_empty() {
-                    output(Output { stream, bytes });
-                }
                 if reached {
                     runner.stop_for("output-limit");
+                }
+                if !bytes.is_empty() {
+                    let _ = output.send(Output { stream, bytes });
                 }
             }
         })
