@@ -390,6 +390,125 @@ test('E16: local variables select typed methods, refresh hints after assignment 
   assert.equal(await page.locator('#save-state').textContent(), '保存済み');
 });
 
+test('E17: real LSP completes unsaved declarations with UTF-16 edits offline and preserves save-run', async () => {
+  const original = 'limit = 10\nclass EditorProbe; def unique_editor_method; 42; end; end\n"😀日本語"; puts EditorProbe.new.unique_ed';
+  const file = path.join(root, 'lsp 日本語.rb');
+  await code().fill(original);
+  await dialogs(app, () => code().press('Control+s'), [save(file)]);
+  await page.context().setOffline(true);
+  try {
+    await code().press('Control+End'); await code().press('Control+Space'); await completions();
+    await option('unique_editor_method').waitFor();
+    assert.match(await option('unique_editor_method').textContent(), /LSP/);
+    await page.locator('.cm-completionInfo').filter({ hasText: 'EditorProbe#unique_editor_method' }).waitFor();
+    assert.equal(await page.locator('#completion-state').getAttribute('data-state'), 'ready');
+    assert.equal(await page.locator('#save-state').textContent(), '保存済み');
+    await option('unique_editor_method').click();
+    const expected = original.replace(/unique_ed$/, 'unique_editor_method');
+    assert.equal(await editorText(page), expected);
+    await code().press('Control+z'); assert.equal(await editorText(page), original);
+    await code().press('Control+Shift+Z'); assert.equal(await editorText(page), expected);
+    await code().press('Control+s'); await page.waitForFunction(() => !document.getElementById('save').disabled);
+    assert.equal(await readFile(file, 'utf8'), expected);
+    await code().press('Control+Enter'); await page.locator('#run-status').filter({ hasText: /^正常終了$/ }).waitFor();
+    assert.equal(await page.locator('#stdout').textContent(), '42\n');
+    await page.setViewportSize({ width: 900, height: 650 });
+    await code().fill(original); await code().press('Control+End'); await code().press('Control+Space'); await completions();
+    await page.locator('.cm-completionInfo').filter({ hasText: 'EditorProbe#unique_editor_method' }).waitFor();
+    for (const selector of ['.cm-tooltip-autocomplete', '.cm-completionInfo', '.completion-state']) {
+      const bounds = await page.locator(selector).boundingBox();
+      assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 901 && bounds.y + bounds.height <= 651, JSON.stringify(bounds));
+    }
+    await page.screenshot({ path: 'test-results/lsp-completion-900.png' });
+    await code().fill('Math::P'); await code().press('Control+Space'); await completions();
+    await option('Math::PI').waitFor(); await option('Math::PI').click();
+    assert.equal(await editorText(page), 'Math::PI');
+  } finally { await page.context().setOffline(false); }
+});
+
+test('E18: pending LSP replies are discarded after edit, cursor move, Escape, save and document switch', async () => {
+  await page.evaluate(async () => {
+    const { ide } = await import('./bridge.js');
+    ide.lspStart = async () => ({});
+    ide.lspComplete = (code, _line, character) => code === 'obj.old' && character === 7
+      ? new Promise(resolve => { window.finishLsp = () => resolve([{ label: 'stale_method', kind: 2, textEdit: { newText: 'stale_method', range: { start: { line: 0, character: 4 }, end: { line: 0, character: 7 } } } }]); window.lspPending = true; })
+      : Promise.resolve([]);
+  });
+  for (const action of ['edit', 'cursor', 'escape', 'save', 'document']) {
+    await code().fill('obj.old'); await code().press('Control+End');
+    await page.evaluate(() => { window.lspPending = false; });
+    await code().press('Control+Space'); await page.waitForFunction(() => window.lspPending);
+    if (action === 'edit') await code().fill('fresh_text = 1');
+    if (action === 'cursor') await code().press('Home');
+    if (action === 'escape') await code().press('Escape');
+    if (action === 'save') {
+      await page.evaluate(async () => {
+        const { ide } = await import('./bridge.js');
+        ide.saveFile = () => new Promise(resolve => { window.finishLspSave = () => resolve({ canceled: true }); });
+      });
+      await code().press('Control+s');
+      assert.equal(await code().isEditable(), false);
+    }
+    if (action === 'document') await dialogs(app, () => page.locator('#new').click(), [discard(true)]);
+    const current = await editorText(page);
+    await page.evaluate(() => window.finishLsp());
+    await page.waitForTimeout(200);
+    assert.equal(await option('stale_method').count(), 0, action);
+    assert.equal(await editorText(page), current, action);
+    if (action === 'save') {
+      await page.evaluate(() => window.finishLspSave());
+      await page.waitForFunction(() => !document.getElementById('save').disabled);
+    }
+    await code().press('Escape');
+  }
+});
+
+test('E19: LSP failure keeps basic completion and execution available and retry restores real candidates', async () => {
+  await code().fill('"abc".up'); await code().press('Control+Space'); await completions();
+  await option('upcase').waitFor(); await code().press('Escape');
+  const first = await page.evaluate(() => window.__TAURI__.core.invoke('lsp_start'));
+  await page.evaluate(() => window.__TAURI__.core.invoke('lsp_stop'));
+  await code().fill('text = "abc"\ntext.up'); await code().press('Control+Space'); await completions();
+  await page.locator('#completion-state[data-state="failed"]').waitFor();
+  await option('upcase').waitFor();
+  assert.equal(await page.locator('#completion-retry').isVisible(), true);
+  await option('upcase').click();
+  assert.equal(await editorText(page), 'text = "abc"\ntext.upcase');
+  await code().fill('puts "still works"'); await code().press('Control+Enter');
+  await page.locator('#run-status').filter({ hasText: /^正常終了$/ }).waitFor();
+  assert.equal(await page.locator('#stdout').textContent(), 'still works\n');
+  await page.locator('#completion-retry').click();
+  await page.locator('#completion-state[data-state="ready"]').waitFor();
+  const next = await page.evaluate(() => window.__TAURI__.core.invoke('lsp_start'));
+  assert.notEqual(next.pid, first.pid);
+  await code().fill('class Recovered; def recovered_method; end; end\nRecovered.new.recovered_');
+  await code().press('Control+End'); await code().press('Control+Space'); await completions();
+  await option('recovered_method').waitFor();
+  assert.match(await option('recovered_method').textContent(), /LSP/);
+});
+
+test('E20: LSP startup keeps editing, saving and execution available and skips an obsolete request', async () => {
+  await page.evaluate(async () => {
+    const { ide } = await import('./bridge.js');
+    window.startupCalls = [];
+    ide.lspStart = () => new Promise(resolve => { window.finishLspStartup = resolve; });
+    ide.lspComplete = async code => { window.startupCalls.push(code); return []; };
+  });
+  await code().fill('obj.old'); await code().press('Control+Space');
+  await page.locator('#completion-state[data-state="starting"]').waitFor();
+  await code().fill('puts "startup edit"'); await code().press('Escape');
+  const file = path.join(root, 'startup.rb');
+  await dialogs(app, () => code().press('Control+s'), [save(file)]);
+  assert.equal(await readFile(file, 'utf8'), 'puts "startup edit"');
+  await code().press('Control+Enter'); await page.locator('#run-status').filter({ hasText: /^正常終了$/ }).waitFor();
+  assert.equal(await page.locator('#stdout').textContent(), 'startup edit\n');
+  assert.equal(await page.locator('#completion-state').getAttribute('data-state'), 'starting');
+  await page.evaluate(() => window.finishLspStartup({}));
+  await page.locator('#completion-state[data-state="ready"]').waitFor();
+  assert.equal(await page.evaluate(() => window.startupCalls.includes('obj.old')), false);
+  assert.equal(await editorText(page), 'puts "startup edit"');
+});
+
 test('E11: runtime and syntax errors navigate without changing code, saved state or history', async () => {
   assert.equal(await page.locator('#error-location').count(), 1);
   const file = path.join(root, 'error 日本語.rb');

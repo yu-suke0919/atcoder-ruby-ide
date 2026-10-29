@@ -36,6 +36,19 @@ fn real_lsp_syncs_unsaved_utf16_code_and_restarts_without_affecting_competition_
     let character = code.lines().nth(2).unwrap().encode_utf16().count() as u32;
     let result = lsp.complete(code, 2, character).unwrap();
     assert!(has_label(&result, "changed_ide_method"), "{result}");
+    let items = result
+        .as_array()
+        .or_else(|| result["items"].as_array())
+        .unwrap();
+    let edit = &items
+        .iter()
+        .find(|item| item["label"] == "changed_ide_method")
+        .unwrap()["textEdit"];
+    assert_eq!(edit["range"]["end"]["character"], character);
+    assert_eq!(
+        edit["range"]["start"]["character"],
+        character - "changed_ide_".len() as u32
+    );
     assert!(!has_label(&result, "unique_ide_method"), "{result}");
     let removed = "limit = 30\nclass IdeChanged; end\nIdeChanged.new.changed_ide_";
     let result = lsp

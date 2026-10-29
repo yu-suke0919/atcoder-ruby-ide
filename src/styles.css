@@ -36,6 +36,9 @@ h3 { font-weight: 500; font-size: 12px; margin: 0; }
 .file-actions button { font-size: 11px; padding: 6px 8px; }
 .shortcut { font-size: 10px; color: #6f7d94; padding-right: 5px; }
 .editor-container { background: #141922; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.completion-state { display: flex; align-items: center; gap: 8px; height: 28px; flex-shrink: 0; padding: 0 13px; color: var(--muted); font-size: 10px; }
+.completion-state span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.completion-state button { padding: 3px 7px; flex-shrink: 0; }
 textarea { resize: none; border: 0; border-radius: 0; color: #d5deed; background: transparent; font: 13px/24px Consolas, "Liberation Mono", monospace; }
 .cm-scroller { min-height: 0; }
 .cm-panels { flex-shrink: 0; max-height: 50%; overflow: auto; }

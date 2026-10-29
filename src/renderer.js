@@ -1,5 +1,6 @@
 import { ide } from './bridge.js';
 import { createEditor } from './editor.mjs';
+import { createLspClient } from './lsp-completion.mjs';
 import { renderStatement } from './presentation.mjs';
 import { SampleCases, MAX_CASES } from './sample-cases.mjs';
 
@@ -34,7 +35,21 @@ let rubyChecking = false;
 let currentRun = null;
 let closing = false;
 let scrollFrame = null;
-const editor = createEditor($('editor-host'), sample, () => { resetComparison(true); updateEditor(); }, updateCursor);
+let completionStatus = 'idle';
+const completionClient = createLspClient(ide, ({ status, error }) => {
+  completionStatus = status;
+  $('completion-state').textContent = ({ starting: '補完を準備中…', ready: '補完の準備完了', failed: '補完の接続に失敗しました（基本候補を使用）' })[status];
+  $('completion-state').dataset.state = status;
+  $('completion-state').title = error;
+  $('completion-retry').hidden = status !== 'failed';
+  $('completion-retry').disabled = fileBusy || closing || status === 'starting';
+});
+const editor = createEditor($('editor-host'), sample, () => { resetComparison(true); updateEditor(); }, updateCursor, completionClient);
+$('completion-retry').addEventListener('click', async () => {
+  if (fileBusy || closing || completionStatus === 'starting') return;
+  try { await completionClient.retry(); if (!fileBusy && !closing) editor.complete(); }
+  catch { /* The completion status reports the failure; basic editing remains available. */ }
+});
 $('editor-search').addEventListener('click', () => editor.search());
 $('editor-complete').addEventListener('click', () => editor.complete());
 $('error-location').addEventListener('click', () => { if (!fileBusy && !closing) editor.jumpToError(); });
@@ -190,6 +205,7 @@ function updateButtons() {
   editor.readOnly = fileBusy || closing;
   $('editor-search').disabled = fileBusy || closing;
   $('editor-complete').disabled = fileBusy || closing;
+  $('completion-retry').disabled = fileBusy || closing || completionStatus === 'starting';
   $('error-location').disabled = fileBusy || closing;
   input.readOnly = expectedOutput.readOnly = fileBusy || closing;
   compareOutput.disabled = fileBusy || closing;

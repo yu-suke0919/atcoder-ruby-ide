@@ -5,8 +5,8 @@
 - Tauri v2 の Rust コマンドがネイティブダイアログ、ファイル I/O、同梱 Ruby の実行を担当する。
 - HTML / CSS / JavaScript は既存の画面を使う。bridge.js が Tauri の invoke / Channel と画面をつなぐ。
 - コード編集は同梱CodeMirror 6で行い、editor.mjsが文書内容・読取専用状態・カーソル・変更通知を画面へ渡す。Ruby用モードと必要な拡張をesbuildで1つのES Moduleへまとめ、依存のライセンスを同梱する。CodeMirrorが生成する表示用CSSをCSPで許可し、スクリプトは同梱ファイルに限定する。
-- ruby-completion.mjsが同梱の候補・定型コードとCodeMirrorの文書内単語収集を組み合わせる。補完の表示・選択・挿入はCodeMirrorに任せ、手動で開く。候補生成にRubyプロセスや外部サービスを使わない。
-- 将来の補完接続用に、Rustが別プロセスのShopify Ruby LSPを管理する起動基盤を用意する。専用gem・固定bundle・未保存文書の同期・補完要求・終了処理と配布検証は[起動基盤](ruby-lsp.md)を参照する。現在の画面の補完にはまだ接続しない。
+- ruby-completion.mjsが同梱の基本候補・定型コードとCodeMirrorの文書内単語収集を組み合わせる。この基本候補はRubyプロセスや外部サービスを使わず同期生成する。表示・選択・挿入はCodeMirrorに任せ、手動で開く。
+- lsp-completion.mjsが手動補完時にShopify Ruby LSPへ接続し、候補をCodeMirrorへ渡す。要求を直列化し、無効になった文書・カーソルの応答を捨てる。既存のruby-completion.mjsを基本候補・定型コード・LSPが候補を返せない場合の補完として共有し、候補は表示名で重複を除く。専用gem・固定bundle・文書同期・UTF-8／UTF-16位置変換・終了処理は[Ruby LSP](ruby-lsp.md)を参照する。
 - ruby-methods.mjsがString・Array・Hashのメソッドと引数・説明を保持する。ruby-receivers.mjsは既存Rubyモードの字句情報を使い、直前のリテラルと、単純な直接代入に続くローカル変数の型を有界に識別する。同じ行の単純代入・自己再代入・連鎖代入の右辺や括弧内でも代入前の型を使う。コメント・文字列中の代入を除外し、未知の文やスコープ境界では推定を解除する。改行をまたぐ未完の文やdef・undef・aliasの文脈も型を確定しない。確定できなければ一般候補へ戻す。候補詳細はCodeMirrorのinfoを使い、最小画面でも領域内に収める。
 - Rust の実行・ファイル操作・期待出力比較は GUI に依存しないモジュールとし、Linux でも実プロセスでテストする。
 - 入力検証とファイルパスの管理は Rust で行う。手動のファイル操作はネイティブダイアログで選んだパス、問題の作業領域はユーザーデータ内の固定パスを使う。

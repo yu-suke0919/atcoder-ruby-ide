@@ -46,7 +46,7 @@ impl RubyLsp {
                 "rootUri": root,
                 "workspaceFolders": [{"uri": root, "name": "solution"}],
                 "capabilities": {
-                    "general": {"positionEncodings": ["utf-16"]},
+                    "general": {"positionEncodings": ["utf-8"]},
                     "window": {"workDoneProgress": true}
                 },
                 "initializationOptions": {
@@ -56,8 +56,8 @@ impl RubyLsp {
             }),
             deadline,
         )?;
-        if result["capabilities"]["positionEncoding"] != "utf-16" {
-            return Err("Ruby LSPがUTF-16位置を受け付けません".into());
+        if result["capabilities"]["positionEncoding"] != "utf-8" {
+            return Err("Ruby LSPがUTF-8位置を受け付けません".into());
         }
         session.notify("initialized", json!({}), deadline)?;
         // Completion depends on the initial index, which is built in a separate server thread.
@@ -78,7 +78,7 @@ impl RubyLsp {
 
     /// Position uses zero-based UTF-16 code units, as in the editor and LSP.
     pub fn complete(&self, code: &str, line: u32, character: u32) -> Result<Value, String> {
-        validate_position(code, line, character)?;
+        let column = byte_column(code, line, character)?;
         let mut active = self.session.lock().unwrap();
         let session = active.as_mut().ok_or("Ruby LSPが起動していません")?;
         let deadline = Instant::now() + REQUEST_TIMEOUT;
@@ -105,13 +105,15 @@ impl RubyLsp {
                 json!({"textDocument": {"uri": uri}}),
                 deadline,
             )?;
-            session.request(
+            let mut result = session.request(
                 "textDocument/completion",
                 json!({
-                    "textDocument": {"uri": uri}, "position": {"line": line, "character": character}
+                    "textDocument": {"uri": uri}, "position": {"line": line, "character": column}
                 }),
                 deadline,
-            )
+            )?;
+            normalize_edits(&mut result, code)?;
+            Ok(result)
         })();
         if result.is_err() {
             active.take();
@@ -129,7 +131,7 @@ impl RubyLsp {
     }
 }
 
-fn validate_position(code: &str, line: u32, character: u32) -> Result<(), String> {
+fn byte_column(code: &str, line: u32, character: u32) -> Result<usize, String> {
     if code.len() > 1048576 {
         return Err("LSPへ送るコードは1 MiBまでです".into());
     }
@@ -138,17 +140,71 @@ fn validate_position(code: &str, line: u32, character: u32) -> Result<(), String
         .nth(line as usize)
         .ok_or("LSPの行位置が範囲外です")?;
     let mut offset = 0;
+    let mut bytes = 0;
     for ch in text.chars() {
         if offset == character {
-            return Ok(());
+            return Ok(bytes);
         }
         offset += ch.len_utf16() as u32;
+        bytes += ch.len_utf8();
     }
     if offset == character {
-        Ok(())
+        Ok(bytes)
     } else {
         Err("LSPの文字位置が範囲外です".into())
     }
+}
+
+// Prism locations use byte columns. Keep the public editor API in UTF-16 units.
+fn normalize_edits(result: &mut Value, code: &str) -> Result<(), String> {
+    if result.is_null() {
+        return Ok(());
+    }
+    let items = if result.is_array() {
+        result.as_array_mut()
+    } else {
+        result.get_mut("items").and_then(Value::as_array_mut)
+    }
+    .ok_or("Ruby LSPの補完応答が不正です")?;
+    let lines: Vec<_> = code.split('\n').collect();
+    for item in items {
+        if let Some(edit) = item.get_mut("textEdit") {
+            for key in ["range", "insert", "replace"] {
+                if let Some(range) = edit.get_mut(key) {
+                    normalize_range(range, &lines)?;
+                }
+            }
+        }
+        if let Some(edits) = item
+            .get_mut("additionalTextEdits")
+            .and_then(Value::as_array_mut)
+        {
+            for edit in edits {
+                if let Some(range) = edit.get_mut("range") {
+                    normalize_range(range, &lines)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn normalize_range(range: &mut Value, lines: &[&str]) -> Result<(), String> {
+    for key in ["start", "end"] {
+        let point = range.get_mut(key).ok_or("LSPの編集範囲が不正です")?;
+        let line = point["line"]
+            .as_u64()
+            .and_then(|n| usize::try_from(n).ok())
+            .and_then(|n| lines.get(n))
+            .ok_or("LSPの編集行が範囲外です")?;
+        let prefix = point["character"]
+            .as_u64()
+            .and_then(|n| usize::try_from(n).ok())
+            .and_then(|n| line.get(..n))
+            .ok_or("LSPの編集位置が範囲外です")?;
+        point["character"] = json!(prefix.encode_utf16().count());
+    }
+    Ok(())
 }
 
 type WriteTask = (Vec<u8>, mpsc::Sender<Result<(), String>>);
