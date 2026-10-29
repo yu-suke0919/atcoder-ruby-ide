@@ -54,8 +54,9 @@ async function launch(root) {
     page = context.pages()[0] || await context.waitForEvent('page');
     page.setDefaultTimeout(15000);
     page.on('pageerror', error => console.error('WebView error:', error));
-    await page.getByTestId('ruby-version').filter({ hasText: /ruby 3\.4\.5\b/i }).waitFor();
+    await page.getByTestId('ruby-version').filter({ hasText: /ruby \d+\.\d+\.\d+\b/i }).waitFor();
     const ruby = await page.evaluate(() => window.__TAURI__.core.invoke('ruby_info'));
+    assert.equal(ruby.version.match(/^ruby (\d+\.\d+\.\d+)\b/i)?.[1], require('../../config/ruby-windows.json').rubyVersion);
     const canonical = value => path.toNamespacedPath(path.resolve(value)).toLowerCase();
     assert.equal(canonical(await realpath(ruby.path)), canonical(await realpath(path.join(path.dirname(executable), 'ruby', 'bin', 'ruby.exe'))));
     console.log(JSON.stringify({ executable, ruby, systemRubyAvailable: false }));
