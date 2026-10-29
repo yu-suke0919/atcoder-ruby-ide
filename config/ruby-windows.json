@@ -1,9 +1,11 @@
 {
-  "version": "3.4.5-1",
+  "rubyVersion": "3.4.12",
+  "version": "3.4.12-1",
   "platform": "win32",
   "arch": "x64",
-  "archive": "rubyinstaller-3.4.5-1-x64.7z",
-  "url": "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-3.4.5-1/rubyinstaller-3.4.5-1-x64.7z",
-  "sha256": "61634b204f808deec191a6819e4c25c7b3005d84537b24c4fbe7c604aeece89f",
-  "checksumSource": "https://github.com/oneclick/rubyinstaller.org-website/blob/master/_data/downloads.yaml"
+  "archive": "rubyinstaller-3.4.12-1-x64.7z",
+  "url": "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-3.4.12-1/rubyinstaller-3.4.12-1-x64.7z",
+  "sha256": "3806f164377824bcb17e1cf39b17d967e2bdc01e8547ce0254cd786dbe2cfe13",
+  "releaseSource": "https://raw.githubusercontent.com/ruby/www.ruby-lang.org/master/_data/releases.yml",
+  "checksumSource": "https://raw.githubusercontent.com/oneclick/rubyinstaller.org-website/master/_data/downloads.yaml"
 }

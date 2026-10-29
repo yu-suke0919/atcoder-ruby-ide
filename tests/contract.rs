@@ -78,11 +78,15 @@ fn ruby() -> PathBuf {
 
 #[test]
 fn m19_atcoder_ruby_and_portable_gems_execute_with_standard_libraries() {
+    let source: serde_json::Value =
+        serde_json::from_str(include_str!("../config/ruby-windows.json")).unwrap();
+    let version = source["rubyVersion"].as_str().unwrap();
+    let code = format!(
+        "raise 'Ruby patch differs from pinned config' unless RUBY_VERSION == {version:?}\n{}",
+        include_str!("fixtures/runtime-gems.rb")
+    );
     let result = Runner::new(Duration::from_secs(5), 1048576)
-        .prepare(request(
-            include_str!("fixtures/runtime-gems.rb"),
-            "日本語\n",
-        ))
+        .prepare(request(&code, "日本語\n"))
         .unwrap()
         .execute(&ruby(), |_| {})
         .unwrap();

@@ -25,9 +25,12 @@ jobs:
         with:
           cache-on-failure: true
           key: tauri-desktop
+      - name: Read pinned Ruby patch
+        id: ruby
+        run: node -e "console.log('version=' + require('./config/ruby-windows.json').rubyVersion)" >> "$GITHUB_OUTPUT"
       - uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.4.5'
+          ruby-version: ${{ steps.ruby.outputs.version }}
       - run: npm ci
       - run: npm run prepare:gems
       - run: cargo fmt --all --check
