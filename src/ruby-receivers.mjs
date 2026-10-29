@@ -50,7 +50,7 @@ function atExpressionStart(state, tree, before) {
 const localName = '[\\p{Ll}\\p{Lo}\\p{Lm}_][\\p{L}\\p{N}_]*';
 const localIdentifier = new RegExp(`^${localName}$`, 'u');
 const assignment = new RegExp(`^\\s*(${localName})[ \\t]*=(?!=|>|~)[ \\t]*`, 'u');
-const pendingCall = new RegExp(`^(?:${localName}\\s*)?(?:\\(\\s*)*$`, 'u');
+const pendingCall = new RegExp(`^(?:${localName}[ \\t]*=(?!=|>|~)[ \\t]*)*(?:${localName}[ \\t]*)?(?:\\([ \\t]*)*$`, 'u');
 
 // Track only straight-line literal assignments. Every other statement is a barrier.
 function localType(state, tree, end) {
@@ -62,7 +62,9 @@ function localType(state, tree, end) {
   const code = state.sliceDoc(0, token.from);
   const masked = code.split('');
   const opaque = new Map();
+  let declaration = -1;
   tree.iterate({ to: code.length, enter(node) {
+    if (node.name === 'keyword' && /^(def|undef|alias)$/.test(code.slice(node.from, node.to))) declaration = node.from;
     if (!/^(string|comment|atom|number)/.test(node.name) || node.from >= code.length) return;
     const text = code.slice(node.from, node.to);
     const unsafe = /^string/.test(node.name) ? !simpleString(text) : node.name === 'atom' && /#[{@$]/.test(text);
@@ -113,7 +115,9 @@ function localType(state, tree, end) {
     if (!/\s/.test(ch)) last = i + 1;
     i++;
   }
-  return pendingCall.test(masked.slice(start).join('').trim()) ? known.get(name) || null : null;
+  const pending = masked.slice(start).join('');
+  if (declaration >= start || /[\r\n]/.test(pending)) return null;
+  return pendingCall.test(pending.trim()) ? known.get(name) || null : null;
 }
 
 export function receiverType(state, tree, from) {

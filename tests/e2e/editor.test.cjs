@@ -372,11 +372,18 @@ test('E16: local variables select typed methods, refresh hints after assignment 
     else assert.match(await info.textContent(), /Hash#fetch\(key/);
     await code().press('Escape');
   }
-  await code().fill('text = "abc"\nputs(text.upcase)');
+  for (const expression of ['result = text.up', 'text = text.up', 'a = b = (text.up']) {
+    await code().fill(`text = "abc"\n${expression}`);
+    await code().press('Control+End'); await code().press('Control+Space'); await completions();
+    await info.filter({ hasText: 'String#upcase' }).waitFor();
+    await code().press('Enter');
+    assert.equal(await editorText(page), `text = "abc"\n${expression.replace(/up$/, 'upcase')}`);
+  }
+  await code().fill('text = "abc"\ntext = text.upcase\nputs(text)');
   await code().press('Control+s'); await page.waitForFunction(() => !document.getElementById('save').disabled);
   await page.locator('#compare-output').check(); await page.locator('#expected-output').fill('ABC\n');
   await code().press('Control+Enter'); await page.locator('#comparison-status').filter({ hasText: /^一致$/ }).waitFor();
-  await code().press('Control+End'); await code().press('ArrowLeft'); await code().press('Control+Space'); await completions();
+  await code().press('Control+Home'); await code().press('ArrowDown'); await code().press('End'); await code().press('Control+Space'); await completions();
   await info.filter({ hasText: 'String#upcase' }).waitFor();
   await code().press('Escape');
   assert.equal(await page.locator('#comparison-status').textContent(), '一致');

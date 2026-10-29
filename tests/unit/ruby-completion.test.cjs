@@ -188,6 +188,32 @@ test('Ruby local variables inherit literal methods and hints across simple assig
   await expectOwner('text = "a"\nputs text.up', 'String');
 });
 
+test('Ruby local receiver completion uses pre-assignment types on simple right hand sides', async () => {
+  for (const expression of ['result = text.up', 'text = text.up', 'ans = puts(text.up', 'ans = (text.up', 'a = b = text.up', 'a\t= b\t= ((text&.up']) {
+    const result = await expectOwner(`text = "abc"\n${expression}`, 'String');
+    const labels = result.options.map(option => option.label);
+    assert.ok(labels.includes('upcase'), expression);
+    assert.ok(!labels.includes('each'), expression);
+  }
+  await expectOwner('values = []\nresult = values.ea', 'Array');
+  await expectOwner('counts = {}\nresult = counts.ke', 'Hash');
+});
+
+test('Ruby declaration keywords keep general completion while return and ordinary calls retain types', async () => {
+  for (const keyword of ['def', 'undef', 'alias']) {
+    await expectGeneral(`value = []\n${keyword} value.ea`);
+    await expectGeneral(`value = []\nans = ${keyword} value.ea`);
+  }
+  for (const prefix of ['return ', 'puts ', 'alias_name ', 'alias名 ']) await expectOwner(`text = "abc"\n${prefix}text.up`, 'String');
+});
+
+test('Ruby pending assignments reject operators and contexts continued from earlier lines', async () => {
+  for (const prefix of ['ans += ', 'ans ||= ', 'a, b = ', 'ans == ', 'ans => ', 'ans =~ ', 'ans =\n', 'ans = (\n', 'puts(\n', 'ans = \\\n']) {
+    await expectGeneral(`text = "abc"\n${prefix}text.up`);
+  }
+  await expectGeneral('def solve(arg =\nvalue = []\nvalue.ea');
+});
+
 test('Ruby local inference skips comments and string contents and groups multiline literals', async () => {
   await expectOwner('text = "abc"\n# text = []\n\nmessage = "text = {}; end; if true"\ntext.up', 'String');
   await expectOwner('values = [\n  "]", # } ignored\n  {a: [1, 2]}\n] # comment\nvalues.ea', 'Array');
@@ -258,7 +284,11 @@ test('Ruby completion caches recheck changed assignments and control boundaries'
   const { EditorState, StreamLanguage, ruby } = await import('../../src/vendor/editor/codemirror.mjs');
   const typed = await complete('value = "abc"\nvalue.up');
   const unknown = await complete('value.up');
-  for (const [doc, valid] of [['value = "def"\nvalue.up', true], ['value = []\nvalue.up', false], ['value = "abc"\nif flag\nvalue.up', false], ['value = gets\nvalue.up', false]]) {
+  for (const [doc, valid] of [
+    ['value = "def"\nvalue.up', true], ['value = "abc"\nans = value.up', true],
+    ['value = []\nvalue.up', false], ['value = "abc"\nif flag\nvalue.up', false], ['value = gets\nvalue.up', false],
+    ['value = "abc"\nundef value.up', false], ['value = "abc"\nans =\nvalue.up', false],
+  ]) {
     const state = EditorState.create({ doc, extensions: [StreamLanguage.define(ruby)] });
     assert.equal(typed.validFor('up', doc.length - 2, doc.length, state), valid, doc);
     if (valid) assert.equal(unknown.validFor('up', doc.length - 2, doc.length, state), false, doc);
