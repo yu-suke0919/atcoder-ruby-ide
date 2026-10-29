@@ -7,7 +7,7 @@ const profile = require('../config/ruby-lsp.json');
 const execute = promisify(execFile);
 const repository = path.resolve(__dirname, '..');
 
-async function prepareLsp({ root = repository, ruby = process.env.RUBY_PATH || (process.platform === 'win32' ? path.join(root, 'vendor/ruby/bin/ruby.exe') : 'ruby'), cache = path.join(root, '.cache/gems') } = {}) {
+async function prepareLsp({ root = repository, ruby = process.platform === 'win32' ? path.join(root, 'vendor/ruby/bin/ruby.exe') : process.env.RUBY_PATH || 'ruby', cache = path.join(root, '.cache/gems') } = {}) {
   const vendor = path.join(root, 'vendor');
   await mkdir(vendor, { recursive: true });
   const staging = await mkdtemp(path.join(vendor, '.ruby-lsp-'));

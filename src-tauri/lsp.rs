@@ -133,7 +133,8 @@ impl RubyLsp {
     }
 
     pub fn stop(&self) -> bool {
-        let Some(mut session) = self.session.lock().unwrap().take() else {
+        let mut active = self.session.lock().unwrap();
+        let Some(mut session) = active.take() else {
             return false;
         };
         session.shutdown();
