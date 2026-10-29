@@ -7,8 +7,16 @@ const { promisify } = require('node:util');
 const path = require('node:path');
 const { prepareLsp } = require('../../scripts/prepare-lsp.cjs');
 const execute = promisify(execFile);
+const { createManifest } = require('../../scripts/runtime-files.cjs');
 const ruby = process.env.RUBY_PATH || 'ruby';
 const root = path.resolve(__dirname, '../..');
+
+test('LSP: the relocatable payload contains only regular files and original gem executables', async () => {
+  const files = await createManifest(path.join(root, 'vendor/ruby-lsp'));
+  assert.ok(files['server.rb']);
+  assert.ok(files['gems/gems/ruby-lsp-0.26.11/exe/ruby-lsp']);
+  assert.ok(Object.keys(files).every(name => !name.startsWith('gems/bin/')));
+});
 
 test('LSP: pinned bundle boots offline despite external Ruby and Bundler settings', async () => {
   const resources = path.join(root, 'vendor/ruby-lsp');

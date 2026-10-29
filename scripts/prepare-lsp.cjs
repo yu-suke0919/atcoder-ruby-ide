@@ -13,6 +13,8 @@ async function prepareLsp({ root = repository, ruby = process.platform === 'win3
   const staging = await mkdtemp(path.join(vendor, '.ruby-lsp-'));
   try {
     await prepareGems({ ruby, directory: path.join(staging, 'gems'), cache, gems: profile.gems });
+    // RubyGems creates absolute executable links; the app loads the original gem executable.
+    await rm(path.join(staging, 'gems/bin'), { recursive: true, force: true });
     await cp(path.join(repository, 'config/ruby-lsp'), staging, { recursive: true });
     const dependencies = [...profile.gems, ...profile.bundledGems.filter(g => g.name !== 'bundler')];
     await writeFile(path.join(staging, 'Gemfile'), `source 'https://rubygems.org'\n${dependencies.map(g => `gem '${g.name}', '= ${g.version}'`).join('\n')}\n`);

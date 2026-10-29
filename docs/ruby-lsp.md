@@ -4,7 +4,7 @@ Shopify Ruby LSPをローカルの別プロセスとして利用する。最初�
 
 - Rubyは競技実行と同じ固定済み3.4.xを使う。LSP用の追加gemは`vendor/ruby-lsp/gems`へ分離し、競技用の標準gemディレクトリには追加しない。
 - `config/ruby-lsp.json`へRuby LSPと依存gemのバージョンを固定する。Rubyに含まれるPrism・RBS・logger・Bundlerも指定バージョンを確認する。追加するpure Ruby gemはRubyGemsのSHA-256を検証し、ライセンスごと準備する。C拡張のビルドは行わない。Ruby更新で同梱依存が変われば、固定情報とテストも見直す。
-- `npm run prepare:lsp`で固定gemとGemfile・lock・起動スクリプトを用意する。固定Gemfileで`Bundler.setup`した後、公式のruby-lsp実行ファイルをRubyから直接読み込む。起動時のcomposed bundle生成・bundle install・自動更新を使わず、ネットワーク不要とする。
+- `npm run prepare:lsp`で固定gemとGemfile・lock・起動スクリプトを用意する。移動後に無効になるRubyGemsのCLI用リンクは除去し、固定Gemfileで`Bundler.setup`した後、gem内の公式ruby-lsp実行ファイルをRubyから直接読み込む。起動時のcomposed bundle生成・bundle install・自動更新を使わず、ネットワーク不要とする。
 - 起動時は外部のRUBYOPT・RUBYLIB・GEM_HOME・GEM_PATH・BUNDLE_*を除去し、専用のGemfileとgem探索先を設定する。Bundlerのユーザー設定を無視する。競技実行の環境隔離は維持する。
 - Rustの`RubyLsp`が1つのセッションを管理する。Tauriコマンドは`lsp_start`・`lsp_complete`・`lsp_stop`。初回起動は明示的に行い、アプリ起動だけではLSPを起動しない。二重起動は同じセッションを返す。
 - 作業場所はセッション専用の一時ディレクトリとし、利用者のGemfileや拡張機能を読み込まない。解答コードはファイルへ保存せず、`didOpen`／全文を置換する範囲付き`didChange`で送る。文書URIはセッション内の`solution.rb`に固定し、位置は0始まりのUTF-16単位とする。初期インデックス完了後に起動成功を返す。変更通知の処理を文書URIを持たない`workspace/symbol`要求で待ち、`documentSymbol`で未保存の宣言をインデックスへ反映してから補完を取得する。
