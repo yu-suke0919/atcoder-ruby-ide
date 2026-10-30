@@ -1,5 +1,4 @@
 node_modules/
-dist/
 vendor/ruby/
 vendor/ruby-lsp/
 .cache/
@@ -7,7 +6,6 @@ test-results/
 *.log
 target/
 artifacts/
-frontend-dist/
 src-tauri/gen/
 src/vendor/katex/
 src/vendor/editor/

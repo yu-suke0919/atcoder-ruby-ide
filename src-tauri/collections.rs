@@ -1,9 +1,10 @@
 use crate::files::{read_limited, write_atomic};
 use crate::library::{
-    create_if_missing, download, http_client, validate, ProblemKey, MAX_HTML_BYTES,
+    create_if_missing, download, download_problem, http_client, validate, ProblemKey,
+    MAX_HTML_BYTES,
 };
-use crate::presentation::{download_image, fill_images, MAX_CACHE_BYTES};
-use crate::{parse_problem, DocumentStore, Problem, ProblemLibrary, ProblemWorkspace};
+use crate::presentation::MAX_CACHE_BYTES;
+use crate::{DocumentStore, Problem, ProblemLibrary, ProblemWorkspace};
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -242,16 +243,13 @@ impl CollectionLibrary {
         for entry in std::fs::read_dir(directory).map_err(|e| e.to_string())? {
             let path = entry.map_err(|e| e.to_string())?.path();
             if path.extension().and_then(|s| s.to_str()) == Some("json") && path.is_file() {
-                let id = path
-                    .file_stem()
-                    .unwrap()
-                    .to_str()
-                    .ok_or("問題集IDが不正です。")?;
-                urls.push(format!("https://atcoder.jp/contests/{id}"));
+                if let Some(id) = path.file_stem().and_then(|name| name.to_str()) {
+                    urls.push(format!("https://atcoder.jp/contests/{id}"));
+                }
             }
         }
         urls.sort();
-        urls.iter().map(|url| self.view(url)).collect()
+        Ok(urls.iter().filter_map(|url| self.view(url).ok()).collect())
     }
     pub fn register(&self, url: &str) -> Result<RegisteredCollection, String> {
         self.register_with(url, |url| download(&http_client()?, url))
@@ -281,9 +279,7 @@ impl CollectionLibrary {
         })
     }
     pub fn fetch_task(&self, url: &str, task: &str) -> Result<CollectionView, String> {
-        self.fetch_with(url, task, |url| {
-            ProblemLibrary::new(&self.root).problem(url, false)
-        })
+        self.fetch_with(url, task, download_problem)
     }
     fn fetch_with(
         &self,
@@ -334,13 +330,7 @@ impl CollectionLibrary {
     }
 
     pub fn repair_task(&self, url: &str, task: &str) -> Result<RepairedCollectionTask, String> {
-        self.repair_with(url, task, |url| {
-            let client = http_client()?;
-            let html = download(&client, &format!("{url}?lang=ja"))?;
-            let mut problem = parse_problem(url, &html)?;
-            fill_images(&mut problem.statement, |url| download_image(&client, url))?;
-            Ok(problem)
-        })
+        self.repair_with(url, task, download_problem)
     }
     fn repair_with(
         &self,
@@ -373,7 +363,9 @@ impl CollectionLibrary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{parse_problem, DocumentStore, SampleCase};
+    use crate::parse_problem;
+    use crate::presentation::fill_images;
+    use crate::{DocumentStore, SampleCase};
     const URL: &str = "https://atcoder.jp/contests/tessoku-book";
     const HTML: &str = include_str!("../tests/fixtures/atcoder-tessoku-tasks.html");
     fn problem(url: &str) -> crate::Problem {
@@ -384,6 +376,22 @@ mod tests {
             .register_with(URL, |_| Ok(HTML.into()))
             .unwrap()
             .view
+    }
+
+    #[test]
+    fn list_skips_invalid_manifests_without_modifying_them() {
+        let root = tempfile::tempdir().unwrap();
+        let library = CollectionLibrary::new(root.path());
+        library.register_with(URL, |_| Ok(HTML.into())).unwrap();
+        let directory = root.path().join("library/collections");
+        for name in ["broken.json", "invalid name.json"] {
+            std::fs::write(directory.join(name), b"broken").unwrap();
+        }
+        assert_eq!(library.list().unwrap().len(), 1);
+        assert_eq!(
+            std::fs::read(directory.join("broken.json")).unwrap(),
+            b"broken"
+        );
     }
 
     #[test]

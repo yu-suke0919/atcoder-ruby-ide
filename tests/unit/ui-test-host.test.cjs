@@ -82,10 +82,12 @@ test('M19: Ruby startup excludes inherited options, libraries and Bundler contex
   const inherited = {
     RUBYOPT: '-rbundler/setup', RUBYLIB: external,
     BUNDLE_GEMFILE: path.join(external, 'missing-Gemfile'), GEM_HOME: external, GEM_PATH: external,
+    RUBYGEMS_GEMDEPS: '-', BUNDLE_PATH: external, BUNDLE_WITHOUT: 'default', BUNDLER_ORIG_RUBYOPT: '-rbundler/setup',
+    bundle_custom: 'remove-me',
   };
   const fixture = await readFile(path.join(__dirname, '../fixtures/runtime-gems.rb'), 'utf8');
   const expected = await readFile(path.join(__dirname, '../fixtures/runtime-gems.txt'), 'utf8');
-  const checkEnvironment = 'puts %w[RUBYOPT RUBYLIB BUNDLE_GEMFILE GEM_HOME GEM_PATH].none? { |name| ENV.key?(name) }; puts(Gem.path == [Gem.default_dir])';
+  const checkEnvironment = 'puts ENV.keys.none? { |name| name.match?(/\\A(?:RUBYOPT|RUBYLIB|GEM_HOME|GEM_PATH|RUBYGEMS_GEMDEPS|BUNDLE_.*|BUNDLER_ORIG_.*)\\z/i) }; puts(Gem.path == [Gem.default_dir])';
   for (const [name, env] of [
     ['preload', { RUBYOPT: '-ride_missing_startup_library' }],
     ['disable RubyGems', { RUBYOPT: '--disable-gems' }],

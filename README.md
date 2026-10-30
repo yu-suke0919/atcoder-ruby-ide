@@ -15,6 +15,7 @@ Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使
 - [Ruby LSPによる補完](docs/ruby-lsp.md)
 - [AtCoderとのRuby実行環境の整合と残る差](docs/atcoder-runtime.md)
 - [実行エラーからコードへ移動](docs/run-errors.md)
+- [比較の詳細仕様](docs/comparison-details.md)
 
 ## 機能
 
@@ -48,8 +49,8 @@ Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使
 
 配布物は次の 2 種類です。
 
-- `AtCoder-Ruby-IDE-0.2.0-x64-portable.zip`：展開して `atcoder-ruby-ide.exe` を起動
-- `AtCoder-Ruby-IDE-0.2.0-x64-setup.exe`：ユーザー単位の NSIS インストーラー
+- `AtCoder-Ruby-IDE-<version>-x64-portable.zip`：展開して `atcoder-ruby-ide.exe` を起動
+- `AtCoder-Ruby-IDE-<version>-x64-setup.exe`：ユーザー単位の NSIS インストーラー
 
 どちらも検証済みのRuby 3.4系のパッチに対応するRubyInstaller x64を含み、同梱の `ruby/bin/ruby.exe` を直接起動します。採用パッチは `config/ruby-windows.json` へ固定し、AtCoderの公開環境（3.4.5）とのパッチ差を許容します。
 ac-library-rb 1.2.0、bitarray 1.3.1、faster_prime 1.0.2、rgl 0.6.6、sorted_containers 1.1.0と必要な依存gemも同梱します。対応範囲・未同梱gem・JITやOSの差は[実行環境の資料](docs/atcoder-runtime.md)を参照してください。
@@ -112,16 +113,6 @@ Windows でも browser を選べますが、その場合は開発用の Ruby と
 Linux の初回セットアップでは、Node.js 24・Rust・Ruby に加えて Chromium を用意してください。
 `CHROMIUM_PATH` で実行ファイルを指定でき、未指定なら導入済みの Playwright 版、次に `/usr/bin/chromium` を使います。
 システム版がなければ `npx playwright install --with-deps chromium` で Playwright 版を導入します。
-この Cloud の既存ツールを使う場合は、最初に次を設定します。
-
-```bash
-source /workspace/.cloud-setup/activate.sh
-export CARGO_HOME=/workspace/.tooling/tauri-size-rust/cargo
-export RUSTUP_HOME=/workspace/.tooling/tauri-size-rust/rustup
-export PATH="$CARGO_HOME/bin:$PATH"
-npm run test:e2e
-```
-
 1 ケースだけ確認する場合は `node --test --test-isolation=none --test-name-pattern='M04: the initial' tests/e2e/app.test.cjs` を使えます。
 ブラウザー起動や localhost の接続をサンドボックスが制限する環境では、環境の通常の実行承認を使います。
 初回導入・コンパイルと、準備後の画面テスト時間は分けて測定します。

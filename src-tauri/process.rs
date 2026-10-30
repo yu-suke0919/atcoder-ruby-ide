@@ -54,3 +54,43 @@ impl ProcessTree {
         }
     }
 }
+
+/// Isolate every Ruby process from the caller's Ruby/Bundler environment.
+pub(crate) fn ruby_command(ruby: &std::path::Path) -> std::process::Command {
+    let mut command = std::process::Command::new(ruby);
+    for (key, _) in std::env::vars_os() {
+        let name = key.to_string_lossy().to_ascii_uppercase();
+        if matches!(
+            name.as_str(),
+            "RUBYOPT" | "RUBYLIB" | "GEM_HOME" | "GEM_PATH" | "RUBYGEMS_GEMDEPS"
+        ) || name.starts_with("BUNDLE_")
+            || name.starts_with("BUNDLER_ORIG_")
+        {
+            command.env_remove(key);
+        }
+    }
+    command.args(["--disable=rubyopt", "-EUTF-8:UTF-8"]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    command
+}
+
+#[cfg(unix)]
+pub(crate) fn nonblocking(pipe: &impl std::os::fd::AsRawFd) -> io::Result<()> {
+    let fd = pipe.as_raw_fd();
+    unsafe {
+        let flags = libc::fcntl(fd, libc::F_GETFL);
+        if flags < 0 || libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) < 0 {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    Ok(())
+}

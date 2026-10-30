@@ -231,6 +231,16 @@ pub(crate) fn http_client() -> Result<Client, String> {
         .map_err(|e| e.to_string())
 }
 
+pub(crate) fn download_problem(url: &str) -> Result<Problem, String> {
+    let key = ProblemKey::parse(url)?;
+    let client = http_client()?;
+    let html = download(&client, &format!("{}?lang=ja", key.url))?;
+    let mut problem = parse_problem(&key.url, &html)?;
+    fill_images(&mut problem.statement, |url| download_image(&client, url))?;
+    validate(&problem, &key)?;
+    Ok(problem)
+}
+
 pub struct ProblemLibrary {
     root: PathBuf,
 }
@@ -252,8 +262,13 @@ impl ProblemLibrary {
             return Ok(problem);
         }
         let client = http_client()?;
-        self.store_page(&key, &download(&client, &format!("{}?lang=ja", key.url))?)
+        self.store_page_with(
+            &key,
+            &download(&client, &format!("{}?lang=ja", key.url))?,
+            |url| download_image(&client, url),
+        )
     }
+    #[cfg(test)]
     fn store_page(&self, key: &ProblemKey, html: &str) -> Result<Problem, String> {
         let client = http_client()?;
         self.store_page_with(key, html, |url| download_image(&client, url))
@@ -277,6 +292,15 @@ impl ProblemLibrary {
         std::fs::create_dir_all(cache.parent().unwrap()).map_err(|e| e.to_string())?;
         write_atomic(&cache, &data).map_err(|e| format!("問題を保存できません: {e}"))?;
         Ok(problem)
+    }
+    pub fn open_problem(
+        &self,
+        url: &str,
+        revision: u64,
+        documents: &std::sync::Mutex<DocumentStore>,
+    ) -> Result<ProblemWorkspace, String> {
+        let problem = self.problem(url, false)?;
+        self.open_workspace(problem, revision, &mut documents.lock().unwrap())
     }
     pub fn open_workspace(
         &self,

@@ -198,7 +198,7 @@ test('M12: Ruby detection can fail and recover without losing edits', async () =
     ide.rubyInfo = () => {
       attempt++;
       if (attempt === 1) return new Promise((resolve, reject) => { window.rejectRubyProbe = () => reject(new Error('Ruby probe failed')); });
-      if (attempt === 2) return Promise.resolve({ available: false, version: 'Ruby unavailable' });
+      if (attempt === 2) return Promise.reject(new Error('Ruby unavailable'));
       return original();
     };
   });
@@ -212,7 +212,8 @@ test('M12: Ruby detection can fail and recover without losing edits', async () =
   assert.equal(await page.locator('#run').isDisabled(), true);
   assert.equal(await page.locator('#save').isEnabled(), true);
   await retry.click();
-  await page.locator('#ruby-version').filter({ hasText: 'Ruby unavailable' }).waitFor();
+  await page.locator('#message').filter({ hasText: 'Ruby unavailable' }).waitFor();
+  assert.equal(await page.locator('#ruby-version').textContent(), 'Ruby を起動できません');
   assert.equal(await page.locator('#run').isDisabled(), true);
   await retry.click();
   await page.waitForFunction(() => !document.getElementById('run').disabled);
@@ -1297,6 +1298,14 @@ test('C02: registration fetches sequentially, pauses and resumes only missing ta
   await page.locator('#collection-url').fill(collection.url);
   await page.locator('#collection-register').click();
   await firstStarted;
+  assert.equal(await page.locator('#collection-register').isDisabled(), true);
+  assert.equal(await page.locator('#collection-resume').isDisabled(), true);
+  assert.equal(await page.locator('#collection-select').isDisabled(), true);
+  await page.locator('#collection-close').click();
+  await page.getByTestId('code-editor').fill('puts "during fetch"');
+  await runAndWait();
+  assert.equal(await page.getByTestId('stdout').textContent(), 'during fetch\n');
+  await page.locator('#collections').click();
   await page.locator('#collection-pause').click();
   releaseFirst();
   await page.waitForFunction(() => !document.getElementById('collection-register').disabled);

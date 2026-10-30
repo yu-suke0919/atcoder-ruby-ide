@@ -1,11 +1,11 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 use atcoder_ruby_ide::{
-    load_samples, save_samples, CollectionLibrary, CollectionView, DocumentResult, DocumentStore,
-    LspInfo, Problem, ProblemLibrary, ProblemWorkspace, RegisteredCollection,
-    RepairedCollectionTask, RubyLsp, RunEvent, RunRequest, Runner, SampleCase, SampleResult,
+    document_save_path, load_samples, prepare_document_run, save_samples, CollectionLibrary,
+    CollectionView, DocumentResult, DocumentStore, LspInfo, Problem, ProblemLibrary,
+    ProblemWorkspace, RegisteredCollection, RepairedCollectionTask, RubyInfo, RubyLsp, RunEvent,
+    Runner, SampleCase, SampleResult,
 };
-use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -83,35 +83,12 @@ fn ruby_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     }
 }
 
-#[derive(Serialize)]
-struct RubyInfo {
-    available: bool,
-    version: String,
-    path: String,
-}
-
 #[tauri::command]
 async fn ruby_info(app: tauri::AppHandle) -> Result<RubyInfo, String> {
     let path = ruby_path(&app)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let probe = Runner::new(Duration::from_secs(5), 16384);
-        let result = probe
-            .prepare(RunRequest {
-                code: "puts RUBY_DESCRIPTION".into(),
-                ..Default::default()
-            })?
-            .execute(&path, |_| {})?;
-        if result.status != "completed" {
-            return Err(format!("Ruby を起動できません: {}", result.stderr));
-        }
-        Ok(RubyInfo {
-            available: true,
-            version: result.stdout.trim().into(),
-            path: path.to_string_lossy().into(),
-        })
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || atcoder_ruby_ide::ruby_info(&path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -123,19 +100,13 @@ fn run_ruby(
     expected_output: Option<String>,
     on_event: Channel<RunEvent>,
 ) -> Result<(), String> {
-    let cwd = state
-        .documents
-        .lock()
-        .unwrap()
-        .path()
-        .and_then(|path| path.parent())
-        .map(|path| path.to_owned());
-    let prepared = state.runner.prepare(RunRequest {
+    let prepared = prepare_document_run(
+        &state.runner,
+        &state.documents.lock().unwrap(),
         code,
         stdin,
         expected_output,
-        cwd,
-    })?;
+    )?;
     let ruby = ruby_path(&app)?;
     std::thread::Builder::new()
         .name("ruby-runner".into())
@@ -196,9 +167,7 @@ async fn document_save(
     let documents = Arc::clone(&state.documents);
     tauri::async_runtime::spawn_blocking(move || {
         let current = documents.lock().unwrap().path().map(|path| path.to_owned());
-        let chosen = if !save_as && current.is_some() {
-            current
-        } else {
+        let chosen = document_save_path(current, save_as, |current| {
             let mut dialog = window
                 .app_handle()
                 .dialog()
@@ -218,8 +187,8 @@ async fn document_save(
             dialog
                 .blocking_save_file()
                 .map(|file| file.into_path().map_err(|e| e.to_string()))
-                .transpose()?
-        };
+                .transpose()
+        })?;
         documents.lock().unwrap().save(&code, chosen)
     })
     .await
@@ -378,8 +347,7 @@ async fn problem_open(
     let documents = Arc::clone(&state.documents);
     let document_revision = documents.lock().unwrap().revision();
     tauri::async_runtime::spawn_blocking(move || {
-        let problem = library.problem(&url, false)?;
-        library.open_workspace(problem, document_revision, &mut documents.lock().unwrap())
+        library.open_problem(&url, document_revision, &documents)
     })
     .await
     .map_err(|e| e.to_string())?

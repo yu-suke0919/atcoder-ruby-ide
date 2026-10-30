@@ -375,7 +375,15 @@ fn live_atcoder_collection_import_and_fixed_workspace() {
         .take(count)
         .enumerate()
     {
+        let cache = root
+            .path()
+            .join("library/problems/tessoku-book")
+            .join(task.url.rsplit('/').next().unwrap())
+            .join("problem.json");
+        std::fs::create_dir_all(cache.parent().unwrap()).unwrap();
+        std::fs::write(&cache, b"broken standalone cache").unwrap();
         let view = library.fetch_task(url, &task.url).unwrap();
+        assert_eq!(std::fs::read(&cache).unwrap(), b"broken standalone cache");
         assert!(
             view.downloaded.contains(&task.url),
             "{}: {:?}",

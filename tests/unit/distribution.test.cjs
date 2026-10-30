@@ -43,3 +43,12 @@ test('M10: runtime manifests reject links to files and directories outside the p
     }
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('release versions agree and Tauri reads package.json', async () => {
+  const { readFile } = require('node:fs/promises');
+  const version = require('../../package.json').version;
+  const config = require('../../src-tauri/tauri.conf.json');
+  assert.equal(config.version, '../package.json');
+  const cargo = await readFile(path.join(__dirname, '../../src-tauri/Cargo.toml'), 'utf8');
+  assert.equal(cargo.match(/^version = "([^"]+)"/m)[1], version);
+});
