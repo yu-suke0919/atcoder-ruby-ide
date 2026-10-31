@@ -260,19 +260,21 @@ impl CollectionLibrary {
         fetch: impl FnOnce(&str) -> Result<String, String>,
     ) -> Result<RegisteredCollection, String> {
         let key = CollectionKey::parse(url)?;
-        if key
+        let exists = key
             .manifest(&self.root)
             .try_exists()
-            .map_err(|e| e.to_string())?
-        {
-            return Ok(RegisteredCollection {
-                view: self.view(&key.url)?,
-                created: false,
-            });
+            .map_err(|e| e.to_string())?;
+        if exists {
+            if let Ok(view) = self.view(&key.url) {
+                return Ok(RegisteredCollection {
+                    view,
+                    created: false,
+                });
+            }
         }
         let collection =
             parse_collection(&key.url, &fetch(&format!("{}/tasks?lang=ja", key.url))?)?;
-        self.save(&key, &collection, true)?;
+        self.save(&key, &collection, !exists)?;
         Ok(RegisteredCollection {
             view: self.view(&key.url)?,
             created: true,
@@ -376,6 +378,59 @@ mod tests {
             .register_with(URL, |_| Ok(HTML.into()))
             .unwrap()
             .view
+    }
+
+    #[test]
+    fn re_registration_repairs_invalid_manifests_and_preserves_snapshots_and_workspaces() {
+        for invalid in [b"broken".to_vec(), br#"{"obsolete":true}"#.to_vec()] {
+            let root = tempfile::tempdir().unwrap();
+            let library = CollectionLibrary::new(root.path());
+            let registered = library.register_with(URL, |_| Ok(HTML.into())).unwrap();
+            let task = &registered.view.collection.tasks[0].url;
+            library
+                .fetch_with(URL, task, |url| Ok(problem(url)))
+                .unwrap();
+            let mut documents = DocumentStore::default();
+            library
+                .open_task(URL, task, documents.revision(), &mut documents)
+                .unwrap();
+            let solution = documents.path().unwrap().to_owned();
+            std::fs::write(&solution, b"my answer").unwrap();
+            let cases = solution.parent().unwrap().join("cases.json");
+            std::fs::write(&cases, b"my edited cases").unwrap();
+            let key = CollectionKey::parse(URL).unwrap();
+            let snapshot = library.snapshot_path(&key, task).unwrap();
+            let original = std::fs::read(&snapshot).unwrap();
+            let manifest = key.manifest(root.path());
+            std::fs::write(&manifest, &invalid).unwrap();
+            assert!(library.list().unwrap().is_empty());
+            assert!(library
+                .register_with(URL, |_| Err("offline".into()))
+                .is_err());
+            assert_eq!(std::fs::read(&manifest).unwrap(), invalid);
+            assert!(library
+                .register_with(URL, |_| Ok("invalid page".into()))
+                .is_err());
+            assert_eq!(std::fs::read(&manifest).unwrap(), invalid);
+            let repaired = library
+                .register_with(URL, |url| {
+                    assert_eq!(url, format!("{URL}/tasks?lang=ja"));
+                    Ok(HTML.into())
+                })
+                .unwrap();
+            assert!(repaired.created);
+            assert_eq!(repaired.view.downloaded, vec![task.clone()]);
+            assert_eq!(library.list().unwrap().len(), 1);
+            assert_eq!(std::fs::read(&snapshot).unwrap(), original);
+            assert_eq!(std::fs::read(solution).unwrap(), b"my answer");
+            assert_eq!(std::fs::read(cases).unwrap(), b"my edited cases");
+            assert!(
+                !library
+                    .register_with(URL, |_| panic!("must reuse repaired manifest"))
+                    .unwrap()
+                    .created
+            );
+        }
     }
 
     #[test]

@@ -156,7 +156,7 @@ fn main() {
                 Ok(json!(library.open_problem(
                     args["url"].as_str().ok_or("URLを指定してください")?,
                     document_revision,
-                    &documents,
+                    || documents.lock().unwrap(),
                 )?))
             }
             "collection_list" => Ok(json!(collections.list()?)),

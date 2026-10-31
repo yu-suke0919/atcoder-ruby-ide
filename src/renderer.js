@@ -160,6 +160,9 @@ function message(text, error = false) {
   $('message').dataset.error = String(error);
   $('problem-message').textContent = text;
   $('problem-message').dataset.error = String(error);
+}
+
+function collectionMessage(text, error = false) {
   $('collection-message').textContent = text;
   $('collection-message').dataset.error = String(error);
 }
@@ -182,7 +185,7 @@ function updateCursor() {
 function updateButtons() {
   $('problem-toggle').disabled = !activeProblem || fileBusy || closing;
   for (const id of ['collection-repair-cancel', 'collection-repair-confirm']) $(id).disabled = fileBusy || closing || running;
-  $('collections').disabled = fileBusy || closing || running;
+  $('collections').disabled = fileBusy || closing;
   for (const id of ['collection-register', 'collection-url', 'collection-select']) $(id).disabled = fileBusy || closing || running || collectionDownloading;
   $('collection-close').disabled = fileBusy;
   $('collection-resume').disabled = collectionDownloading || fileBusy || closing || running || !selectedCollection || selectedCollection.downloaded.length === selectedCollection.collection.tasks.length;
@@ -212,12 +215,12 @@ function updateButtons() {
   for (const id of ['cases-open', 'cases-save']) $(id).disabled = running || fileBusy || closing;
 }
 
-async function fileAction(action) {
+async function fileAction(action, report = message) {
   if (fileBusy || closing) return;
   fileBusy = true;
   updateButtons();
   try { await action(); }
-  catch (error) { message(`ファイル操作に失敗しました：${error.message}`, true); }
+  catch (error) { report(`ファイル操作に失敗しました：${error.message}`, true); }
   finally { fileBusy = false; updateButtons(); }
 }
 
@@ -465,7 +468,7 @@ function renderCollection() {
       collectionDialog.close();
       editor.focus();
       message('固定保存した問題と解答・ケースを開きました。');
-    }));
+    }, collectionMessage));
     const repair = document.createElement('button'); repair.textContent = '取り直す'; repair.dataset.available = String(downloaded.has(task.url)); repair.dataset.action = 'repair';
     repair.setAttribute('aria-label', `${task.label} ${task.title} を取り直す`);
     repair.addEventListener('click', () => {
@@ -491,7 +494,7 @@ async function collectionAction(action) {
   collectionDownloading = true; cancelCollection = false;
   $('collection-pause').textContent = '中断'; updateButtons();
   try { await action(); }
-  catch (error) { message(error.message, true); }
+  catch (error) { collectionMessage(error.message, true); }
   finally { collectionDownloading = false; updateButtons(); }
 }
 async function fetchMissingCollectionTasks() {
@@ -500,21 +503,22 @@ async function fetchMissingCollectionTasks() {
   const queue = selectedCollection.collection.tasks.filter(task => !downloaded.has(task.url));
   for (let index = 0; index < queue.length; index++) {
     if (cancelCollection) break;
-    message(`${queue[index].label} を取得しています…`);
+    collectionMessage(`${queue[index].label} を取得しています…`);
     rememberCollection(await ide.fetchCollectionTask(url, queue[index].url));
     if (index + 1 < queue.length && !cancelCollection) await new Promise(resolve => setTimeout(resolve, 500));
   }
-  message(cancelCollection ? '取得を中断しました。未取得分から再開できます。' : '取得処理が終了しました。失敗した問題は「未取得分を取得」で再試行できます。');
+  collectionMessage(cancelCollection ? '取得を中断しました。未取得分から再開できます。' : '取得処理が終了しました。失敗した問題は「未取得分を取得」で再試行できます。');
 }
 $('collections').addEventListener('click', () => {
   collectionDialog.showModal();
   if (collectionDownloading) { renderCollection(); return; }
+  collectionMessage('');
   fileAction(async () => {
     const previous = selectedCollection?.collection.url;
     collectionViews = await ide.listCollections();
     selectedCollection = collectionViews.find(view => view.collection.url === previous) || collectionViews[0] || null;
     renderCollection();
-  });
+  }, collectionMessage);
 });
 $('collection-select').addEventListener('change', () => {
   selectedCollection = collectionViews.find(view => view.collection.url === $('collection-select').value) || null;
@@ -522,11 +526,11 @@ $('collection-select').addEventListener('change', () => {
 });
 $('collection-register').addEventListener('click', () => collectionAction(async () => {
   if (running) return;
-  message('問題集の一覧を読み込んでいます…');
+  collectionMessage('問題集の一覧を読み込んでいます…');
   const result = await ide.registerCollection($('collection-url').value);
   rememberCollection(result.view);
   if (result.created) await fetchMissingCollectionTasks();
-  else message('保存済みの問題集を開きました。');
+  else collectionMessage('保存済みの問題集を開きました。');
 }));
 $('collection-resume').addEventListener('click', () => collectionAction(async () => {
   if (!running && selectedCollection) await fetchMissingCollectionTasks();
@@ -545,15 +549,15 @@ $('collection-repair-confirm').addEventListener('click', () => {
   if (!target || running) return;
   fileAction(async () => {
     collectionRepairDialog.close();
-    message(`${target.label} を取り直しています…`);
+    collectionMessage(`${target.label} を取り直しています…`);
     const result = await ide.repairCollectionTask(target.collectionUrl, target.taskUrl);
     rememberCollection(result.view);
     if (activeCollectionUrl === target.collectionUrl && activeProblem?.url === target.taskUrl) {
       activeProblem = result.problem;
       showProblem(); updateEditor();
     }
-    message('問題文と元のサンプルを取り直しました。解答・編集済みケースは保持しています。');
-  });
+    collectionMessage('問題文と元のサンプルを取り直しました。解答・編集済みケースは保持しています。');
+  }, collectionMessage);
 });
 
 window.addEventListener('beforeunload', event => {

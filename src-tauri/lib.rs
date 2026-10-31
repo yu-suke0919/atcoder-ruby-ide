@@ -14,6 +14,7 @@ pub use collections::{
     parse_collection, Collection, CollectionLibrary, CollectionTask, CollectionView,
     RegisteredCollection, RepairedCollectionTask,
 };
+pub use commands::{document_save_path, prepare_document_run, ruby_info, RubyInfo};
 pub use comparison::{decode_output, first_difference, OutputDifference};
 pub use document::{DocumentResult, DocumentStore};
 pub use library::{parse_problem, Problem, ProblemLibrary, ProblemWorkspace};
@@ -38,5 +39,3 @@ pub enum RunEvent {
         message: String,
     },
 }
-
-pub use commands::{document_save_path, prepare_document_run, ruby_info, RubyInfo};

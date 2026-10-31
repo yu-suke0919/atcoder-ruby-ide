@@ -347,7 +347,7 @@ async fn problem_open(
     let documents = Arc::clone(&state.documents);
     let document_revision = documents.lock().unwrap().revision();
     tauri::async_runtime::spawn_blocking(move || {
-        library.open_problem(&url, document_revision, &documents)
+        library.open_problem(&url, document_revision, || documents.lock().unwrap())
     })
     .await
     .map_err(|e| e.to_string())?

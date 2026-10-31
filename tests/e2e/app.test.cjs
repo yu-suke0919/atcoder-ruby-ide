@@ -1305,11 +1305,13 @@ test('C02: registration fetches sequentially, pauses and resumes only missing ta
   await page.getByTestId('code-editor').fill('puts "during fetch"');
   await runAndWait();
   assert.equal(await page.getByTestId('stdout').textContent(), 'during fetch\n');
+  const executionMessage = await page.locator('#message').textContent();
   await page.locator('#collections').click();
   await page.locator('#collection-pause').click();
   releaseFirst();
   await page.waitForFunction(() => !document.getElementById('collection-register').disabled);
   await page.locator('#collection-tasks').filter({ hasText: 'network offline' }).waitFor();
+  assert.equal(await page.locator('#message').textContent(), executionMessage);
   const beforeReload = calls.length;
   assert.ok(beforeReload < 3);
   await page.reload();
@@ -1328,6 +1330,37 @@ test('C02: registration fetches sequentially, pauses and resumes only missing ta
   assert.equal(calls.length, total);
   assert.equal(await page.locator('#collection-resume').isDisabled(), true);
   await page.locator('#collection-close').click();
+});
+
+test('C06: running code can reopen collections and pause a pending download without changing run messages', async () => {
+  const collection = await seedCollection(2);
+  await showCollections();
+  await page.evaluate(async collection => {
+    const { ide } = await import('./bridge.js');
+    ide.fetchCollectionTask = () => new Promise(resolve => {
+      window.finishCollectionFetch = () => resolve({ collection, downloaded: [] });
+    });
+  }, collection);
+  await page.locator('#collection-resume').click();
+  await page.waitForFunction(() => typeof window.finishCollectionFetch === 'function');
+  await page.locator('#collection-close').click();
+  await page.getByTestId('code-editor').fill('puts "active"; sleep 30');
+  await page.locator('#run').click();
+  await page.locator('#stdout').filter({ hasText: 'active' }).waitFor();
+  assert.equal(await page.locator('#collections').isEnabled(), true);
+  const executionMessage = await page.locator('#message').textContent();
+  await page.locator('#collections').click();
+  for (const id of ['collection-register', 'collection-resume', 'collection-select']) {
+    assert.equal(await page.locator(`#${id}`).isDisabled(), true);
+  }
+  await page.locator('#collection-pause').click();
+  await page.evaluate(() => window.finishCollectionFetch());
+  await page.locator('#collection-message').filter({ hasText: '取得を中断しました' }).waitFor();
+  assert.equal(await page.locator('#message').textContent(), executionMessage);
+  assert.equal(await page.locator('#collection-pause').isDisabled(), true);
+  await page.locator('#collection-close').click();
+  await page.locator('#stop').click();
+  await page.waitForFunction(() => !document.getElementById('run').disabled);
 });
 
 test('C03: tasks without inline samples open, and corrupt snapshots preserve the current document', async () => {

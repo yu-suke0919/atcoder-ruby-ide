@@ -311,3 +311,11 @@ Windows CI の初回では、HTML固定データがCRLFでチェックアウト�
 - `cargo test --locked --test library live_atcoder_collection_import_and_fixed_workspace -- --ignored --nocapture`が成功。壊れた単問キャッシュを用意してもtessoku-bookの先頭2問を取得でき、単問キャッシュを上書きしないことを確認した。全151問の取得は実行していない。
 - 通常サンドボックスはローカルHTTPサーバー作成と実サイト通信を制限したため、承認済みの実行で検証した。
 - デスクトップの`cargo check --locked --offline --features desktop`は環境にglib-2.0の開発ライブラリがないため依存ビルドで停止した。WindowsのビルドとネイティブGUIは未実行。RubyInfoから未使用のavailable・pathを削除し、検出APIはversionとエラー応答に統一した。
+
+## PR #27 再レビューの修正
+
+- 再登録できない破損マニフェストと、取得進捗による実行メッセージの上書き、実行中に問題集を開けない挙動を追加テストで再現してから修正した。
+- Linux / Rust 1.99.1 / Ruby 3.4.12で `npm test` のRust 78件・Node 81件が成功。正常なマニフェストのオフライン再利用、壊れたJSON・旧スキーマの再登録、通信・解析失敗時の保持、原本・解答・編集済みケースの保持を確認した。
+- AtCoder実サイトテスト3件も成功。単問3問の全サンプル実行・再取得・作業領域復元、画像取得・保存、破損した単問キャッシュを置いた問題集2問の取得を確認した。
+- CI #110のLinuxは成功、Windowsは単体テスト・ビルド成功後にネイティブGUI起動確認で失敗。原因のRubyInfo.path参照を、実RubyからのRbConfig.ruby取得に置き換えた。Windowsの最終結果は更新後のPR CIで確認する。マージは行わない。
+- Linuxの画面テスト85件が全件成功（約111秒）。取得中の実行完了メッセージ保持と、実行中の問題集再表示・中断・文書操作の抑止も含む。rustfmt・JavaScript構文・差分検査も成功した。
