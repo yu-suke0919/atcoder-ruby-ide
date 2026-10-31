@@ -109,6 +109,7 @@ function updateCaseList() {
     const option = document.createElement('option');
     option.value = String(index);
     option.textContent = `ケース ${index + 1} · ${item.status === 'running' ? '実行中' : item.status && item.status !== 'completed' ? statusLabel(item.status, item.exitCode) : comparisonLabels[item.comparison]}`;
+    if (item.exceededTimeLimitMs !== null) option.textContent += ' · 制限超過の可能性';
     return option;
   }));
   $('case-select').value = String(cases.selected);
@@ -116,7 +117,8 @@ function updateCaseList() {
   const done = cases.items.filter(item => item.status && !['running', 'canceled'].includes(item.status)).length;
   const count = state => cases.items.filter(item => item.comparison === state).length;
   const errors = cases.items.filter(item => ['failed', 'timeout', 'output-limit', 'error'].includes(item.status)).length;
-  $('cases-summary').textContent = `完了 ${done} / ${cases.items.length} · 一致 ${count('matched')} · 不一致 ${count('mismatched')} · エラー ${errors}`;
+  const warnings = cases.items.filter(item => item.exceededTimeLimitMs !== null).length;
+  $('cases-summary').textContent = `完了 ${done} / ${cases.items.length} · 一致 ${count('matched')} · 不一致 ${count('mismatched')} · エラー ${errors}${warnings ? ` · 制限超過の可能性 ${warnings}` : ''}`;
 }
 
 function showResult() {

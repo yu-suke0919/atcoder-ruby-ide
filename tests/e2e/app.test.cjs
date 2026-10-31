@@ -1604,6 +1604,8 @@ test('P12: optional problem limits and per-case time warnings work offline at bo
   await page.locator('#run-all').click();
   await page.locator('#cases-summary').filter({ hasText: /完了 2 \/ 2.*一致 2/ }).waitFor();
   assert.equal(await page.locator('#time-limit-warning').isVisible(), false);
+  assert.match(await page.locator('#cases-summary').textContent(), /制限超過の可能性 1/);
+  assert.match(await page.locator('#case-select option').nth(1).textContent(), /制限超過の可能性/);
   await selectCase(2);
   assert.equal(await page.locator('#time-limit-warning').textContent(), '制限超過の可能性（問題の制限 1 秒）');
   assert.equal(await page.locator('#time-limit-warning').isVisible(), true);
@@ -1616,6 +1618,7 @@ test('P12: optional problem limits and per-case time warnings work offline at bo
   }
   await page.locator('#stdin').fill('0');
   assert.equal(await page.locator('#time-limit-warning').isVisible(), false);
+  assert.doesNotMatch(await page.locator('#cases-summary').textContent(), /制限超過の可能性/);
   await runAndWait();
   assert.equal(await page.locator('#time-limit-warning').isVisible(), false);
   await page.locator('#code-editor').fill('puts "ready"; sleep 30');
