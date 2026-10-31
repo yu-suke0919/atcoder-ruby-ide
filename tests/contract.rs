@@ -8,7 +8,15 @@ use std::time::Duration;
 fn windows_job_memory_limit_stops_the_tree_and_allows_the_next_run() {
     let runner = Runner::new(Duration::from_secs(5), 1048576);
     let code = include_str!("fixtures/windows-memory.rb");
-    for mode in ["normal", "single", "denied", "descendants", "normal"] {
+    let mut measurements = Vec::new();
+    for mode in [
+        "normal",
+        "reserve",
+        "single",
+        "denied",
+        "descendants",
+        "normal",
+    ] {
         let mut req = request(code, mode);
         req.expected_output = Some("must not match".into());
         let result = runner
@@ -20,9 +28,10 @@ fn windows_job_memory_limit_stops_the_tree_and_allows_the_next_run() {
             "{mode}: {} ms, {}\n{}",
             result.duration_ms, result.status, result.stdout
         );
+        measurements.push(serde_json::json!({ "mode": mode, "status": result.status, "durationMs": result.duration_ms, "stdout": result.stdout, "stderr": result.stderr }));
         assert_eq!(
             result.status,
-            if mode == "normal" {
+            if matches!(mode, "normal" | "reserve") {
                 "completed"
             } else {
                 "memory-limit"
@@ -33,7 +42,11 @@ fn windows_job_memory_limit_stops_the_tree_and_allows_the_next_run() {
         assert_eq!(result.error_line, None);
         assert_eq!(
             result.comparison,
-            if mode == "normal" { Some(false) } else { None }
+            if matches!(mode, "normal" | "reserve") {
+                Some(false)
+            } else {
+                None
+            }
         );
         let first: serde_json::Value =
             serde_json::from_str(result.stdout.lines().next().unwrap()).unwrap();
@@ -51,6 +64,13 @@ fn windows_job_memory_limit_stops_the_tree_and_allows_the_next_run() {
         .unwrap();
     assert_eq!(result.status, "failed");
     assert!(result.error_line.is_some());
+    let reports = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../artifacts/reports");
+    std::fs::create_dir_all(&reports).unwrap();
+    std::fs::write(
+        reports.join("ruby-memory.json"),
+        serde_json::to_vec_pretty(&measurements).unwrap(),
+    )
+    .unwrap();
 }
 
 #[test]

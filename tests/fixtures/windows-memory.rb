@@ -21,6 +21,10 @@ case mode
 when 'normal'
   block = 'x' * (64 * 1024**2)
   puts JSON.generate(job_memory.merge(size: block.bytesize))
+when 'reserve'
+  pointer = WinMemory.VirtualAlloc(nil, 2 * 1024**3, 0x2000, 4)
+  raise 'address reservation failed' if pointer.null?
+  puts JSON.generate(job_memory.merge(reserved: 2 * 1024**3))
 when 'single'
   block = 'x' * 1024**3
   abort 'allocation unexpectedly succeeded'
@@ -45,6 +49,12 @@ when 'descendants'
     sleep 30
   RUBY
   # Each process is below 1 GiB; only their aggregate exceeds the Job limit.
-  2.times { spawn(RbConfig.ruby, '-e', child) }
+  reader, writer = IO.pipe
+  spawn(RbConfig.ruby, '-e', child, out: writer)
+  writer.close
+  puts reader.gets
+  reader.close
+  puts JSON.generate(job_memory)
+  spawn(RbConfig.ruby, '-e', child)
   sleep 30
 end

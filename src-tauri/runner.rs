@@ -8,6 +8,7 @@ use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 const RUBY_VM_STACK_BYTES: usize = 32 * 1024 * 1024;
+const WINDOWS_JOB_MEMORY_BYTES: usize = 1024 * 1024 * 1024;
 
 #[derive(Default)]
 pub struct RunRequest {
@@ -170,17 +171,9 @@ impl PreparedRun {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child = command
-            .spawn()
+        let (mut child, tree) = ProcessTree::spawn(&mut command, Some(WINDOWS_JOB_MEMORY_BYTES))
             .map_err(|e| format!("Ruby を起動できません: {e}"))?;
-        let tree = match ProcessTree::attach(&child) {
-            Ok(tree) => Arc::new(tree),
-            Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(format!("Ruby のプロセス群を管理できません: {error}"));
-            }
-        };
+        let tree = Arc::new(tree);
         self.runner.active.lock().unwrap().as_mut().unwrap().tree = Some(Arc::clone(&tree));
         if self.runner.reason().is_some() {
             tree.kill();
@@ -241,6 +234,19 @@ impl PreparedRun {
                         wait_error = Some(error.to_string());
                         break;
                     }
+                }
+            }
+            // Check even after a fast allocation failure and process exit, before
+            // accepting an ordinary exit status. Do not infer OOM from stderr.
+            #[cfg(windows)]
+            match tree.memory_limit_reached() {
+                Ok(true) => {
+                    self.runner.stop_for("memory-limit");
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    wait_error = Some(format!("Rubyのメモリ制限通知を取得できません: {error}"));
+                    break;
                 }
             }
             if exit.is_some() && stdout.is_finished() && stderr.is_finished() {
