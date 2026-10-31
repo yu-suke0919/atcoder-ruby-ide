@@ -12,9 +12,9 @@ for (const key of Object.keys(env)) {
 }
 env.RUBY_THREAD_VM_STACK_SIZE = String(32 * 1024 * 1024);
 const probe = `
+Gem.use_paths(Gem.default_dir)
 require 'rbconfig'
 require 'json'
-Gem.use_paths(Gem.default_dir)
 puts JSON.generate({
   rubyVersion: RUBY_VERSION, rubyDescription: RUBY_DESCRIPTION, rubyPlatform: RUBY_PLATFORM,
   executable: RbConfig.ruby, vmStackBytes: RubyVM::DEFAULT_PARAMS.fetch(:thread_vm_stack_size),

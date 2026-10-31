@@ -396,5 +396,7 @@ Windows CI の初回では、HTML固定データがCRLFでチェックアウト�
 - 2026年10月31日にAtCoderの公開tomlを再取得し、実行指定はruby --jit Main.rbのままだった。AtCoderで有効になるJITの種類やビルド設定はこの指定だけでは確定しない。
 - tests/unit/ruby-jit.test.cjsの2件が検証ツールの未実装で失敗することを確認してから、scripts/probe-ruby-jit.cjsを追加した。外部RUBYOPT・RUBY_YJIT_ENABLE・小さいVMスタック設定を与えても基準条件を再現し、起動できないRubyをJIT非対応と誤って記録しないことを確認する。
 - Linux開発環境のRuby 3.4.12はYJIT_SUPPORT=no／RJIT_SUPPORT=yes。既定では両方無効、--jitと--rjitではRJITのみ有効、--yjitは警告を出し終了コード0で実行するが有効にならなかった。4条件とも計算結果5050とVMスタック32 MiBを確認した。これはLinux開発用ビルドの観測で、AtCoderやsetup-rubyのビルド構成を示すものではない。
-- Windows同梱版の終了コード・警告・実行時状態は、更新したPRの通常CIで検証する。生の標準出力と警告、解析した状態をtest-results/ruby-jit.jsonへ保存し、配布準備で置き換えられない既存のWindows-verification artifactへ含める。
+- [調査用CI #133](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/41192541243)のWindows単体テストで、同梱Ruby 3.4.12のYJIT_SUPPORT=no／RJIT_SUPPORT=no、4条件とも終了コード0・有効状態false・計算結果5050を確認した。--jit・--yjit・--rjitではそれぞれ非対応の警告が出た。JITは有効にできないため、本番のRunner／LSPの起動処理は変更しない。初期の測定はGem.use_pathsより先にjsonを読み込んでいたため、最終版ではRunner同様にgem探索先を先に固定した。
+- 同CIのLinuxは全項目成功し、setup-ruby版はYJIT_SUPPORT=yes／RJIT_SUPPORT=yesだった。既定では両方無効、--jitと--yjitはYJITのみ、--rjitはRJITのみ有効。これは同じ3.4.12でも開発環境のビルド構成と異なることを示す。AtCoder側の有効なJITはこの結果から断定しない。
+- 調査用CIはWindowsの単体実測が成功した後に中止し、結論を反映した最終コミットの全CIへ切り替えた。生の標準出力と警告、解析した状態をtest-results/ruby-jit.jsonへ保存し、配布準備で置き換えられない既存のWindows-verification artifactへ含める。
 - ローカルLinuxの全単体テストはRust 89件・Node 88件が成功した。アプリのRust・フロントエンド・起動フラグ・保存形式は変更していない。両OSの画面テストとWindows配布検証はPRのCIで確認する。
