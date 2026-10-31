@@ -18,6 +18,124 @@ fn statement_text(problem: &atcoder_ruby_ide::Problem) -> String {
 }
 const HTML: &str = include_str!("fixtures/atcoder-task.html");
 
+fn with_limits(header: &str) -> String {
+    HTML.replace(
+        "<div id=\"task-statement\">",
+        &format!("<p>{header}</p><div id=\"task-statement\">"),
+    )
+}
+
+#[test]
+fn problem_limits_parse_exact_milliseconds_in_both_languages() {
+    for (header, time, memory) in [
+        (
+            "実行時間制限: 2 sec / メモリ制限: 1024 MiB",
+            Some(2000),
+            Some(1024),
+        ),
+        (
+            "Time Limit: 1.001 sec / Memory Limit: 64 MiB",
+            Some(1001),
+            Some(64),
+        ),
+        ("Time Limit: 0.001 sec", Some(1), None),
+        ("Memory Limit: 256 MiB", None, Some(256)),
+        ("Time Limit: 4294967.295 sec", Some(u32::MAX), None),
+        ("Memory Limit: 4294967295 MiB", None, Some(u32::MAX)),
+        ("", None, None),
+    ] {
+        let problem = parse_problem(URL, &with_limits(header)).unwrap();
+        assert_eq!(problem.time_limit_ms, time, "{header}");
+        assert_eq!(problem.memory_limit_mib, memory, "{header}");
+        let saved = serde_json::to_value(problem).unwrap();
+        assert_eq!(saved["timeLimitMs"], serde_json::json!(time));
+        assert_eq!(saved["memoryLimitMiB"], serde_json::json!(memory));
+    }
+    let body_mentions_limits =
+        HTML.replace("図の説明", "<p>Time Limit: 0 sec / Memory Limit: 0 MiB</p>");
+    let problem = parse_problem(URL, &body_mentions_limits).unwrap();
+    assert_eq!(problem.time_limit_ms, None);
+    assert_eq!(problem.memory_limit_mib, None);
+}
+
+#[test]
+fn invalid_or_duplicate_problem_limits_are_not_treated_as_unknown() {
+    for header in [
+        "Time Limit 2 sec",
+        "Time Limit:",
+        "Time Limit: 0 sec",
+        "Time Limit: -1 sec",
+        "Time Limit: NaN sec",
+        "Time Limit: 1.0001 sec",
+        "Time Limit: 4294967.296 sec",
+        "Time Limit: 2 ms",
+        "Time Limit: 1e3 sec",
+        "Time Limit: 1. sec",
+        "Memory Limit: 0 MiB",
+        "Memory Limit: -1 MiB",
+        "Memory Limit: 1.5 MiB",
+        "Memory Limit: 4294967296 MiB",
+        "Memory Limit: 64 MB",
+        "Time Limit: 1 sec / Time Limit: 2 sec",
+        "Memory Limit: 64 MiB / Memory Limit: 128 MiB",
+    ] {
+        assert!(
+            parse_problem(URL, &with_limits(header))
+                .unwrap_err()
+                .contains("制限値"),
+            "{header}"
+        );
+    }
+}
+
+#[test]
+fn saved_problem_without_limits_opens_unchanged_and_new_limits_are_strictly_validated() {
+    let original = include_bytes!("fixtures/problem-without-limits.json");
+    let root = tempfile::tempdir().unwrap();
+    let directory = root
+        .path()
+        .join("library/problems/tessoku-book/tessoku_book_a");
+    std::fs::create_dir_all(&directory).unwrap();
+    let cache = directory.join("problem.json");
+    std::fs::write(&cache, original).unwrap();
+    let library = ProblemLibrary::new(root.path());
+    let url = "https://atcoder.jp/contests/tessoku-book/tasks/tessoku_book_a";
+    let old = library.problem(url, false).unwrap();
+    assert_eq!(old.time_limit_ms, None);
+    assert_eq!(old.memory_limit_mib, None);
+    let mut documents = DocumentStore::default();
+    let workspace = library
+        .open_workspace(old, documents.revision(), &mut documents)
+        .unwrap();
+    assert_eq!(workspace.cases[0].stdin, "21\n");
+    assert_eq!(std::fs::read(&cache).unwrap(), original);
+    for (field, value) in [
+        ("timeLimitMs", serde_json::json!(0)),
+        ("timeLimitMs", serde_json::json!(1.5)),
+        ("timeLimitMs", serde_json::json!("2000")),
+        ("memoryLimitMiB", serde_json::json!(-1)),
+        ("memoryLimitMiB", serde_json::json!(0)),
+        ("memoryLimitMiB", serde_json::json!(4294967296_u64)),
+        ("unknownLimit", serde_json::json!(1)),
+    ] {
+        let mut invalid: serde_json::Value = serde_json::from_slice(original).unwrap();
+        invalid[field] = value;
+        std::fs::write(&cache, serde_json::to_vec(&invalid).unwrap()).unwrap();
+        assert!(library.problem(url, false).is_err(), "{invalid}");
+    }
+    let mut saved: serde_json::Value = serde_json::from_slice(original).unwrap();
+    saved["timeLimitMs"] = serde_json::json!(1500);
+    saved["memoryLimitMiB"] = serde_json::json!(1024);
+    std::fs::write(&cache, serde_json::to_vec(&saved).unwrap()).unwrap();
+    let problem = library.problem(url, false).unwrap();
+    assert_eq!(problem.time_limit_ms, Some(1500));
+    assert_eq!(problem.memory_limit_mib, Some(1024));
+    saved["timeLimitMs"] = serde_json::Value::Null;
+    saved["memoryLimitMiB"] = serde_json::Value::Null;
+    std::fs::write(&cache, serde_json::to_vec(&saved).unwrap()).unwrap();
+    assert_eq!(library.problem(url, false).unwrap().time_limit_ms, None);
+}
+
 fn seed(root: &Path) {
     let path = root.join("library/problems/abs/practice_1");
     std::fs::create_dir_all(&path).unwrap();
@@ -310,6 +428,8 @@ fn live_atcoder_download_run_refresh_and_restore() {
             .unwrap_or_else(|e| panic!("{url}: {e}"));
         assert_eq!(problem.title, title);
         assert_eq!(problem.samples.len(), count);
+        assert!(problem.time_limit_ms.is_some(), "{url}: time limit");
+        assert!(problem.memory_limit_mib.is_some(), "{url}: memory limit");
         let mut documents = DocumentStore::default();
         let workspace = library
             .open_workspace(problem, documents.revision(), &mut documents)

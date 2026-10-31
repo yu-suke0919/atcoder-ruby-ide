@@ -378,6 +378,47 @@ mod tests {
             .view
     }
 
+    #[test]
+    fn fixed_problem_without_limits_opens_without_rewriting_original_or_user_data() {
+        let root = tempfile::tempdir().unwrap();
+        let library = CollectionLibrary::new(root.path());
+        let collection = register(&library).collection;
+        let task = &collection.tasks[0].url;
+        let key = CollectionKey::parse(URL).unwrap();
+        let snapshot = library.snapshot_path(&key, task).unwrap();
+        std::fs::create_dir_all(snapshot.parent().unwrap()).unwrap();
+        let original = include_bytes!("../tests/fixtures/problem-without-limits.json");
+        std::fs::write(&snapshot, original).unwrap();
+        let mut documents = DocumentStore::default();
+        let revision = documents.revision();
+        let first = library
+            .open_task(URL, task, revision, &mut documents)
+            .unwrap();
+        assert_eq!(first.problem.time_limit_ms, None);
+        assert_eq!(first.problem.memory_limit_mib, None);
+        documents
+            .save("puts 'saved'", Some(documents.path().unwrap().to_owned()))
+            .unwrap();
+        ProblemLibrary::new(root.path())
+            .save_cases(
+                task,
+                vec![SampleCase {
+                    stdin: "edited input".into(),
+                    expected_output: "edited output".into(),
+                    compare: false,
+                }],
+            )
+            .unwrap();
+        let reopened = library
+            .open_task(URL, task, documents.revision(), &mut documents)
+            .unwrap();
+        assert_eq!(reopened.document.code.as_deref(), Some("puts 'saved'"));
+        assert_eq!(reopened.cases[0].stdin, "edited input");
+        assert_eq!(reopened.cases[0].expected_output, "edited output");
+        assert!(!reopened.cases[0].compare);
+        assert_eq!(std::fs::read(snapshot).unwrap(), original);
+    }
+
     #[cfg(unix)]
     #[test]
     fn snapshot_lookup_errors_never_replace_a_readable_manifest() {

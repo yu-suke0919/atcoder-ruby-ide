@@ -4,6 +4,51 @@ const assert = require('node:assert/strict');
 const load = () => import('../../src/sample-cases.mjs');
 const sample = (stdin = 'one', expectedOutput = 'ONE', compare = true) => ({ stdin, expectedOutput, compare });
 
+test('problem time warnings use the run limit, strict boundary and actual completion status', async () => {
+  const { SampleCases } = await load();
+  for (const [limit, duration, status, warning] of [
+    [1000, 999, 'completed', null], [1000, 1000, 'completed', null],
+    [1000, 1001, 'completed', 1000], [null, 1001, 'completed', null],
+    [1000, 1001, 'failed', 1000], [1000, 5000, 'timeout', 1000],
+    [1000, 1001, 'output-limit', 1000], [1000, 1001, 'stopped', null],
+  ]) {
+    const cases = new SampleCases([sample()]);
+    const [snapshot] = cases.snapshot(false, limit);
+    cases.begin(snapshot);
+    assert.equal(cases.current.exceededTimeLimitMs, null);
+    cases.finish(snapshot, { status, stdout: 'ONE', stderr: '', durationMs: duration, exitCode: 0, comparison: status === 'completed' ? true : null });
+    assert.equal(cases.current.exceededTimeLimitMs, warning, `${status}: ${duration} / ${limit}`);
+    assert.equal(cases.current.comparison, status === 'completed' ? 'matched' : 'unavailable');
+    assert.deepEqual(cases.data(), [sample()]);
+    assert.equal(cases.dirty, false);
+  }
+});
+
+test('time warnings are per case, clear on invalidation and cannot return after an edit', async () => {
+  const { SampleCases } = await load();
+  const cases = new SampleCases([sample(), sample('two', '', false)]);
+  const queue = cases.snapshot(true, 1000);
+  for (const snapshot of queue) {
+    cases.begin(snapshot);
+    cases.finish(snapshot, { status: 'completed', stdout: '', stderr: '', durationMs: 1001, comparison: null });
+  }
+  assert.equal(cases.items[1].exceededTimeLimitMs, 1000);
+  assert.equal(cases.items[1].comparison, 'none');
+  cases.invalidate();
+  assert.equal(cases.items[0].exceededTimeLimitMs, null);
+  assert.equal(cases.items[1].exceededTimeLimitMs, 1000);
+  cases.finish(queue[0], { status: 'completed', stdout: '', stderr: '', durationMs: 1001, comparison: null });
+  assert.equal(cases.current.exceededTimeLimitMs, null);
+  cases.invalidate(true);
+  assert.equal(cases.items[1].exceededTimeLimitMs, null);
+  const [fresh] = cases.snapshot(false, 2000);
+  cases.begin(fresh);
+  cases.finish(fresh, { status: 'completed', stdout: '', stderr: '', durationMs: 1001, comparison: true });
+  assert.equal(cases.current.exceededTimeLimitMs, null);
+  cases.clear();
+  assert.equal(cases.current.exceededTimeLimitMs, null);
+});
+
 test('error locations are per case, independent of comparison, and excluded from saved data', async () => {
   const { SampleCases } = await load();
   const cases = new SampleCases([sample(), sample('two', '', false)]);
