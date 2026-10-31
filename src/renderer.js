@@ -8,6 +8,8 @@ const $ = (id) => document.getElementById(id);
 const input = $('stdin');
 const expectedOutput = $('expected-output');
 const compareOutput = $('compare-output');
+const tolerantCompare = $('tolerant-compare');
+const toleranceInput = $('tolerance');
 const differenceDialog = $('difference-dialog');
 const problemDialog = $('problem-dialog');
 const collectionDialog = $('collection-dialog');
@@ -96,8 +98,10 @@ function showDifferenceLine(target, value, column) {
 function openDifference() {
   const detail = cases.current.difference;
   if (cases.current.comparison !== 'mismatched' || !detail) return;
-  $('difference-position').textContent = `最初の不一致：${detail.line} 行 ${detail.column} 列`;
-  showDifferenceLine($('difference-expected'), detail.expectedLine, detail.column);
+  $('difference-position').textContent = detail.column === detail.expectedColumn
+    ? `最初の不一致：${detail.line} 行 ${detail.column} 列`
+    : `最初の不一致：${detail.line} 行 実際 ${detail.column} 列 / 期待 ${detail.expectedColumn} 列`;
+  showDifferenceLine($('difference-expected'), detail.expectedLine, detail.expectedColumn);
   showDifferenceLine($('difference-actual'), detail.actualLine, detail.column);
   differenceDialog.showModal();
 }
@@ -151,9 +155,17 @@ function showCase() {
   input.value = item.stdin;
   expectedOutput.value = item.expectedOutput;
   compareOutput.checked = item.compare;
+  showTolerance();
   expectedOutput.disabled = !item.compare;
   showResult();
   updateButtons();
+}
+
+function showTolerance() {
+  tolerantCompare.checked = cases.current.tolerance !== null;
+  toleranceInput.value = cases.current.tolerance ?? 1e-6;
+  toleranceInput.setCustomValidity(typeof cases.current.tolerance === 'number' && cases.current.tolerance > 0 && Number.isFinite(cases.current.tolerance)
+    || cases.current.tolerance === null ? '' : '許容誤差は0より大きい有限の数にしてください。');
 }
 
 function resetComparison(all = false) {
@@ -222,6 +234,8 @@ function updateButtons() {
   $('error-location').disabled = fileBusy || closing;
   input.readOnly = expectedOutput.readOnly = fileBusy || closing;
   compareOutput.disabled = fileBusy || closing;
+  tolerantCompare.disabled = fileBusy || closing || !cases.current.compare;
+  toleranceInput.disabled = fileBusy || closing || !cases.current.compare || cases.current.tolerance === null;
   for (const id of ['cases-open', 'cases-save']) $(id).disabled = running || fileBusy || closing;
 }
 
@@ -280,7 +294,7 @@ async function run(all = false) {
       showResult();
       message('Ruby を実行しています。');
       try {
-        const result = await ide.run(code, snapshot.stdin, snapshot.compare ? snapshot.expectedOutput : null, ({ stream, text }) => {
+        const result = await ide.run(code, snapshot.stdin, snapshot.compare ? snapshot.expectedOutput : null, snapshot.compare ? snapshot.tolerance : null, ({ stream, text }) => {
           item[stream] += text;
           if (item === cases.current) appendOutput(stream, text);
         });
@@ -365,7 +379,18 @@ function editCase(field, value) {
 }
 input.addEventListener('input', () => editCase('stdin', input.value));
 expectedOutput.addEventListener('input', () => editCase('expectedOutput', expectedOutput.value));
-compareOutput.addEventListener('change', () => editCase('compare', compareOutput.checked));
+compareOutput.addEventListener('change', () => { editCase('compare', compareOutput.checked); updateButtons(); });
+tolerantCompare.addEventListener('change', () => {
+  editCase('tolerance', tolerantCompare.checked ? 1e-6 : null);
+  showTolerance();
+  updateButtons();
+});
+toleranceInput.addEventListener('input', () => {
+  const value = toleranceInput.valueAsNumber;
+  // Keep incomplete input as a string so JSON cannot silently turn NaN into null/strict mode.
+  editCase('tolerance', Number.isFinite(value) ? value : toleranceInput.value);
+  toleranceInput.setCustomValidity(Number.isFinite(value) && value > 0 ? '' : '許容誤差は0より大きい有限の数にしてください。');
+});
 document.addEventListener('keydown', (event) => {
   if (event.isComposing) return;
   if (!event.ctrlKey && !event.metaKey) return;

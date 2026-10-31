@@ -30,11 +30,13 @@ pub fn prepare_document_run(
     code: String,
     stdin: String,
     expected_output: Option<String>,
+    tolerance: Option<f64>,
 ) -> Result<PreparedRun, String> {
     runner.prepare(RunRequest {
         code,
         stdin,
         expected_output,
+        tolerance,
         cwd: documents
             .path()
             .and_then(|path| path.parent())

@@ -51,6 +51,7 @@ struct RunArgs {
     code: String,
     stdin: String,
     expected_output: Option<String>,
+    tolerance: Option<f64>,
     on_event: u64,
 }
 
@@ -102,6 +103,7 @@ fn main() {
                     args.code,
                     args.stdin,
                     args.expected_output,
+                    args.tolerance,
                 )?;
                 let ruby = ruby.clone();
                 let output = Arc::clone(&sink);

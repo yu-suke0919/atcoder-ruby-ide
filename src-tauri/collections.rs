@@ -403,6 +403,7 @@ mod tests {
             .save_cases(
                 task,
                 vec![SampleCase {
+                    tolerance: None,
                     stdin: "edited input".into(),
                     expected_output: "edited output".into(),
                     compare: false,
@@ -616,6 +617,7 @@ mod tests {
         let source = documents.path().unwrap().to_owned();
         documents.save("puts 'mine'", Some(source)).unwrap();
         let cases = vec![SampleCase {
+            tolerance: None,
             stdin: "custom".into(),
             expected_output: "mine".into(),
             compare: false,
@@ -685,6 +687,7 @@ mod tests {
             .save("puts 'my answer'", Some(source.clone()))
             .unwrap();
         let cases = vec![SampleCase {
+            tolerance: None,
             stdin: "mine".into(),
             expected_output: "answer".into(),
             compare: false,

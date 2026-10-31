@@ -2,6 +2,10 @@ const { invoke: nativeInvoke, Channel } = window.__TAURI__.core;
 const invoke = (...args) => nativeInvoke(...args).catch(error => { throw new Error(String(error)); });
 const appWindow = window.__TAURI__.window.getCurrentWindow();
 
+function validateTolerance(value) {
+  if (value !== null && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)) throw new Error('許容誤差は0より大きい有限の数にしてください。');
+}
+
 export const ide = {
   lspStart: () => invoke('lsp_start'),
   lspComplete: (code, line, character) => invoke('lsp_complete', { code, line, character }),
@@ -13,11 +17,15 @@ export const ide = {
   openCollectionTask: (url, task) => invoke('collection_open_task', { url, task }),
   openProblem: url => invoke('problem_open', { url }),
   refreshProblem: url => invoke('problem_refresh', { url }),
-  saveProblemCases: (url, cases) => invoke('problem_save_cases', { url, cases }),
+  saveProblemCases: (url, cases) => {
+    cases.forEach(item => validateTolerance(item.tolerance ?? null));
+    return invoke('problem_save_cases', { url, cases });
+  },
   rubyInfo: () => invoke('ruby_info'),
-  run(code, stdin, expectedOutput = null, output = () => {}) {
+  run(code, stdin, expectedOutput = null, tolerance = null, output = () => {}) {
     return new Promise((resolve, reject) => {
       if (expectedOutput !== null && typeof expectedOutput !== 'string') { reject(new Error('期待出力は文字列で指定してください。')); return; }
+      validateTolerance(tolerance);
       const decoders = { stdout: new TextDecoder(), stderr: new TextDecoder() };
       const channel = new Channel();
       channel.onmessage = event => {
@@ -27,7 +35,7 @@ export const ide = {
         } else if (event.type === 'completed') resolve(event.result);
         else if (event.type === 'failed') reject(new Error(event.message));
       };
-      invoke('run_ruby', { code, stdin, expectedOutput, onEvent: channel }).catch(reject);
+      invoke('run_ruby', { code, stdin, expectedOutput, tolerance, onEvent: channel }).catch(reject);
     });
   },
   stop: () => invoke('stop_ruby'),
@@ -35,7 +43,10 @@ export const ide = {
   saveFile: (code, saveAs) => invoke('document_save', { code, saveAs }),
   newFile: () => invoke('document_new'),
   openCases: () => invoke('samples_open'),
-  saveCases: cases => invoke('samples_save', { cases }),
+  saveCases: cases => {
+    cases.forEach(item => validateTolerance(item.tolerance ?? null));
+    return invoke('samples_save', { cases });
+  },
   confirmDiscard: () => invoke('confirm_discard'),
   setTitle: title => appWindow.setTitle(title),
   onCloseRequested: handler => appWindow.onCloseRequested(handler),

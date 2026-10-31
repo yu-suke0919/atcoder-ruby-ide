@@ -6,10 +6,31 @@ const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProblemSample {
+    pub stdin: String,
+    pub expected_output: String,
+    pub compare: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SampleCase {
     pub stdin: String,
     pub expected_output: String,
     pub compare: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tolerance: Option<f64>,
+}
+
+impl From<&ProblemSample> for SampleCase {
+    fn from(sample: &ProblemSample) -> Self {
+        Self {
+            stdin: sample.stdin.clone(),
+            expected_output: sample.expected_output.clone(),
+            compare: sample.compare,
+            tolerance: None,
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -27,12 +48,41 @@ pub struct SampleResult {
 }
 
 pub(crate) fn validate(cases: &[SampleCase]) -> Result<(), String> {
-    if !(1..=100).contains(&cases.len()) {
+    validate_texts(
+        cases
+            .iter()
+            .map(|item| (item.stdin.as_str(), item.expected_output.as_str())),
+    )?;
+    for case in cases {
+        validate_tolerance(case.tolerance)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_problem_samples(samples: &[ProblemSample]) -> Result<(), String> {
+    validate_texts(
+        samples
+            .iter()
+            .map(|item| (item.stdin.as_str(), item.expected_output.as_str())),
+    )
+}
+
+pub(crate) fn validate_tolerance(tolerance: Option<f64>) -> Result<(), String> {
+    if tolerance.is_some_and(|value| !value.is_finite() || value <= 0.0) {
+        return Err("許容誤差は0より大きい有限の数にしてください。".into());
+    }
+    Ok(())
+}
+
+fn validate_texts<'a>(
+    mut texts: impl ExactSizeIterator<Item = (&'a str, &'a str)>,
+) -> Result<(), String> {
+    if !(1..=100).contains(&texts.len()) {
         return Err("ケースは 1〜100 件にしてください。".into());
     }
-    if cases.iter().any(|item| {
-        item.stdin.len() > MAX_TEXT_BYTES || item.expected_output.len() > MAX_TEXT_BYTES
-    }) {
+    if texts
+        .any(|(stdin, expected)| stdin.len() > MAX_TEXT_BYTES || expected.len() > MAX_TEXT_BYTES)
+    {
         return Err("各ケースの入力・期待出力は 1 MiB 以下にしてください。".into());
     }
     Ok(())

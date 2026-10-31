@@ -18,6 +18,40 @@ fn statement_text(problem: &atcoder_ruby_ide::Problem) -> String {
 }
 const HTML: &str = include_str!("fixtures/atcoder-task.html");
 
+#[test]
+fn original_samples_keep_their_json_shape_and_do_not_accept_user_tolerance() {
+    let original = include_bytes!("fixtures/problem-without-limits.json");
+    let problem: atcoder_ruby_ide::Problem = serde_json::from_slice(original).unwrap();
+    let serialized = serde_json::to_value(&problem).unwrap();
+    assert!(serialized["samples"][0].get("tolerance").is_none());
+    let mut invalid = serialized;
+    invalid["samples"][0]["tolerance"] = serde_json::json!(1e-6);
+    assert!(serde_json::from_value::<atcoder_ruby_ide::Problem>(invalid).is_err());
+    let root = tempfile::tempdir().unwrap();
+    let library = ProblemLibrary::new(root.path());
+    let mut documents = DocumentStore::default();
+    let workspace = root.path().join("workspaces/tessoku-book/tessoku_book_a");
+    std::fs::create_dir_all(&workspace).unwrap();
+    let old_cases = include_bytes!("fixtures/cases-without-tolerance.json");
+    std::fs::write(workspace.join("cases.json"), old_cases).unwrap();
+    let opened = library
+        .open_workspace(problem.clone(), documents.revision(), &mut documents)
+        .unwrap();
+    assert_eq!(opened.cases[0].tolerance, None);
+    assert_eq!(opened.cases[0].stdin, "保存済み\r\n");
+    assert_eq!(
+        std::fs::read(workspace.join("cases.json")).unwrap(),
+        old_cases
+    );
+    let mut cases = opened.cases;
+    cases[0].tolerance = Some(1e-6);
+    library.save_cases(&problem.url, cases).unwrap();
+    let reopened = library
+        .open_workspace(problem, documents.revision(), &mut documents)
+        .unwrap();
+    assert_eq!(reopened.cases[0].tolerance, Some(1e-6));
+}
+
 fn with_limits(header: &str) -> String {
     HTML.replace(
         "<div id=\"task-statement\">",
@@ -200,6 +234,7 @@ fn tasks_without_samples_open_with_one_uncompared_empty_case() {
     assert_eq!(
         opened.cases,
         vec![SampleCase {
+            tolerance: None,
             stdin: String::new(),
             expected_output: String::new(),
             compare: false
@@ -288,6 +323,7 @@ fn cached_problem_opens_offline_and_restores_saved_workspace_without_overwriting
         .save_cases(
             URL,
             vec![SampleCase {
+                tolerance: None,
                 stdin: "custom\r\n".into(),
                 expected_output: "saved\n".into(),
                 compare: false,
@@ -452,6 +488,7 @@ fn live_atcoder_download_run_refresh_and_restore() {
             .save(code, documents.path().map(Path::to_owned))
             .unwrap();
         let edited = vec![SampleCase {
+            tolerance: None,
             stdin: "custom input\n".into(),
             expected_output: "custom output\n".into(),
             compare: false,

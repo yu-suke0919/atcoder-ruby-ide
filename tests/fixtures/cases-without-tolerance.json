@@ -1,0 +1,6 @@
+{
+  "cases": [
+    { "stdin": "保存済み\r\n", "expectedOutput": "1.000001\n", "compare": true },
+    { "stdin": "two", "expectedOutput": "ignored", "compare": false }
+  ]
+}

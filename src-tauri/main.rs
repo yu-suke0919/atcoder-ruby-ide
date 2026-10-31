@@ -98,6 +98,7 @@ fn run_ruby(
     code: String,
     stdin: String,
     expected_output: Option<String>,
+    tolerance: Option<f64>,
     on_event: Channel<RunEvent>,
 ) -> Result<(), String> {
     let prepared = prepare_document_run(
@@ -106,6 +107,7 @@ fn run_ruby(
         code,
         stdin,
         expected_output,
+        tolerance,
     )?;
     let ruby = ruby_path(&app)?;
     std::thread::Builder::new()

@@ -21,7 +21,7 @@ pub use library::{parse_problem, Problem, ProblemLibrary, ProblemWorkspace};
 pub use lsp::{LspInfo, RubyLsp};
 pub use presentation::StatementPart;
 pub use runner::{Output, PreparedRun, RunRequest, RunResult, Runner};
-pub use samples::{load_samples, save_samples, SampleCase, SampleResult};
+pub use samples::{load_samples, save_samples, ProblemSample, SampleCase, SampleResult};
 
 use serde::Serialize;
 

@@ -48,7 +48,11 @@
               <textarea id="expected-output" data-testid="expected-output" spellcheck="false" aria-describedby="comparison-help" disabled></textarea>
             </div>
           </div>
-          <div id="comparison-help" class="input-footer">改行コードと末尾の改行 1 つは揃えて比較。</div>
+          <div class="input-footer comparison-options" title="改行コードと末尾の改行1つは揃えて比較します。誤差許容でも空白は区別します。">
+            <label><input id="tolerant-compare" type="checkbox">誤差を許容</label>
+            <label for="tolerance">ε</label><input id="tolerance" type="number" step="any" value="0.000001" aria-label="許容誤差" disabled>
+            <span id="comparison-help" class="sr-only">改行コードと末尾の改行1つは揃えます。誤差許容では数値だけを絶対誤差または相対誤差で比較し、空白は区別します。</span>
+          </div>
         </section>
         <section class="panel output-panel" aria-labelledby="output-heading">
           <div class="panel-heading"><div class="panel-label"><h3 id="output-heading">実行結果</h3></div><button id="clear-output" class="quiet-button">クリア</button></div>

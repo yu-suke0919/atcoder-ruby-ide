@@ -3,7 +3,10 @@ use crate::presentation::{
     download_image, fill_images, parse_statement, validate_statement, MAX_CACHE_BYTES,
 };
 use crate::StatementPart;
-use crate::{load_samples, save_samples, DocumentResult, DocumentStore, SampleCase, SampleResult};
+use crate::{
+    load_samples, save_samples, DocumentResult, DocumentStore, ProblemSample, SampleCase,
+    SampleResult,
+};
 use reqwest::blocking::Client;
 use scraper::{ElementRef, Html, Node, Selector};
 use serde::{Deserialize, Serialize};
@@ -70,7 +73,7 @@ pub struct Problem {
     #[serde(rename = "memoryLimitMiB")]
     pub memory_limit_mib: Option<u32>,
     pub statement: Vec<StatementPart>,
-    pub samples: Vec<SampleCase>,
+    pub samples: Vec<ProblemSample>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -98,7 +101,7 @@ fn validate_content(
     if problem.samples.is_empty() {
         Ok(())
     } else {
-        crate::samples::validate(&problem.samples)
+        crate::samples::validate_problem_samples(&problem.samples)
     }
 }
 fn selector(value: &str) -> Selector {
@@ -248,7 +251,7 @@ pub fn parse_problem(url: &str, html: &str) -> Result<Problem, String> {
     }
     let samples = inputs
         .into_iter()
-        .map(|(number, stdin)| SampleCase {
+        .map(|(number, stdin)| ProblemSample {
             stdin,
             expected_output: outputs.remove(&number).unwrap(),
             compare: true,
@@ -381,9 +384,10 @@ impl ProblemLibrary {
                 stdin: String::new(),
                 expected_output: String::new(),
                 compare: false,
+                tolerance: None,
             }]
         } else {
-            problem.samples.clone()
+            problem.samples.iter().map(SampleCase::from).collect()
         };
         let data = serde_json::to_vec_pretty(&serde_json::json!({"cases":initial_cases}))
             .map_err(|e| e.to_string())?;
