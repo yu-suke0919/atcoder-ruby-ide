@@ -48,6 +48,12 @@ jobs:
           name: U0-spike
           path: test-results/
           if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        with:
+          name: U0-spike-exe
+          path: target/release/atcoder-ruby-ide.exe
+          if-no-files-found: error
+          retention-days: 14
 
   ruby-stack:
     if: github.event_name == 'workflow_dispatch' && inputs.measure_ruby_stack

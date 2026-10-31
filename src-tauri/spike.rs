@@ -40,6 +40,18 @@ pub fn embed(app: &tauri::App, browser_args: Option<String>) -> tauri::Result<()
     if let Some(args) = browser_args {
         builder = builder.additional_browser_args(&args);
     }
+    let handle = app.handle().clone();
+    std::thread::spawn(move || {
+        use tauri_plugin_notification::NotificationExt;
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        let result = handle
+            .notification()
+            .builder()
+            .title("AtCoder Ruby IDE")
+            .body("U0: トースト通知の確認")
+            .show();
+        eprintln!("spike: startup notification {result:?}");
+    });
     let size = window
         .inner_size()?
         .to_logical::<f64>(window.scale_factor()?);
