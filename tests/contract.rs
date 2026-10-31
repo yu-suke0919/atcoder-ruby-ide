@@ -3,6 +3,115 @@ use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
+#[cfg(windows)]
+#[test]
+fn windows_job_memory_limit_rejects_allocations_and_allows_the_next_run() {
+    let runner = Runner::new(Duration::from_secs(5), 1048576);
+    let code = include_str!("fixtures/windows-memory.rb");
+    let mut measurements = Vec::new();
+    for mode in [
+        "normal",
+        "reserve",
+        "single",
+        "denied",
+        "denied-exit",
+        "descendants",
+        "normal",
+    ] {
+        let mut req = request(code, mode);
+        req.expected_output = Some("must not match".into());
+        let result = runner
+            .prepare(req)
+            .unwrap()
+            .execute(&ruby(), |_| {})
+            .unwrap();
+        println!(
+            "{mode}: {} ms, {}\n{}",
+            result.duration_ms, result.status, result.stdout
+        );
+        measurements.push(serde_json::json!({ "mode": mode, "status": result.status, "durationMs": result.duration_ms, "stdout": result.stdout, "stderr": result.stderr }));
+        let allowed: &[&str] = match mode {
+            "normal" | "reserve" => &["completed"],
+            "single" => &["memory-limit", "failed"],
+            "denied-exit" => &["memory-limit", "completed"],
+            _ => &["memory-limit", "timeout"],
+        };
+        assert!(
+            allowed.contains(&result.status.as_str()),
+            "{mode}: {}\n{}",
+            result.status,
+            result.stderr
+        );
+        match result.status.as_str() {
+            "failed" => {
+                assert!(result.stderr.contains("NoMemoryError"));
+                assert_ne!(result.exit_code, Some(0));
+            }
+            "timeout" => assert!(result.stdout.contains(if mode == "descendants" {
+                "child denied"
+            } else {
+                "allocation denied"
+            })),
+            "completed" if mode == "denied-exit" => {
+                assert_eq!(result.exit_code, Some(0));
+                assert!(result.stdout.contains("allocation denied"));
+            }
+            _ => {}
+        }
+        if result.status != "failed" {
+            assert_eq!(result.error_line, None);
+        }
+        assert_eq!(
+            result.comparison,
+            if result.status == "completed" {
+                Some(false)
+            } else {
+                None
+            }
+        );
+        let first: serde_json::Value =
+            serde_json::from_str(result.stdout.lines().next().unwrap()).unwrap();
+        assert_eq!(first["limit"], 1024_u64.pow(3));
+        assert!(!PathBuf::from(first["source"].as_str().unwrap()).exists());
+        let peak = result
+            .stdout
+            .lines()
+            .filter(|line| line.starts_with('{'))
+            .map(|line| {
+                let memory: serde_json::Value = serde_json::from_str(line).unwrap();
+                memory["peak"].as_u64().unwrap()
+            })
+            .max()
+            .unwrap();
+        assert!(peak <= 1024_u64.pow(3));
+        if mode == "descendants" {
+            assert!(result.stdout.contains("child allocated"));
+            assert!(peak > 600 * 1024_u64.pow(2));
+        }
+        assert!(runner.prepare(RunRequest::default()).is_ok());
+    }
+    for code in [
+        "raise 'ordinary exception'",
+        "raise NoMemoryError, 'not a Job notification'",
+    ] {
+        let result = runner
+            .prepare(request(code, ""))
+            .unwrap()
+            .execute(&ruby(), |_| {})
+            .unwrap();
+        assert_eq!(result.status, "failed");
+        assert!(result.error_line.is_some());
+    }
+    // Packaging replaces artifacts/; keep measurements with the preserved test evidence.
+    let reports = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../test-results");
+    std::fs::create_dir_all(&reports).unwrap();
+    std::fs::write(
+        reports.join("ruby-memory.json"),
+        serde_json::to_vec_pretty(&measurements).unwrap(),
+    )
+    .unwrap();
+}
+
 #[test]
 fn tolerant_runner_returns_one_verdict_with_independent_difference_columns() {
     let runner = Runner::new(Duration::from_secs(5), 1048576);

@@ -89,7 +89,7 @@ export class SampleCases {
     Object.assign(item, { stdout, stderr, status, exitCode, durationMs });
     item.errorLine = item.revision === revision && status === 'failed' ? result.errorLine ?? null : null;
     item.exceededTimeLimitMs = item.revision === revision && timeLimitMs != null && durationMs > timeLimitMs
-      && ['completed', 'failed', 'timeout', 'output-limit'].includes(status) ? timeLimitMs : null;
+      && ['completed', 'failed', 'timeout', 'output-limit', 'memory-limit'].includes(status) ? timeLimitMs : null;
     if (item.revision === revision && compare) {
       item.comparison = result.comparison === null ? 'unavailable' : result.comparison ? 'matched' : 'mismatched';
       item.difference = result.difference;

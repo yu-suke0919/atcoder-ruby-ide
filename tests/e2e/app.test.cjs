@@ -396,6 +396,55 @@ test('M01: Tab inserts two spaces and output is rendered as text', async () => {
   assert.match(await page.getByTestId('stdout').textContent(), /<img/);
 });
 
+test('M08: a local memory-limit result is distinct and the batch continues', async () => {
+  await page.evaluate(async () => {
+    const { ide } = await import('./bridge.mjs');
+    const run = ide.run;
+    ide.run = (code, stdin, ...args) => stdin === 'limit'
+      ? Promise.resolve({ status: 'memory-limit', stdout: '', stderr: '', exitCode: 1, durationMs: 100, comparison: null, difference: null, errorLine: null })
+      : run(code, stdin, ...args);
+  });
+  await page.getByTestId('code-editor').fill('puts STDIN.read');
+  await page.getByTestId('stdin').fill('limit');
+  await page.locator('#compare-output').check();
+  await page.locator('#expected-output').fill('must not match');
+  await page.locator('#case-add').click();
+  await page.getByTestId('stdin').fill('normal');
+  await page.locator('#expected-output').fill('normal\n');
+  await page.locator('#run-all').click();
+  await page.getByTestId('cases-summary').filter({ hasText: '完了 2 / 2' }).waitFor({ timeout: 15000 });
+  assert.match(await page.getByTestId('cases-summary').textContent(), /エラー 1/);
+  await page.locator('#case-select').selectOption('0');
+  assert.equal(await page.getByTestId('run-status').textContent(), 'ローカルのメモリ上限で停止（1 GiB）');
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '判定なし');
+  assert.equal(await page.locator('#error-location').isHidden(), true);
+  await page.setViewportSize({ width: 900, height: 650 });
+  await assertWorkspaceFits();
+  assert.equal(await page.locator('#run').isEnabled(), true);
+  await page.locator('#case-select').selectOption('1');
+  assert.match(await page.getByTestId('run-status').textContent(), /正常終了/);
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '一致');
+  await page.locator('#run').click();
+  await page.waitForFunction(() => document.getElementById('stop').disabled);
+  assert.match(await page.getByTestId('run-status').textContent(), /正常終了/);
+});
+
+test('M08: Windows enforces the commit cap even without a memory notification', { skip: process.platform !== 'win32' }, async () => {
+  await page.getByTestId('code-editor').fill(await readFile(path.join(__dirname, '../fixtures/windows-memory.rb'), 'utf8'));
+  await page.getByTestId('stdin').fill('denied');
+  await page.locator('#compare-output').check();
+  await page.locator('#expected-output').fill('must not match');
+  await page.locator('#run').click();
+  await page.waitForFunction(() => document.getElementById('stop').disabled);
+  const status = await page.getByTestId('run-status').textContent();
+  assert.ok(['ローカルのメモリ上限で停止（1 GiB）', '時間制限で停止（5 秒）'].includes(status), status);
+  if (status.startsWith('時間制限')) assert.match(await page.getByTestId('stdout').textContent(), /allocation denied/);
+  assert.equal(await page.getByTestId('comparison-status').textContent(), '判定なし');
+  assert.equal(await page.locator('#error-location').isHidden(), true);
+  await page.getByTestId('stdin').fill('normal');
+  await runAndWait();
+});
+
 test('M06/M08: show timeout and output-limit reasons in the UI', async () => {
   await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
   await page.getByTestId('expected-output').fill('');

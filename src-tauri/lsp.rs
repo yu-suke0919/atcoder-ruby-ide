@@ -238,17 +238,8 @@ impl Session {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child = command
-            .spawn()
+        let (mut child, tree) = ProcessTree::spawn(&mut command, None)
             .map_err(|e| format!("Ruby LSPを起動できません: {e}"))?;
-        let tree = match ProcessTree::attach(&child) {
-            Ok(tree) => tree,
-            Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(error.to_string());
-            }
-        };
         let mut stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
         let mut stderr_pipe = child.stderr.take().unwrap();
