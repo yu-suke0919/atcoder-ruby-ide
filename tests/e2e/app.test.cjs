@@ -1655,6 +1655,96 @@ test('P13: refreshing limits applies to the next run and preserves the old resul
   assert.equal(await page.locator('#comparison-status').textContent(), '一致');
 });
 
+test('T01: tolerant comparison keeps exact whitespace, separate columns and saved per-case settings', async () => {
+  const problem = await seedProblem('tolerance');
+  await openProblemDialog(problem.url); await page.locator('#problem-open').click(); await waitProblem();
+  assert.equal(await page.locator('#tolerant-compare').count(), 1);
+  assert.equal(await page.locator('#tolerant-compare').isChecked(), false);
+  await page.locator('#code-editor').fill('puts "0.500 日😀A"');
+  await page.locator('#expected-output').fill('0.5 日😀B');
+  await page.locator('#tolerant-compare').check();
+  assert.equal(Number(await page.locator('#tolerance').inputValue()), 1e-6);
+  await runAndWait();
+  await page.locator('#comparison-status').click();
+  assert.match(await page.locator('#difference-position').textContent(), /実際 9 列.*期待 7 列/);
+  assert.equal(await page.locator('#difference-actual mark').textContent(), 'A');
+  assert.equal(await page.locator('#difference-expected mark').textContent(), 'B');
+  await page.locator('#difference-close').click();
+  await page.locator('#expected-output').fill('0.5 日😀A');
+  await runAndWait();
+  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
+  await page.locator('#expected-output').fill('0.5  日😀A');
+  await runAndWait();
+  assert.equal(await page.locator('#comparison-status').textContent(), '不一致');
+  await page.locator('#expected-output').fill('0.5 日😀A');
+  await page.locator('#tolerance').fill('0');
+  await runAndWait('実行できませんでした');
+  assert.match(await page.locator('#stderr').textContent(), /許容誤差/);
+  await page.locator('#tolerance').fill('1e-9');
+  await page.locator('#cases-save').click();
+  await page.waitForFunction(() => !document.getElementById('cases-save').disabled);
+  const saved = JSON.parse(await readFile(path.join(app.dataDir, 'workspaces', libraryContest, 'tolerance', 'cases.json'), 'utf8'));
+  assert.equal(saved.cases[0].tolerance, 1e-9);
+  assert.equal(saved.cases[1].tolerance, undefined);
+  await selectCase(2);
+  assert.equal(await page.locator('#tolerant-compare').isChecked(), false);
+  await selectCase(1);
+  assert.equal(Number(await page.locator('#tolerance').inputValue()), 1e-9);
+  await runAndWait();
+  for (const [width, height] of [[1440, 900], [1200, 650], [900, 650]]) {
+    await page.setViewportSize({ width, height });
+    await page.evaluate(() => { document.body.style.lineHeight = '1.8'; });
+    await assertWorkspaceFits();
+    await page.screenshot({ path: `test-results/tolerance-${width}.png` });
+  }
+  await page.locator('#code-editor').fill('sleep 0.3; puts "0.500 日😀A"');
+  await page.locator('#run').click();
+  await page.locator('#tolerance').fill('1e-6');
+  await page.waitForFunction(() => document.getElementById('stop').disabled);
+  assert.equal(await page.locator('#comparison-status').textContent(), '未比較');
+});
+
+test('T02: mixed strict and tolerant cases roundtrip and invalid input cannot be saved as strict', async () => {
+  const source = path.join(root, '誤差 ケース.json');
+  const data = { cases: [
+    { stdin: '1.0000001', expectedOutput: '1', compare: true, tolerance: 1e-6 },
+    { stdin: '1.0000001', expectedOutput: '1', compare: true },
+  ] };
+  await writeFile(source, JSON.stringify(data));
+  await loadCases(source);
+  await page.locator('#code-editor').fill('print STDIN.read');
+  await page.locator('#run-all').click();
+  await page.locator('#cases-summary').filter({ hasText: /完了 2 \/ 2.*一致 1.*不一致 1/ }).waitFor();
+  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
+  await selectCase(2);
+  assert.equal(await page.locator('#comparison-status').textContent(), '不一致');
+  assert.equal(await page.locator('#tolerant-compare').isChecked(), false);
+  await selectCase(1);
+  await page.locator('#tolerance').fill('');
+  assert.equal(await casesDirty(), true);
+  await page.locator('#cases-save').click();
+  await page.locator('#message').filter({ hasText: '許容誤差' }).waitFor();
+  assert.deepEqual(JSON.parse(await readFile(source, 'utf8')), data);
+  assert.equal(await page.locator('#tolerant-compare').isChecked(), true);
+  assert.equal(await page.locator('#tolerance').inputValue(), '');
+  await page.locator('#tolerance').fill('1e-6');
+  assert.equal(await casesDirty(), false);
+  await page.locator('#compare-output').uncheck();
+  assert.equal(await page.locator('#tolerance').isDisabled(), true);
+  const destination = path.join(root, '誤差 保存.json');
+  await saveCases(destination);
+  await page.waitForFunction(() => !document.getElementById('cases-save').disabled);
+  assert.equal(JSON.parse(await readFile(destination, 'utf8')).cases[0].tolerance, 1e-6);
+  await loadCases(destination);
+  await page.waitForFunction(() => !document.getElementById('cases-open').disabled);
+  assert.equal(await page.locator('#tolerant-compare').isChecked(), true);
+  assert.equal(await page.locator('#tolerance').isDisabled(), true);
+  await page.locator('#compare-output').check();
+  assert.equal(await page.locator('#tolerance').isEnabled(), true);
+  await runAndWait();
+  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
+});
+
 test('M06/M09: accepting close stops Ruby descendants and exits', async () => {
   const marker = path.join(root, 'orphan.txt').replaceAll('\\', '/');
   await page.getByTestId('code-editor').fill(`require 'rbconfig'; spawn(RbConfig.ruby, '-e', 'sleep 2; File.write(${JSON.stringify(marker)}, "survived")'); puts 'ready'; sleep 30`);

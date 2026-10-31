@@ -4,6 +4,77 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
 #[test]
+fn tolerant_runner_returns_one_verdict_with_independent_difference_columns() {
+    let runner = Runner::new(Duration::from_secs(5), 1048576);
+    let mut req = request("puts '0.500 日😀A'", "");
+    req.expected_output = Some("0.5 日😀B".into());
+    req.tolerance = Some(1e-6);
+    let result = runner
+        .prepare(req)
+        .unwrap()
+        .execute(&ruby(), |_| {})
+        .unwrap();
+    assert_eq!(result.comparison, Some(false));
+    let difference = result.difference.unwrap();
+    assert_eq!((difference.column, difference.expected_column), (9, 7));
+    for (tolerance, matched) in [(None, false), (Some(1e-6), true)] {
+        let mut req = request("puts '1.0000001'", "");
+        req.expected_output = Some("1".into());
+        req.tolerance = tolerance;
+        let result = runner
+            .prepare(req)
+            .unwrap()
+            .execute(&ruby(), |_| {})
+            .unwrap();
+        assert_eq!(result.comparison, Some(matched));
+        assert_eq!(result.difference.is_none(), matched);
+    }
+    for epsilon in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        let mut req = request("puts 'must not run'", "");
+        req.tolerance = Some(epsilon);
+        assert!(runner.prepare(req).err().unwrap().contains("許容誤差"));
+    }
+    assert!(runner.prepare(request("puts 'recovered'", "")).is_ok());
+}
+
+#[test]
+fn optional_tolerance_preserves_old_cases_and_rejects_invalid_saved_values() {
+    use atcoder_ruby_ide::{load_samples, save_samples};
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join("cases.json");
+    let original = include_bytes!("fixtures/cases-without-tolerance.json");
+    std::fs::write(&file, original).unwrap();
+    let mut cases = load_samples(Some(file.clone())).unwrap().cases.unwrap();
+    assert_eq!(cases[0].tolerance, None);
+    assert_eq!(cases[0].stdin, "保存済み\r\n");
+    assert_eq!(std::fs::read(&file).unwrap(), original);
+    cases[0].tolerance = Some(1e-6);
+    cases[1].tolerance = Some(1e-9);
+    save_samples(cases.clone(), Some(file.clone())).unwrap();
+    assert_eq!(
+        load_samples(Some(file.clone())).unwrap().cases.unwrap(),
+        cases
+    );
+    let saved = std::fs::read(&file).unwrap();
+    for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        cases[0].tolerance = Some(invalid);
+        assert!(save_samples(cases.clone(), Some(file.clone())).is_err());
+        assert_eq!(std::fs::read(&file).unwrap(), saved);
+    }
+    for invalid in [
+        serde_json::json!(0),
+        serde_json::json!(-1),
+        serde_json::json!("1e-6"),
+        serde_json::json!(true),
+    ] {
+        let mut data: serde_json::Value = serde_json::from_slice(original).unwrap();
+        data["cases"][0]["tolerance"] = invalid;
+        std::fs::write(&file, serde_json::to_vec(&data).unwrap()).unwrap();
+        assert!(load_samples(Some(file.clone())).is_err());
+    }
+}
+
+#[test]
 fn m14_sample_json_roundtrip_cancel_and_failed_writes_preserve_files() {
     use atcoder_ruby_ide::{load_samples, save_samples, SampleCase};
     let root = tempfile::tempdir().unwrap();
@@ -11,11 +82,13 @@ fn m14_sample_json_roundtrip_cancel_and_failed_writes_preserve_files() {
     let cases = || {
         vec![
             SampleCase {
+                tolerance: None,
                 stdin: "日本語\r\n".into(),
                 expected_output: "".into(),
                 compare: true,
             },
             SampleCase {
+                tolerance: None,
                 stdin: "two".into(),
                 expected_output: "ignored".into(),
                 compare: false,
@@ -102,19 +175,19 @@ fn m15_run_result_serializes_the_same_comparison_and_difference() {
             "print '日😀A'",
             Some("日😀B"),
             Some(false),
-            serde_json::json!({"line":1,"column":3,"actualLine":"日😀A","expectedLine":"日😀B"}),
+            serde_json::json!({"line":1,"column":3,"expectedColumn":3,"actualLine":"日😀A","expectedLine":"日😀B"}),
         ),
         (
             "print 'ok'",
             Some("ok\n\n"),
             Some(false),
-            serde_json::json!({"line":2,"column":1,"actualLine":null,"expectedLine":""}),
+            serde_json::json!({"line":2,"column":1,"expectedColumn":1,"actualLine":null,"expectedLine":""}),
         ),
         (
             "",
             Some("x"),
             Some(false),
-            serde_json::json!({"line":1,"column":1,"actualLine":"","expectedLine":"x"}),
+            serde_json::json!({"line":1,"column":1,"expectedColumn":1,"actualLine":"","expectedLine":"x"}),
         ),
         ("puts 'ok'", Some("ok"), Some(true), serde_json::Value::Null),
         ("print 'actual'", None, None, serde_json::Value::Null),
@@ -232,7 +305,7 @@ fn m11_comparison_newlines_empty_and_significant_whitespace() {
         ("\n", ""),
         ("<img src=x>", "<img src=x>"),
     ] {
-        assert!(first_difference(actual, expected).is_none());
+        assert!(first_difference(actual, expected, None).is_none());
     }
     for (actual, expected) in [
         ("a\n\n", "a\n"),
@@ -244,7 +317,7 @@ fn m11_comparison_newlines_empty_and_significant_whitespace() {
         ("1 2", "2 1"),
         ("\n\n", ""),
     ] {
-        assert!(first_difference(actual, expected).is_some());
+        assert!(first_difference(actual, expected, None).is_some());
     }
 }
 

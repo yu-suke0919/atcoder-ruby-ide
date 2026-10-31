@@ -12,8 +12,8 @@ function clearResult(item, status = null) {
   resetComparison(item);
 }
 
-function createCase({ stdin = '', expectedOutput = '', compare = true }) {
-  const item = { stdin, expectedOutput, compare, revision: 0 };
+function createCase({ stdin = '', expectedOutput = '', compare = true, tolerance = null }) {
+  const item = { stdin, expectedOutput, compare, tolerance, revision: 0 };
   clearResult(item);
   return item;
 }
@@ -34,7 +34,7 @@ export class SampleCases {
   }
 
   data() {
-    return this.items.map(({ stdin, expectedOutput, compare }) => ({ stdin, expectedOutput, compare }));
+    return this.items.map(({ stdin, expectedOutput, compare, tolerance }) => ({ stdin, expectedOutput, compare, ...(tolerance === null ? {} : { tolerance }) }));
   }
 
   markSaved(data = this.data()) {
@@ -112,6 +112,6 @@ export class SampleCases {
   }
 
   snapshot(all = false, timeLimitMs = null) {
-    return (all ? this.items : [this.current]).map(item => ({ item, stdin: item.stdin, expectedOutput: item.expectedOutput, compare: item.compare, revision: item.revision, timeLimitMs }));
+    return (all ? this.items : [this.current]).map(item => ({ item, stdin: item.stdin, expectedOutput: item.expectedOutput, compare: item.compare, tolerance: item.tolerance, revision: item.revision, timeLimitMs }));
   }
 }

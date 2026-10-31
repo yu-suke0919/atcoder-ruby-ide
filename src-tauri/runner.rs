@@ -14,6 +14,7 @@ pub struct RunRequest {
     pub code: String,
     pub stdin: String,
     pub expected_output: Option<String>,
+    pub tolerance: Option<f64>,
     pub cwd: Option<PathBuf>,
 }
 
@@ -75,6 +76,7 @@ impl Runner {
         }
     }
     pub fn prepare(self: &Arc<Self>, request: RunRequest) -> Result<PreparedRun, String> {
+        crate::samples::validate_tolerance(request.tolerance)?;
         let mut active = self.active.lock().unwrap();
         if active.is_some() {
             return Err("すでに実行中です。".into());
@@ -286,7 +288,7 @@ impl PreparedRun {
         });
         let (comparison, difference) = match (status, self.request.expected_output.as_deref()) {
             ("completed", Some(expected)) => {
-                let difference = first_difference(&stdout, expected);
+                let difference = first_difference(&stdout, expected, self.request.tolerance);
                 (Some(difference.is_none()), difference)
             }
             _ => (None, None),

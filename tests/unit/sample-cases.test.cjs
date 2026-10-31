@@ -4,6 +4,28 @@ const assert = require('node:assert/strict');
 const load = () => import('../../src/sample-cases.mjs');
 const sample = (stdin = 'one', expectedOutput = 'ONE', compare = true) => ({ stdin, expectedOutput, compare });
 
+test('tolerance is optional, saved per case and frozen with the run snapshot', async () => {
+  const { SampleCases } = await load();
+  const cases = new SampleCases([sample(), { ...sample('two', '', false), tolerance: 1e-9 }]);
+  assert.equal(cases.current.tolerance, null);
+  assert.deepEqual(cases.data()[0], sample());
+  const queue = cases.snapshot(true);
+  assert.equal(queue[1].tolerance, 1e-9);
+  cases.items[1].tolerance = 1e-6;
+  cases.selected = 1;
+  cases.invalidate();
+  assert.equal(cases.dirty, true);
+  assert.equal(queue[1].tolerance, 1e-9);
+  cases.finish(queue[1], { status: 'completed', stdout: '', stderr: '', comparison: true, difference: null });
+  assert.equal(cases.current.comparison, 'none');
+  cases.markSaved();
+  assert.equal(cases.dirty, false);
+  assert.equal(cases.data()[1].tolerance, 1e-6);
+  cases.current.tolerance = '';
+  assert.equal(cases.data()[1].tolerance, '');
+  assert.equal(cases.dirty, true);
+});
+
 test('problem time warnings use the run limit, strict boundary and actual completion status', async () => {
   const { SampleCases } = await load();
   for (const [limit, duration, status, warning] of [
