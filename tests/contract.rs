@@ -717,3 +717,32 @@ fn escaped_descendant_cannot_hold_runner_busy_after_timeout() {
         "next\n"
     );
 }
+
+#[test]
+fn deep_recursion_and_stack_overflow_leave_the_runner_usable() {
+    let runner = Runner::new(Duration::from_secs(5), 1048576);
+    let fixture = include_str!("fixtures/deep-recursion.rb");
+    let code = format!("{fixture}\nputs count_down(Integer(STDIN.read))");
+    let result = runner
+        .prepare(request(&code, "200000"))
+        .unwrap()
+        .execute(&ruby(), |_| {})
+        .unwrap();
+    assert_eq!(result.status, "completed", "{}", result.stderr);
+    assert_eq!(result.stdout, "200000\n");
+    let code = format!("{fixture}\nbegin; count_down(-1); rescue SystemStackError; STDERR.puts 'stack limit reached'; exit 1; end");
+    let result = runner
+        .prepare(request(&code, ""))
+        .unwrap()
+        .execute(&ruby(), |_| {})
+        .unwrap();
+    assert_eq!(result.status, "failed", "{}", result.stderr);
+    assert_eq!(result.stderr, "stack limit reached\n");
+    let result = runner
+        .prepare(request("puts 'recovered'", ""))
+        .unwrap()
+        .execute(&ruby(), |_| {})
+        .unwrap();
+    assert_eq!(result.status, "completed");
+    assert_eq!(result.stdout, "recovered\n");
+}

@@ -5,12 +5,18 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      measure_ruby_stack:
+        description: Measure Ruby stacks instead of running tests and builds
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   linux:
+    if: ${{ !inputs.measure_ruby_stack }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +53,7 @@ jobs:
           if-no-files-found: ignore
 
   windows:
+    if: ${{ !inputs.measure_ruby_stack }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -104,3 +111,38 @@ jobs:
           path: artifacts/*-setup.exe
           if-no-files-found: error
           retention-days: 14
+
+  ruby-stack:
+    if: github.event_name == 'workflow_dispatch' && inputs.measure_ruby_stack
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Read pinned Ruby patch
+        id: ruby
+        shell: bash
+        run: node -e "console.log('version=' + require('./config/ruby-windows.json').rubyVersion)" >> "$GITHUB_OUTPUT"
+      - uses: ruby/setup-ruby@v1
+        if: runner.os == 'Linux'
+        with:
+          ruby-version: ${{ steps.ruby.outputs.version }}
+      - run: npm ci
+        if: runner.os == 'Windows'
+      - run: npm run prepare:ruby
+        if: runner.os == 'Windows'
+      - name: Measure VM sizes and process memory
+        if: runner.os == 'Windows'
+        run: ./scripts/measure-ruby-stack.ps1
+      - name: Measure each and map recursion boundaries
+        run: node scripts/measure-ruby-recursion.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Ruby-stack-${{ runner.os }}
+          path: artifacts/reports/ruby-*.json
+          if-no-files-found: warn

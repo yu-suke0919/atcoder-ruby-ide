@@ -63,6 +63,15 @@ async function startHost(t, largeOutput = false, env = {}, code = 'sleep 30', st
   return { host, exited, directory, messages, completed, stderr: () => stderr };
 }
 
+test('Runner supports deep recursion despite a small inherited VM stack', { timeout: 15000 }, async t => {
+  const fixture = await readFile(path.join(__dirname, '../fixtures/deep-recursion.rb'), 'utf8');
+  const { host, completed } = await startHost(t, false, { RUBY_THREAD_VM_STACK_SIZE: '65536' }, `${fixture}\nputs count_down(100000)`);
+  const result = await completed;
+  assert.equal(result.status, 'completed', result.stderr);
+  assert.equal(result.stdout.slice(result.stdout.indexOf('\n') + 1), '100000\n');
+  host.stdin.end();
+});
+
 test('M19: external gem settings cannot hide or replace the selected Ruby gems', { timeout: 15000 }, async t => {
   const external = await mkdtemp(path.join(tmpdir(), 'IDE-external-gems-'));
   t.after(() => rm(external, { recursive: true, force: true }));

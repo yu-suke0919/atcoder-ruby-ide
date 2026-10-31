@@ -327,3 +327,31 @@ Windows CI の初回では、HTML固定データがCRLFでチェックアウト�
 - Linux / Rust 1.99.1 / Ruby 3.4.12 / Node 24.19.0でRust 79件・Node 81件が成功。bridge.mjsの直接importではMODULE_TYPELESS_PACKAGE_JSON警告が出ない。
 - 復旧案内は既存の説明欄に追加し、件数APIや件数同期用の状態は増やしていない。変更後の両OSの結果はPRの最新CIを参照する。
 - Linuxの画面85件が全件成功（約117秒）。改名後の配信・動的importと、復旧案内を追加した問題集ダイアログの900×650での表示も確認。rustfmt・JavaScript構文・差分検査が成功した。
+
+## 再帰スタックの測定と採用値
+
+- main 82ec0f7から開始。資料を先に更新し、実Runnerの通常再帰10万段（後に受入条件を20万段へ更新）がSystemStackErrorになることと、小さいVMスタックを継承したテストホストの失敗を確認してから実装した。
+- [CI #117のWindows測定ジョブ](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/41173397436/job/124455886694)で、同梱Ruby 3.4.12のメインスレッドを63条件で測定した。測定コードはscripts/measure-ruby-stack.ps1とtests/fixtures/deep-recursion.rb。生データは同ジョブのWindows-Ruby-stack-measurements artifactに保存した。
+
+| VMスタック | 通常再帰10万段 | 通常再帰100万段 | 深さ0のピークWS | 深さ0のピークコミット |
+| --- | --- | --- | --- | --- |
+| 既定1 MiB | SystemStackError | SystemStackError | 19.7 MiB | 53.6 MiB |
+| 4 MiB | SystemStackError | SystemStackError | 18.8 MiB | 56.5 MiB |
+| 16 MiB | 完了 | SystemStackError | 18.8 MiB | 68.5 MiB |
+| 32 MiB | 完了 | SystemStackError | 18.9 MiB | 84.5 MiB |
+| 64 MiB | 完了 | SystemStackError | 18.9 MiB | 116.6 MiB |
+| 128 MiB | 完了 | 完了 | 18.8 MiB | 180.7 MiB |
+| 256 MiB | 完了 | 完了 | 18.8 MiB | 308.9 MiB |
+
+- VMの実効設定は指定どおり増加し、メインスレッドの通常再帰に効いた。32 MiBで10万段の再帰処理は約7.1 ms、128 MiBで100万段は約68.0 ms。単発の測定値であり、起動・JSONロード・メモリ観測の100 ms待機はこの処理時間に含めない。ピークWSとPeakPagedMemorySize64は親から10 ms間隔で観測し、再帰終了後の待機中にもOSのピーク値を取得する。
+- 同梱ruby.exeのPEスタック予約量は2 MiB。each・mapを挟む再帰は全VM設定で10万段・100万段ともSystemStackErrorになり、ネイティブスタックに残る制約を記録した。Linux / Ruby 3.4.12でも通常再帰は16 MiBで10万段、128 MiBで100万段が完了し、each・mapは256 MiBでも失敗した。
+- 通常実行時のコミット増加を約31 MiBに抑えつつ通常再帰20万段を受け入れる32 MiBをRunnerだけへ設定する。128 MiB設定は短い処理でも約127 MiBのコミット増加になるため採用しない。LSPのCommandと保存形式は変更しない。
+- ローカルの対象回帰テストで、通常再帰20万段の完了、実際のVMスタック上限到達後の再実行、小さい環境設定の上書きが成功した。最終コミットの両OS・全テスト・配布検証はPR CIで確認する。
+- 最小実装後のLinux共通テストはRust 80件・Node 82件が成功した。測定専用の補助ジョブは通常CIから外し、再現スクリプトと測定記録を残した。
+
+### ブロックを挟む再帰の到達深さ
+
+- [両OSの手動測定](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/41175744697)が成功。f7d260aのscripts/measure-ruby-recursion.cjsで、32 MiBの実効VM設定、深さ0の成功と10万段のSystemStackErrorを確認し、each・map型を各3回二分探索した。最大成功深さと直後の失敗を同一プロセスで再確認し、SystemStackError以外の失敗・タイムアウト・境目の不安定さは測定エラーとして扱う。
+- 結果と環境ごとのネイティブスタック設定は[再帰スタックの仕様](atcoder-runtime.md#再帰スタック)へ記録した。各プローブの成否・Rubyバージョン・実効VM設定・Linuxのsoft limitは、同実行のRuby-stack-Linux / Ruby-stack-Windows artifactのruby-recursion.jsonへ保存した。Windowsでは従来のVMサイズ・メモリ測定も再実行してruby-stack.jsonへ保存した。
+- Linux開発環境でも同じスクリプトで測定。ネイティブスタック上限がCIの16 MiBと異なり8 MiBで、each・map型の境目も約半分になった。AtCoderの公開tomlを再確認し、VMスタック以外にネイティブスタック・ulimitの指定がないことを確認した。
+- 仕様・検証資料の見出しから計画番号を外し、RunnerのVMスタック値を名前付き定数へ変更した。定数化後も実Runnerの通常再帰20万段と上限到達後の再実行が成功。手動測定では通常のテスト・配布ビルドを省略し、通常のPR CIでは測定を省略することを確認した。通常の両OSジョブのテスト・配布手順はYAML比較で維持されていることを確認した。
