@@ -60,6 +60,18 @@ Windowsのハード上限は追加のコミットを拒否するもので、自�
 
 再測定は同梱Rubyを`RUBY_PATH`へ指定し、`cargo test --locked --test contract windows_job_memory -- --nocapture`で行う。`test-results/ruby-memory.json`に条件・結果・時間と、Rubyから照会したJobの上限・ピークコミットを保存する。通常CIでも実行し、Windows-verification artifactに含める。
 
+## JIT
+
+RunnerとLSPはJITフラグを指定しない。Windows同梱版のJIT対応を先に検証し、有効化できない場合は実行処理を変更せず、理由とAtCoderとの差を記録する。有効化できる場合も、起動時間・処理速度・コミット量を比較してから採用を判断する。
+
+2026年10月31日にAtCoderの公開tomlを再確認し、実行指定が`ruby --jit Main.rb`であることを確認した。ただし、`--jit`だけからYJITの使用を断定しない。[Ruby 3.4.12のオプション処理](https://github.com/ruby/ruby/blob/v3_4_12/ruby.c)は、YJITをビルドした場合はYJITを、それ以外ではRJITを選び、どちらもない場合は警告だけで実行を続ける。AtCoderで実際に有効になったJITの種類は公開tomlだけでは確定しない。
+
+同版の[YJIT公式資料](https://github.com/ruby/ruby/blob/v3_4_12/doc/yjit/yjit.md)と[RJIT公式資料](https://github.com/ruby/ruby/blob/v3_4_12/doc/rjit/rjit.md)の対応OSはLinux・macOS・BSDで、Windowsは含まれない。固定したRubyInstaller x64のビルド設定と実行時状態をWindows CIで確認する。
+
+検証では既定・`--jit`・`--yjit`・`--rjit`の4条件を別プロセスで起動し、終了コード・警告・Rubyの版と実パス・`RbConfig::CONFIG`のYJIT_SUPPORT／RJIT_SUPPORT・`RubyVM::YJIT.enabled?`／`RubyVM::RJIT.enabled?`を保存する。終了コード0や定数の存在だけで有効と扱わない。外部のRuby／Bundler設定とRUBY_YJIT_ENABLEを除去し、Runnerと同じ32 MiBのVMスタックを設定してから検証する。簡単な計算の実行も確認する。
+
+再現は`RUBY_PATH`に対象Rubyを指定し、`node scripts/probe-ruby-jit.cjs`を実行する。結果は`test-results/ruby-jit.json`に保存し、通常の単体テストでも採用Rubyを検証する。Windows CIでは既存のWindows-verification artifactに含める。これは起動時の対応確認で、速度比較ではない。
+
 ## 追加するgem
 
 WindowsでC拡張のビルドや外部DLLの追加が不要な次の5つを、公式と同じバージョンで同梱する。gem内のライセンス資料も保持する。
