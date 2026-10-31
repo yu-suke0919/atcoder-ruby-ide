@@ -3,6 +3,56 @@ use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
+#[cfg(windows)]
+#[test]
+fn windows_job_memory_limit_stops_the_tree_and_allows_the_next_run() {
+    let runner = Runner::new(Duration::from_secs(5), 1048576);
+    let code = include_str!("fixtures/windows-memory.rb");
+    for mode in ["normal", "single", "denied", "descendants", "normal"] {
+        let mut req = request(code, mode);
+        req.expected_output = Some("must not match".into());
+        let result = runner
+            .prepare(req)
+            .unwrap()
+            .execute(&ruby(), |_| {})
+            .unwrap();
+        println!(
+            "{mode}: {} ms, {}\n{}",
+            result.duration_ms, result.status, result.stdout
+        );
+        assert_eq!(
+            result.status,
+            if mode == "normal" {
+                "completed"
+            } else {
+                "memory-limit"
+            },
+            "{}",
+            result.stderr
+        );
+        assert_eq!(result.error_line, None);
+        assert_eq!(
+            result.comparison,
+            if mode == "normal" { Some(false) } else { None }
+        );
+        let first: serde_json::Value =
+            serde_json::from_str(result.stdout.lines().next().unwrap()).unwrap();
+        assert_eq!(first["limit"], 1024_u64.pow(3));
+        assert!(!PathBuf::from(first["source"].as_str().unwrap()).exists());
+        if mode == "descendants" {
+            assert!(result.stdout.contains("child allocated"));
+        }
+        assert!(runner.prepare(RunRequest::default()).is_ok());
+    }
+    let result = runner
+        .prepare(request("raise 'ordinary exception'", ""))
+        .unwrap()
+        .execute(&ruby(), |_| {})
+        .unwrap();
+    assert_eq!(result.status, "failed");
+    assert!(result.error_line.is_some());
+}
+
 #[test]
 fn tolerant_runner_returns_one_verdict_with_independent_difference_columns() {
     let runner = Runner::new(Duration::from_secs(5), 1048576);

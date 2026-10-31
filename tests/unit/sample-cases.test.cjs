@@ -32,7 +32,7 @@ test('problem time warnings use the run limit, strict boundary and actual comple
     [1000, 999, 'completed', null], [1000, 1000, 'completed', null],
     [1000, 1001, 'completed', 1000], [null, 1001, 'completed', null],
     [1000, 1001, 'failed', 1000], [1000, 5000, 'timeout', 1000],
-    [1000, 1001, 'output-limit', 1000], [1000, 1001, 'stopped', null],
+    [1000, 1001, 'output-limit', 1000], [1000, 1001, 'memory-limit', 1000], [1000, 1001, 'stopped', null],
   ]) {
     const cases = new SampleCases([sample()]);
     const [snapshot] = cases.snapshot(false, limit);
