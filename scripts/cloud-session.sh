@@ -3,7 +3,6 @@
 # Local sessions return immediately. See docs/cloud-development.md.
 [ "${CLAUDE_CODE_REMOTE:-}" = "true" ] || exit 0
 cd "${CLAUDE_PROJECT_DIR:-$(git -C "$(dirname "$0")" rev-parse --show-toplevel)}" || exit 0
-[ -f "$HOME/.atcoder-ruby-ide-env.sh" ] && . "$HOME/.atcoder-ruby-ide-env.sh"
 
 log=/tmp/atcoder-ruby-ide-session.log
 stamp=node_modules/.cloud-session.sha256
