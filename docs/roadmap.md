@@ -95,6 +95,7 @@ WSL2はWindows 10（x64は1903・ビルド18362.1049以降）でも、Homeでも
 - C0の方式でRuby 3.4.5（YJIT付き）をビルドし、SHA-256を固定してアプリに同梱する。初回起動時にWSL内の決まった場所へ配置し、PATHには入れない。
 - 既存の5つのgemに加え、ネイティブgem（rbtree、sorted_set、immutable-ruby、bit_utils、fast_trie、numo-narray、rumaleなど）を入れる。どこまで入れるかを理由付きでatcoder-runtime.mdに書く。
 - Ruby LSPも同じRubyで動かす。
+- 競技用gemをRuby LSPの解析対象に加え、ac-library-rbなどのAPIも補完候補に出す。先に、現状で競技用gemが解析対象に入っていないことをテストで確認する。競技側の実行からLSP用gemが見えないという既存の分離は維持する。
 
 ### C4. Windows版Rubyの関連を削除
 
