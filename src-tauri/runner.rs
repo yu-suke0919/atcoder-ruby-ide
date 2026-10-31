@@ -9,6 +9,9 @@ use std::time::{Duration, Instant};
 
 const RUBY_VM_STACK_BYTES: usize = 32 * 1024 * 1024;
 const WINDOWS_JOB_MEMORY_BYTES: usize = 1024 * 1024 * 1024;
+const MIN_EXECUTION_LIMIT_MS: u64 = 5000;
+const MAX_EXECUTION_LIMIT_MS: u64 = 30000;
+const EXECUTION_MARGIN_MS: u64 = 1000;
 
 #[derive(Default)]
 pub struct RunRequest {
@@ -16,6 +19,7 @@ pub struct RunRequest {
     pub stdin: String,
     pub expected_output: Option<String>,
     pub tolerance: Option<f64>,
+    pub problem_time_limit_ms: Option<u32>,
     pub cwd: Option<PathBuf>,
 }
 
@@ -33,6 +37,7 @@ pub struct RunResult {
     pub stderr: String,
     pub exit_code: Option<i32>,
     pub duration_ms: u64,
+    pub execution_limit_ms: u64,
     pub comparison: Option<bool>,
     pub difference: Option<OutputDifference>,
     pub error_line: Option<usize>,
@@ -52,6 +57,7 @@ pub struct Runner {
 pub struct PreparedRun {
     runner: Arc<Runner>,
     request: RunRequest,
+    timeout: Duration,
 }
 #[derive(Default)]
 struct Capture {
@@ -78,6 +84,16 @@ impl Runner {
     }
     pub fn prepare(self: &Arc<Self>, request: RunRequest) -> Result<PreparedRun, String> {
         crate::samples::validate_tolerance(request.tolerance)?;
+        let timeout = match request.problem_time_limit_ms {
+            Some(0) => {
+                return Err("問題の時間制限は1〜4,294,967,295ミリ秒の整数にしてください。".into())
+            }
+            Some(limit) => Duration::from_millis(
+                (u64::from(limit) + EXECUTION_MARGIN_MS)
+                    .clamp(MIN_EXECUTION_LIMIT_MS, MAX_EXECUTION_LIMIT_MS),
+            ),
+            None => self.timeout,
+        };
         let mut active = self.active.lock().unwrap();
         if active.is_some() {
             return Err("すでに実行中です。".into());
@@ -98,6 +114,7 @@ impl Runner {
         Ok(PreparedRun {
             runner: Arc::clone(self),
             request,
+            timeout,
         })
     }
     pub fn stop(&self) -> bool {
@@ -138,6 +155,10 @@ impl Drop for PreparedRun {
 }
 
 impl PreparedRun {
+    pub fn execution_limit_ms(&self) -> u64 {
+        self.timeout.as_millis() as u64
+    }
+
     pub fn execute<F>(self, ruby: &Path, output: F) -> Result<RunResult, String>
     where
         F: Fn(Output) + Send + Sync + 'static,
@@ -150,6 +171,7 @@ impl PreparedRun {
                 stderr: String::new(),
                 exit_code: None,
                 duration_ms: 0,
+                execution_limit_ms: self.execution_limit_ms(),
                 comparison: None,
                 difference: None,
                 error_line: None,
@@ -252,7 +274,7 @@ impl PreparedRun {
             if exit.is_some() && stdout.is_finished() && stderr.is_finished() {
                 break;
             }
-            if started.elapsed() >= self.runner.timeout && self.runner.reason().is_none() {
+            if started.elapsed() >= self.timeout && self.runner.reason().is_none() {
                 self.runner.stop_for("timeout");
             }
             if self.runner.reason().is_some() {
@@ -310,6 +332,7 @@ impl PreparedRun {
             stderr,
             exit_code: exit.code(),
             duration_ms: started.elapsed().as_millis() as u64,
+            execution_limit_ms: self.execution_limit_ms(),
             comparison,
             difference,
             error_line,

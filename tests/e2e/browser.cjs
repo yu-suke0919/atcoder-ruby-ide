@@ -117,7 +117,7 @@ async function launch(root, { hostEnv = {} } = {}) {
         const channel = channels.get(id);
         if (!channel) return; // A reload discards channels from the previous page.
         channel.onmessage(event);
-        if (event.type !== 'output') channels.delete(id);
+        if (event.type === 'completed' || event.type === 'failed') channels.delete(id);
       };
       const appWindow = {
         setTitle: async title => { document.title = title; },

@@ -27,7 +27,7 @@ const sample = 'a = gets.to_i\nb, c = gets.split.map(&:to_i)\ns = gets.chomp\n\n
 const cases = new SampleCases([{ stdin: '1\n2 3\ntest\n', expectedOutput: '6 test\n', compare: false }]);
 let canceled = false;
 const comparisonLabels = { none: '比較なし', pending: '未比較', running: '比較中…', matched: '一致', mismatched: '不一致', unavailable: '判定なし' };
-const statusLabel = (status, exitCode) => ({ completed: '正常終了', failed: `エラー終了${exitCode == null ? '' : ` (${exitCode})`}`, stopped: '停止しました', timeout: '時間制限で停止（5 秒）', 'output-limit': '出力上限で停止（1 MiB）', 'memory-limit': 'ローカルのメモリ上限で停止（1 GiB）', running: '実行中…', canceled: '未実行（中止）', error: '実行できませんでした' })[status] || '実行する準備ができています';
+const statusLabel = (status, exitCode, executionLimitMs) => ({ completed: '正常終了', failed: `エラー終了${exitCode == null ? '' : ` (${exitCode})`}`, stopped: '停止しました', timeout: `時間制限で停止（${executionLimitMs / 1000} 秒）`, 'output-limit': '出力上限で停止（1 MiB）', 'memory-limit': 'ローカルのメモリ上限で停止（1 GiB）', running: '実行中…', canceled: '未実行（中止）', error: '実行できませんでした' })[status] || '実行する準備ができています';
 let savedCode = sample;
 let filePath = null;
 let running = false;
@@ -112,7 +112,7 @@ function updateCaseList() {
   $('case-select').replaceChildren(...cases.items.map((item, index) => {
     const option = document.createElement('option');
     option.value = String(index);
-    option.textContent = `ケース ${index + 1} · ${item.status === 'running' ? '実行中' : item.status && item.status !== 'completed' ? statusLabel(item.status, item.exitCode) : comparisonLabels[item.comparison]}`;
+    option.textContent = `ケース ${index + 1} · ${item.status === 'running' ? '実行中' : item.status && item.status !== 'completed' ? statusLabel(item.status, item.exitCode, item.executionLimitMs) : comparisonLabels[item.comparison]}`;
     if (item.exceededTimeLimitMs !== null) option.textContent += ' · 制限超過の可能性';
     return option;
   }));
@@ -128,12 +128,19 @@ function updateCaseList() {
 function showResult() {
   const item = cases.current;
   for (const stream of ['stdout', 'stderr']) $(stream).textContent = item[stream];
-  $('run-status').textContent = statusLabel(item.status, item.exitCode);
+  $('run-status').textContent = statusLabel(item.status, item.exitCode, item.executionLimitMs);
   $('run-duration').textContent = item.durationMs === null ? '— ms' : `${item.durationMs} ms`;
+  showExecutionLimit();
   showTimeLimitWarning();
   showComparison(item.comparison);
   showErrorLocation();
   updateCaseList();
+}
+
+function showExecutionLimit() {
+  const limit = cases.current.executionLimitMs;
+  $('execution-limit').textContent = limit != null ? `実行時上限 ${limit / 1000} 秒`
+    : activeProblem?.timeLimitMs != null ? '実行上限 5〜30 秒' : '既定上限 5 秒';
 }
 
 function showTimeLimitWarning() {
@@ -294,12 +301,17 @@ async function run(all = false) {
       showResult();
       message('Ruby を実行しています。');
       try {
-        const result = await ide.run(code, snapshot.stdin, snapshot.compare ? snapshot.expectedOutput : null, snapshot.compare ? snapshot.tolerance : null, ({ stream, text }) => {
-          item[stream] += text;
-          if (item === cases.current) appendOutput(stream, text);
+        const result = await ide.run(code, snapshot.stdin, snapshot.compare ? snapshot.expectedOutput : null, snapshot.compare ? snapshot.tolerance : null, snapshot.timeLimitMs, event => {
+          if (event.type === 'started') {
+            cases.started(snapshot, event.executionLimitMs);
+            if (item === cases.current) showExecutionLimit();
+          } else {
+            item[event.stream] += event.text;
+            if (item === cases.current) appendOutput(event.stream, event.text);
+          }
         });
         cases.finish(snapshot, result);
-        message(result.status === 'completed' ? '実行が完了しました。' : statusLabel(result.status, result.exitCode), ['failed', 'timeout', 'output-limit', 'memory-limit'].includes(result.status));
+        message(result.status === 'completed' ? '実行が完了しました。' : statusLabel(result.status, result.exitCode, result.executionLimitMs), ['failed', 'timeout', 'output-limit', 'memory-limit'].includes(result.status));
       } catch (error) {
         cases.fail(snapshot, error.message);
         message(error.message, true);
@@ -403,6 +415,7 @@ document.addEventListener('keydown', (event) => {
 });
 
 function showProblem() {
+  showExecutionLimit();
   $('problem-title').textContent = activeProblem ? activeProblem.title : '問題を選んでください';
   $('problem-title').title = activeProblem?.title || '';
   $('problem-limits').textContent = activeProblem

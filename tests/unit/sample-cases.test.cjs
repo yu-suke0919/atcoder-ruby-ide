@@ -4,6 +4,30 @@ const assert = require('node:assert/strict');
 const load = () => import('../../src/sample-cases.mjs');
 const sample = (stdin = 'one', expectedOutput = 'ONE', compare = true) => ({ stdin, expectedOutput, compare });
 
+test('execution budgets belong to runs, survive edits and are excluded from case JSON', async () => {
+  const { SampleCases } = await load();
+  const cases = new SampleCases([sample(), sample('two')]);
+  const queue = cases.snapshot(true, 8000);
+  cases.begin(queue[0]);
+  assert.equal(cases.current.executionLimitMs, null);
+  cases.started(queue[0], 9000);
+  assert.equal(cases.current.executionLimitMs, 9000);
+  cases.invalidate();
+  assert.equal(cases.current.executionLimitMs, 9000);
+  cases.finish(queue[0], { status: 'timeout', stdout: '', stderr: '', comparison: null, durationMs: 9001, executionLimitMs: 9000 });
+  assert.equal(cases.current.executionLimitMs, 9000);
+  assert.equal(cases.current.exceededTimeLimitMs, null);
+  cases.begin(queue[1]); cases.started(queue[1], 30000);
+  cases.finish(queue[1], { status: 'stopped', stdout: '', stderr: '', comparison: null, executionLimitMs: 30000 });
+  assert.deepEqual(cases.items.map(item => item.executionLimitMs), [9000, 30000]);
+  assert.deepEqual(cases.data(), [sample(), sample('two')]);
+  assert.equal(cases.dirty, false);
+  cases.clear(true);
+  assert.deepEqual(cases.items.map(item => item.executionLimitMs), [null, null]);
+  cases.begin(queue[0]); cases.started(queue[0], 9000); cases.cancel(queue[0]);
+  assert.equal(cases.current.executionLimitMs, null);
+});
+
 test('tolerance is optional, saved per case and frozen with the run snapshot', async () => {
   const { SampleCases } = await load();
   const cases = new SampleCases([sample(), { ...sample('two', '', false), tolerance: 1e-9 }]);

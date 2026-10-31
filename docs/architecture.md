@@ -22,7 +22,7 @@ Runnerの子RubyはVMスタックを32 MiBに固定する。LSPと共有するCo
 保存済みファイルの作業ディレクトリは Rust が保持するパスの親ディレクトリ、未保存時は一時ディレクトリとする。
 
 同時実行の予約をコマンド受付時に確保し、プロセス開始前の停止も保持する。
-出力は実行ごとの Tauri Channel にバイト列で送り、最後に完了またはエラーを送る。画面は TextDecoder でチャンク間の UTF-8 を維持する。
+実行予約時にRustで打ち切りを確定する。Tauri Channelでは最初にstartedでexecutionLimitMsを送り、その後バイト列の出力、最後に確定値を含む完了またはエラーを送る。打ち切りの式とケース別の保持は[実行の打ち切り時間](atcoder-runtime.md#実行の打ち切り時間)に従う。画面は TextDecoder でチャンク間の UTF-8 を維持する。
 Rust は上限内の stdout / stderr を保持し、完了時の表示・比較は確定値を使う。
 stdout／stderrの受信・バイト数の集計・停止判定は、逐次通知のコールバックと別のスレッドで行う。通知が遅れても受信とプロセスの制限を進める。通知キューに入れるデータも受信上限内に限定し、各ストリームの通知順を保つ。完了・エラーを返す前にキューの通知を終え、途中の通知が完了イベントを追い越さないようにする。
 逐次出力の追加はテキストで行い、スクロール位置の更新は画面フレームごとにまとめる。大量出力時のチャンクごとの再レイアウトを避ける。
@@ -34,7 +34,7 @@ Windows の一時的な共有違反・ロック・削除競合は短い待機で
 
 Windows のデスクトップアプリは開発時・配布版とも resource directory の ruby/bin/ruby.exe を直接使い、外部の RUBY_PATH や PATH に依存しない。
 Linux のデスクトップアプリと、両OSの共通テスト・ブラウザー用テストホストは RUBY_PATH または PATH の Ruby を使う。Windows CI の共通テストでは RUBY_PATH に準備済みの vendor/ruby/bin/ruby.exe を指定する。
-起動時の Ruby 確認は本実行と同じ 5 秒を上限とする。確認失敗時は「Ruby を再確認」から再試行でき、確認中は重複確認と実行を抑止する。ファイル編集・保存は確認の成否に依存しない。
+起動時のRuby確認は問題に関係なく5秒を上限とする。確認失敗時は「Ruby を再確認」から再試行でき、確認中は重複確認と実行を抑止する。ファイル編集・保存は確認の成否に依存しない。
 Ruby は SHA-256 を固定した RubyInstaller から実行用ファイルを用意する。bin/・lib/ とライセンスを保持し、share/・include/ は除外する。share 内の COPYING・LEGAL は licenses/ruby/ に退避する。ネイティブ gem のビルドと同梱オフラインマニュアルは対象外。
 Rubyはconfig/ruby-windows.jsonへ検証済みの3.4系パッチを固定し、Linux CIも同じパッチを使う。update:rubyだけが公式Ruby・RubyInstallerの一覧から最新3.4.xを選択し、アーカイブとgemの準備後に固定情報を更新する。通常ビルドやアプリ利用時には最新版を探索しない。AtCoderの公開バージョンと追加gemはconfig/atcoder-runtime.jsonに残す。RubyGemsのアーカイブをSHA-256検証し、C拡張のない採用gemと依存gemをローカルインストールする。WindowsはステージングしたRubyの標準gemディレクトリへ追加してから配置し、取得元またはgem構成が変われば作り直す。Linuxはprepare:gemsで選択したRubyへ同じ構成を用意する。[AtCoderとの比較](atcoder-runtime.md)を参照する。
 RunnerはCommandのenv_removeでRUBYOPT・RUBYLIB・BUNDLE_GEMFILE・GEM_HOME・GEM_PATHを子プロセスの環境から除外してからRubyを起動する。bootstrapもGem.use_paths(Gem.default_dir)で、そのRubyの標準gemディレクトリだけを探索先にし、ユーザー用gemを含めない。prepare:gemsの既定の追加先もGem.default_dirとする。
@@ -73,7 +73,7 @@ Windows と Linux は同じ画面の受入ケースを使い、Windows では We
 
 1. Rust 共通テストで実 Ruby・停止・制限・UTF-8・ファイル操作・比較を確認する。
 2. Node で Ruby の取得整合性、削減対象・ライセンス保持、展開済みランタイムの再利用を確認する。
-3. Linux でも画面の編集・実行・停止・比較・保存・未保存確認・レイアウトを検証する。Linux のテスト専用ホストだけ ATCODER_IDE_UI_TIMEOUT_MS で実行上限を短縮でき、ブラウザー E2E は 4 秒を使う。本番と Windows ネイティブ E2E は実時間 5 秒を維持する。全件は数十秒を目安とし、件数と時間の実測は verification.md に記録する。
+3. Linux でも画面の編集・実行・停止・比較・保存・未保存確認・レイアウトを検証する。Linuxのテスト専用ホストだけATCODER_IDE_UI_TIMEOUT_MSで既定上限を短縮でき、ブラウザーE2Eは不明時に4秒を使う。本番とWindowsネイティブE2Eの既定は5秒。制限既知は両OSとも本番の5〜30秒の式を使う。全件は数十秒を目安とし、件数と時間の実測は verification.md に記録する。
 4. Windows ポータブル配布物の全 GUI テストは 1 周。NSIS 後はexe と主要ファイルの存在を確認し、アプリ経由のサンプル実行・JSON 読み込み・同梱 Ruby のパスに絞る。
 5. Ruby が PATH にない条件は両 Windows 配布形態で維持する。Ruby の元ファイルのハッシュ一覧は 1 回生成し、GUI テスト後の配布対象を 1 回照合する。インストール先の全件走査や ZIP 作成時の再計算は行わない。
 

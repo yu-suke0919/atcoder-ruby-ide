@@ -8,7 +8,7 @@ function resetComparison(item) {
 }
 
 function clearResult(item, status = null) {
-  Object.assign(item, { stdout: '', stderr: '', status, exitCode: null, durationMs: null });
+  Object.assign(item, { stdout: '', stderr: '', status, exitCode: null, durationMs: null, executionLimitMs: null });
   resetComparison(item);
 }
 
@@ -84,9 +84,13 @@ export class SampleCases {
     if (item.revision === revision) item.comparison = compare ? 'running' : 'none';
   }
 
+  started({ item }, executionLimitMs) {
+    item.executionLimitMs = executionLimitMs;
+  }
+
   finish({ item, revision, compare, timeLimitMs }, result) {
-    const { stdout, stderr, status, exitCode, durationMs } = result;
-    Object.assign(item, { stdout, stderr, status, exitCode, durationMs });
+    const { stdout, stderr, status, exitCode, durationMs, executionLimitMs } = result;
+    Object.assign(item, { stdout, stderr, status, exitCode, durationMs, executionLimitMs });
     item.errorLine = item.revision === revision && status === 'failed' ? result.errorLine ?? null : null;
     item.exceededTimeLimitMs = item.revision === revision && timeLimitMs != null && durationMs > timeLimitMs
       && ['completed', 'failed', 'timeout', 'output-limit', 'memory-limit'].includes(status) ? timeLimitMs : null;

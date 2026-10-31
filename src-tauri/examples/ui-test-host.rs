@@ -52,6 +52,7 @@ struct RunArgs {
     stdin: String,
     expected_output: Option<String>,
     tolerance: Option<f64>,
+    problem_time_limit_ms: Option<u32>,
     on_event: u64,
 }
 
@@ -104,6 +105,7 @@ fn main() {
                     args.stdin,
                     args.expected_output,
                     args.tolerance,
+                    args.problem_time_limit_ms,
                 )?;
                 let ruby = ruby.clone();
                 let output = Arc::clone(&sink);
@@ -111,6 +113,10 @@ fn main() {
                     let _ = worker.join();
                 }
                 cleanup.worker = Some(std::thread::spawn(move || {
+                    send(
+                        &output,
+                        json!({ "channel": args.on_event, "event": RunEvent::Started { execution_limit_ms: prepared.execution_limit_ms() } }),
+                    );
                     let chunks = Arc::clone(&output);
                     let result = prepared.execute(&ruby, move |chunk| send(&chunks, json!({
                             "channel": args.on_event,
