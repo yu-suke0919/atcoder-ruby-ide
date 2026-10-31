@@ -389,3 +389,14 @@ Windows CI の初回では、HTML固定データがCRLFでチェックアウト�
 - 表示は端末保護の1 GiBを維持して「ローカルのメモリ上限で停止（1 GiB）」に変更した。固定結果を使う両OS共通のGUIテストが旧表示で失敗することを確認してから修正し、全件実行の継続・正常ケースの一致・900×650での配置と再実行が成功した。Windows実RubyのGUIは確保拒否と復帰を別に確認し、通知がない場合の時間制限も許容する。
 - #30の長い時間制限・問題集の全問取り直し、#31の誤差許容の全ケース設定は後続候補としてmvp.mdへ記録した。整数表記だけを厳密比較へ切り替える案は採用せず、現行仕様の相対誤差とf64の精度をcomparison-details.mdへ補足した。
 - レビュー対応後のローカルLinuxはRust 89件・Node 86件・GUI 90件が成功した（Windows専用GUI 1件は除外）。Windowsの通知投入テスト・実Rubyと配布アプリの最終確認は、更新したPRのCIで行う。
+
+## Windows同梱RubyのJIT対応調査
+
+- main b337050から開始。先に実行フラグの採否と、ビルド設定・実行時の有効状態・警告を区別する検証方針をatcoder-runtime.mdへ記載した。採用Ruby 3.4.12のYJIT／RJIT公式資料とruby.cを確認し、Windowsが対応OSに含まれないこと、--jitがビルドに応じてYJITまたはRJITを選び、未対応でも警告のみで続行することを確認した。
+- 2026年10月31日にAtCoderの公開tomlを再取得し、実行指定はruby --jit Main.rbのままだった。AtCoderで有効になるJITの種類やビルド設定はこの指定だけでは確定しない。
+- tests/unit/ruby-jit.test.cjsの2件が検証ツールの未実装で失敗することを確認してから、scripts/probe-ruby-jit.cjsを追加した。外部RUBYOPT・RUBY_YJIT_ENABLE・小さいVMスタック設定を与えても基準条件を再現し、起動できないRubyをJIT非対応と誤って記録しないことを確認する。
+- Linux開発環境のRuby 3.4.12はYJIT_SUPPORT=no／RJIT_SUPPORT=yes。既定では両方無効、--jitと--rjitではRJITのみ有効、--yjitは警告を出し終了コード0で実行するが有効にならなかった。4条件とも計算結果5050とVMスタック32 MiBを確認した。これはLinux開発用ビルドの観測で、AtCoderやsetup-rubyのビルド構成を示すものではない。
+- [調査用CI #133](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/41192541243)のWindows単体テストで、同梱Ruby 3.4.12のYJIT_SUPPORT=no／RJIT_SUPPORT=no、4条件とも終了コード0・有効状態false・計算結果5050を確認した。--jit・--yjit・--rjitではそれぞれ非対応の警告が出た。JITは有効にできないため、本番のRunner／LSPの起動処理は変更しない。初期の測定はGem.use_pathsより先にjsonを読み込んでいたため、最終版ではRunner同様にgem探索先を先に固定した。
+- 同CIのLinuxは全項目成功し、setup-ruby版はYJIT_SUPPORT=yes／RJIT_SUPPORT=yesだった。既定では両方無効、--jitと--yjitはYJITのみ、--rjitはRJITのみ有効。これは同じ3.4.12でも開発環境のビルド構成と異なることを示す。AtCoder側の有効なJITはこの結果から断定しない。
+- 調査用CIはWindowsの単体実測が成功した後に中止し、結論を反映した最終コミットの全CIへ切り替えた。生の標準出力と警告、解析した状態をtest-results/ruby-jit.jsonへ保存し、配布準備で置き換えられない既存のWindows-verification artifactへ含める。
+- ローカルLinuxの全単体テストはRust 89件・Node 88件が成功した。アプリのRust・フロントエンド・起動フラグ・保存形式は変更していない。両OSの画面テストとWindows配布検証はPRのCIで確認する。

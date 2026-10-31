@@ -60,6 +60,29 @@ Windowsのハード上限は追加のコミットを拒否するもので、自�
 
 再測定は同梱Rubyを`RUBY_PATH`へ指定し、`cargo test --locked --test contract windows_job_memory -- --nocapture`で行う。`test-results/ruby-memory.json`に条件・結果・時間と、Rubyから照会したJobの上限・ピークコミットを保存する。通常CIでも実行し、Windows-verification artifactに含める。
 
+## JIT
+
+Windows同梱RubyInstaller 3.4.12-1 x64はYJIT・RJITとも非対応として扱い、RunnerとLSPはJITフラグを指定しない。実測のビルド設定はYJIT_SUPPORT=no／RJIT_SUPPORT=noで、フラグを付けてもJITは有効にならなかった。実行時の有効化を確認できないため、速度・メモリの比較や本番へのフラグ追加は行わない。
+
+2026年10月31日にAtCoderの公開tomlを再確認し、実行指定が`ruby --jit Main.rb`であることを確認した。ただし、`--jit`だけからYJITの使用を断定しない。[Ruby 3.4.12のオプション処理](https://github.com/ruby/ruby/blob/v3_4_12/ruby.c)は、YJITをビルドした場合はYJITを、それ以外ではRJITを選び、どちらもない場合は警告だけで実行を続ける。AtCoderで実際に有効になったJITの種類は公開tomlだけでは確定しない。
+
+同版の[YJIT公式資料](https://github.com/ruby/ruby/blob/v3_4_12/doc/yjit/yjit.md)と[RJIT公式資料](https://github.com/ruby/ruby/blob/v3_4_12/doc/rjit/rjit.md)の対応OSはLinux・macOS・BSDで、Windowsは含まれない。固定したRubyInstaller x64のビルド設定と実行時状態をWindows CIで確認した。
+
+Windows同梱版の結果（2026年10月31日）：
+
+| 起動条件 | 終了コード | YJIT有効 | RJIT有効 | 警告の要点 |
+| --- | --- | --- | --- | --- |
+| 既定 | 0 | false | false | なし |
+| `--jit` | 0 | false | false | Ruby was built without JIT support |
+| `--yjit` | 0 | false | false | Ruby was built without YJIT support |
+| `--rjit` | 0 | false | false | RJIT support is disabled |
+
+有効状態は各APIで確認し、定数がない場合はfalseと記録する。4条件とも計算結果は5050、VMスタックは32 MiBだった。Linux開発環境はYJITなし・RJITありで--jitがRJITを有効にし、Linux CIのsetup-ruby版は両方ありで--jitがYJITを有効にした。同じRuby 3.4.12でもビルドにより異なるため、Linuxの結果をWindowsやAtCoderへ一般化しない。
+
+検証では既定・`--jit`・`--yjit`・`--rjit`の4条件を別プロセスで起動し、終了コード・警告・Rubyの版と実パス・`RbConfig::CONFIG`のYJIT_SUPPORT／RJIT_SUPPORT・`RubyVM::YJIT.enabled?`／`RubyVM::RJIT.enabled?`を保存する。終了コード0や定数の存在だけで有効と扱わない。外部のRuby／Bundler設定とRUBY_YJIT_ENABLEを除去し、Runnerと同じ32 MiBのVMスタックを設定してから検証する。簡単な計算の実行も確認する。
+
+再現は`RUBY_PATH`に対象Rubyを指定し、`node scripts/probe-ruby-jit.cjs`を実行する。結果は`test-results/ruby-jit.json`に保存し、通常の単体テストでも採用Rubyを検証する。Windows CIでは既存のWindows-verification artifactに含める。これは起動時の対応確認で、速度比較ではない。
+
 ## 追加するgem
 
 WindowsでC拡張のビルドや外部DLLの追加が不要な次の5つを、公式と同じバージョンで同梱する。gem内のライセンス資料も保持する。
@@ -107,7 +130,7 @@ immutable-rubyとsorted_setはgem本体がRubyでも、依存先にrbtreeのC拡
 | --- | --- | --- |
 | Rubyのパッチ | 公開情報は3.4.5 | 検証して固定した3.4系の最新パッチ |
 | OS・ビルド | Linux上のCRuby | WindowsはRubyInstaller、Linux CIはsetup-rubyのCRuby |
-| JIT | `ruby --jit Main.rb` | JITを指定しない。速度・メモリ使用量は同一にならない |
+| JIT | `ruby --jit Main.rb`（有効になる種類は公開設定だけでは不明） | Windows同梱版はYJIT・RJIT非対応。JITを指定しない。[確認結果](#jit)を参照 |
 | スタック | `RUBY_THREAD_VM_STACK_SIZE`を問題のメモリ上限に設定 | 実行用VMスタック32 MiB、ネイティブスタックはOS・ビルドの制限が残る |
 | 入出力 | ジャッジの標準入出力 | UTF-8・バイナリ改行・逐次出力をアプリ側で設定 |
 | 上限 | 問題ごとの時間・メモリ制限 | 問題の制限値を表示し、時間超過の可能性を注意表示する。実際の打ち切りは5秒、合計出力1MiB。WindowsのJob全体はコミット1 GiB。問題ごとのメモリ制限は再現しない |
