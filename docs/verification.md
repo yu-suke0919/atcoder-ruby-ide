@@ -328,7 +328,7 @@ Windows CI の初回では、HTML固定データがCRLFでチェックアウト�
 - 復旧案内は既存の説明欄に追加し、件数APIや件数同期用の状態は増やしていない。変更後の両OSの結果はPRの最新CIを参照する。
 - Linuxの画面85件が全件成功（約117秒）。改名後の配信・動的importと、復旧案内を追加した問題集ダイアログの900×650での表示も確認。rustfmt・JavaScript構文・差分検査が成功した。
 
-## Step 1-1：再帰スタックの測定と採用値
+## 再帰スタックの測定と採用値
 
 - main 82ec0f7から開始。資料を先に更新し、実Runnerの通常再帰10万段（後に受入条件を20万段へ更新）がSystemStackErrorになることと、小さいVMスタックを継承したテストホストの失敗を確認してから実装した。
 - [CI #117のWindows測定ジョブ](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/41173397436/job/124455886694)で、同梱Ruby 3.4.12のメインスレッドを63条件で測定した。測定コードはscripts/measure-ruby-stack.ps1とtests/fixtures/deep-recursion.rb。生データは同ジョブのWindows-Ruby-stack-measurements artifactに保存した。

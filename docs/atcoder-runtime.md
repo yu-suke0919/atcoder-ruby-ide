@@ -20,7 +20,7 @@ AtCoderの公開環境はCRubyの `Ruby 3.4 (ruby 3.4.5)`。本アプリは3.4�
 
 通常の `prepare:ruby`・ビルド・CIは固定情報だけを使い、最新版の探索や自動更新を行わない。Linux CIも同じ設定からRubyのパッチを読み取る。開発用Rubyもそのパッチへ揃える。AtCoderの公開バージョンと追加gemの固定情報は `config/atcoder-runtime.json` に分けて残し、Ruby本体の更新で追加gemを自動更新しない。
 
-## 再帰スタック（Step 1-1）
+## 再帰スタック
 
 実行用RubyのRUBY_THREAD_VM_STACK_SIZEを32 MiB（33,554,432 bytes）に固定する。Runnerで子プロセスごとに設定し、端末の同変数より優先する。LSPが共有するruby_commandには追加せず、LSPの起動設定は維持する。保存形式は変更しない。
 
@@ -28,7 +28,11 @@ AtCoderの公開環境はCRubyの `Ruby 3.4 (ruby 3.4.5)`。本アプリは3.4�
 
 配列のeach・mapでブロックを挟む再帰は、Windows・LinuxともにVMスタックを256 MiBまで増やしても10万段でSystemStackErrorになった。Windows同梱ruby.exeのPEヘッダーのスタック予約量は2 MiBで、VMスタックとは別の制約として残る。Windows実行ファイルやOSのネイティブスタック設定は変更せず、AtCoderと同じ再帰深さは保証しない。深いDFSでは明示的な配列スタックによる反復処理も使う。
 
+each・map型の境目は32 MiB設定で別途測定する。各探索は新しいRubyのメインスレッドでtests/fixtures/deep-recursion.rbを実行し、同一プロセス内で深さ0から100,000の間を二分探索する。3回ずつ測り、成功した最大深さとその次の深さでのSystemStackError、Rubyのバージョン、Linuxのネイティブスタック上限を記録する。値はこの固定コードと測定環境での結果であり、DFS全般の保証値ではない。AtCoderの公開tomlにはネイティブスタック・ulimitの設定がなく、AtCoderでeach型がどこまで通るかは不明。
+
 測定は通常再帰・each・mapを深さ0・100,000・1,000,000、既定値と4・16・32・64・128・256 MiBで比較した。Windowsの再現はPowerShell 7で `pwsh -NoProfile -File scripts/measure-ruby-stack.ps1` を使い、`artifacts/reports/ruby-stack.json` に成否・実効VM設定・処理時間・ピークワーキングセット・ピークコミット量を保存する。時間は再帰処理部分、メモリは測定用Rubyプロセスの値でありIDE全体の値ではない。メモリ取得用の100 ms待機は再帰処理時間に含めない。
+
+境目の再測定は `RUBY_PATH` に採用Rubyを指定して `node scripts/measure-ruby-recursion.cjs` を実行する。GitHub ActionsのTest and buildを手動実行し、measure_ruby_stackを有効にすると、通常のテスト・配布ビルドの代わりに両OSの測定を実行して結果をartifactへ保存する。Windowsでは従来のVMサイズ・メモリ測定も行う。
 
 受入条件は通常再帰20万段が実Runnerで完了すること、実際のスタック上限到達後も次の実行ができること、通常コード・手動停止・5秒の時間制限・LSPが正常に動くこと。テストを先に追加し、Linux・Windowsの全テストとWindows配布検証をPRのCIで確認する。
 
