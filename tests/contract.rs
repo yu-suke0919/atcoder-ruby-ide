@@ -1,4 +1,4 @@
-use atcoder_ruby_ide::{compare_output, decode_output, DocumentStore, RunRequest, Runner};
+use atcoder_ruby_ide::{decode_output, first_difference, DocumentStore, RunRequest, Runner};
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
@@ -232,7 +232,7 @@ fn m11_comparison_newlines_empty_and_significant_whitespace() {
         ("\n", ""),
         ("<img src=x>", "<img src=x>"),
     ] {
-        assert!(compare_output(actual, expected));
+        assert!(first_difference(actual, expected).is_none());
     }
     for (actual, expected) in [
         ("a\n\n", "a\n"),
@@ -244,7 +244,7 @@ fn m11_comparison_newlines_empty_and_significant_whitespace() {
         ("1 2", "2 1"),
         ("\n\n", ""),
     ] {
-        assert!(!compare_output(actual, expected));
+        assert!(first_difference(actual, expected).is_some());
     }
 }
 
@@ -276,7 +276,7 @@ fn m04_sample_stdin_eof_and_streamed_output() {
     assert_eq!(result.stdout, "6 test\ntrue\n");
     assert_eq!(result.comparison, Some(true));
     assert_eq!(output.lock().unwrap().as_slice(), result.stdout.as_bytes());
-    assert!(!runner.busy());
+    assert!(runner.prepare(RunRequest::default()).is_ok());
 }
 
 #[test]
@@ -306,7 +306,7 @@ fn m05_syntax_error_missing_ruby_and_recovery() {
         .unwrap()
         .execute(&PathBuf::from("missing-ruby-executable-for-test"), |_| {})
         .is_err());
-    assert!(!runner.busy());
+    assert!(runner.prepare(RunRequest::default()).is_ok());
     assert_eq!(
         runner
             .prepare(request("puts 42", ""))
@@ -362,7 +362,7 @@ fn m06_stop_before_spawn_and_reject_concurrent_reservations() {
     let result = pending.execute(&ruby(), |_| {}).unwrap();
     assert_eq!(result.status, "stopped");
     assert_eq!(result.error_line, None);
-    assert!(!runner.busy());
+    assert!(runner.prepare(RunRequest::default()).is_ok());
 }
 
 #[test]
@@ -406,7 +406,7 @@ fn m06_timeout_and_output_cap() {
             .status,
         "timeout"
     );
-    assert!(!runner.busy());
+    assert!(runner.prepare(RunRequest::default()).is_ok());
     // Output limiting is independent of the short timeout used above. Cold Windows
     // Ruby startup can exceed 200 ms under concurrent test load.
     let runner = Runner::new(Duration::from_secs(5), 1024);
@@ -446,7 +446,7 @@ fn m08_all_input_limits_are_utf8_bytes() {
     let mut req = request("", "");
     req.expected_output = Some("あ".repeat(349526));
     assert!(runner.prepare(req).is_err());
-    assert!(!runner.busy());
+    assert!(runner.prepare(RunRequest::default()).is_ok());
 }
 
 #[test]
@@ -499,7 +499,7 @@ fn r04_output_cap_precedes_notification_stop_and_drops_incomplete_utf8() {
         };
         assert_eq!(captured, "あ");
         assert!(other.is_empty());
-        assert!(!runner.busy());
+        assert!(runner.prepare(RunRequest::default()).is_ok());
     }
 }
 
@@ -539,7 +539,7 @@ fn with_delayed_notification(code: &str, expected: &str) -> atcoder_ruby_ide::Ru
     let chunks = chunks.lock().unwrap();
     assert_eq!(chunks.0, result.stdout.as_bytes());
     assert_eq!(chunks.1, result.stderr.as_bytes());
-    assert!(!runner.busy());
+    assert!(runner.prepare(RunRequest::default()).is_ok());
     result
 }
 
@@ -580,7 +580,7 @@ fn r02_cleanup_failure_releases_reservation() {
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
     std::fs::remove_dir_all(path).unwrap();
     assert!(result.is_err());
-    assert!(!runner.busy());
+    assert!(runner.prepare(RunRequest::default()).is_ok());
     assert_eq!(
         runner
             .prepare(request("puts 42", ""))
@@ -665,4 +665,55 @@ fn m03_atomic_source_save_failure_preserves_target_and_removes_temporary_files()
     );
     assert_eq!(store.path(), Some(current.as_path()));
     assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
+}
+
+#[cfg(unix)]
+#[test]
+fn escaped_descendant_cannot_hold_runner_busy_after_timeout() {
+    let runner = Runner::new(Duration::from_millis(500), 1048576);
+    let root = tempfile::tempdir().unwrap();
+    let pid_file = root.path().join("escaped.pid");
+    let code = format!(
+        r#"
+      fork do
+        Process.setsid
+        File.write({:?}, Process.pid.to_s)
+        sleep 10
+      end
+      sleep 10
+    "#,
+        pid_file.to_string_lossy()
+    );
+    let (tx, rx) = mpsc::channel();
+    let prepared = runner
+        .prepare(RunRequest {
+            code,
+            stdin: "x".repeat(1048576),
+            ..Default::default()
+        })
+        .unwrap();
+    std::thread::spawn(move || tx.send(prepared.execute(&ruby(), |_| {})).unwrap());
+    let result = rx.recv_timeout(Duration::from_secs(3));
+    // Always clean up the escaped process, including when the assertion fails.
+    let escaped_pid = std::fs::read_to_string(pid_file);
+    if let Ok(pid) = &escaped_pid {
+        unsafe {
+            libc::kill(pid.parse().unwrap(), libc::SIGKILL);
+        }
+    }
+    assert!(escaped_pid.is_ok(), "the escaped child must have started");
+    assert_eq!(result.unwrap().unwrap().status, "timeout");
+    assert!(runner.prepare(RunRequest::default()).is_ok());
+    assert_eq!(
+        runner
+            .prepare(RunRequest {
+                code: "puts :next".into(),
+                ..Default::default()
+            })
+            .unwrap()
+            .execute(&ruby(), |_| {})
+            .unwrap()
+            .stdout,
+        "next\n"
+    );
 }

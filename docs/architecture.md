@@ -3,7 +3,7 @@
 ## 最小構成
 
 - Tauri v2 の Rust コマンドがネイティブダイアログ、ファイル I/O、同梱 Ruby の実行を担当する。
-- HTML / CSS / JavaScript は既存の画面を使う。bridge.js が Tauri の invoke / Channel と画面をつなぐ。
+- HTML / CSS / JavaScript は既存の画面を使う。bridge.mjs が Tauri の invoke / Channel と画面をつなぐ。
 - コード編集は同梱CodeMirror 6で行い、editor.mjsが文書内容・読取専用状態・カーソル・変更通知を画面へ渡す。Ruby用モードと必要な拡張をesbuildで1つのES Moduleへまとめ、依存のライセンスを同梱する。CodeMirrorが生成する表示用CSSをCSPで許可し、スクリプトは同梱ファイルに限定する。
 - ruby-completion.mjsが同梱の基本候補・定型コードとCodeMirrorの文書内単語収集を組み合わせる。この基本候補はRubyプロセスや外部サービスを使わず同期生成する。表示・選択・挿入はCodeMirrorに任せ、手動で開く。
 - lsp-completion.mjsが手動補完時にShopify Ruby LSPへ接続し、候補をCodeMirrorへ渡す。要求を直列化し、無効になった文書・カーソルの応答を捨てる。既存のruby-completion.mjsを基本候補・定型コード・LSPが候補を返せない場合の補完として共有し、候補は表示名で重複を除く。専用gem・固定bundle・文書同期・UTF-8／UTF-16位置変換・終了処理は[Ruby LSP](ruby-lsp.md)を参照する。
@@ -82,3 +82,11 @@ Windows と Linux は同じ画面の受入ケースを使い、Windows では We
 E2E は各テスト前に共通リセットで初期ソース・初期ケース・空の結果へ戻し、必要な保存先と入力を各テストで準備する。Windows の終了確認は OS のウィンドウ終了要求を使い、フロントエンドの close 権限には依存しない。
 
 Windows E2E の CDP 接続は検査ポートのブラウザー引数で有効にし、devtools feature と開発者ツール UI は配布ビルドで無効にする。
+
+## コマンドとRuby起動の共通処理
+
+本番とUIテストホストはRuby検出、文書の保存先選択、実行ディレクトリ決定、問題ワークスペースを開く処理をライブラリで共有する。Ruby検出は成功時にversionのみを返し、失敗時はエラーを返す。Ruby実行とLSPは同じCommand生成関数で環境変数とプロセス設定を揃える。RUBYOPT・RUBYLIB・GEM_HOME・GEM_PATH・RUBYGEMS_GEMDEPS・BUNDLE_*・BUNDLER_ORIG_*を大文字小文字によらず除去する。準備スクリプトも同じ除去規則を使う。
+
+Unixでは停止後250 msで出力パイプが閉じない場合も実行予約を解放する。読み取りはノンブロッキングで停止可能にし、プロセスグループを離れた子孫がパイプを保持しても次の実行を妨げない。ただしsetsidなどでグループを離れた子孫自体は終了できず、実行後も残りうる。WindowsではJobの終了によって子孫とパイプが閉じる前提で、ブロッキングの読み取りスレッドを待つ。
+
+単問と問題集は本文・画像の取得と検証を同じ関数にまとめ、単問の場合だけ取得結果をキャッシュへ保存する。問題を開く処理は取得後に文書を受け取るコールバックで共有し、文書のロック方式は呼び出し側が決める。

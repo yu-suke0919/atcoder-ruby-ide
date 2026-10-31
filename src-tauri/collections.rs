@@ -1,9 +1,10 @@
 use crate::files::{read_limited, write_atomic};
 use crate::library::{
-    create_if_missing, download, http_client, validate, ProblemKey, MAX_HTML_BYTES,
+    create_if_missing, download, download_problem, http_client, validate, ProblemKey,
+    MAX_HTML_BYTES,
 };
-use crate::presentation::{download_image, fill_images, MAX_CACHE_BYTES};
-use crate::{parse_problem, DocumentStore, Problem, ProblemLibrary, ProblemWorkspace};
+use crate::presentation::MAX_CACHE_BYTES;
+use crate::{DocumentStore, Problem, ProblemLibrary, ProblemWorkspace};
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -242,16 +243,13 @@ impl CollectionLibrary {
         for entry in std::fs::read_dir(directory).map_err(|e| e.to_string())? {
             let path = entry.map_err(|e| e.to_string())?.path();
             if path.extension().and_then(|s| s.to_str()) == Some("json") && path.is_file() {
-                let id = path
-                    .file_stem()
-                    .unwrap()
-                    .to_str()
-                    .ok_or("問題集IDが不正です。")?;
-                urls.push(format!("https://atcoder.jp/contests/{id}"));
+                if let Some(id) = path.file_stem().and_then(|name| name.to_str()) {
+                    urls.push(format!("https://atcoder.jp/contests/{id}"));
+                }
             }
         }
         urls.sort();
-        urls.iter().map(|url| self.view(url)).collect()
+        Ok(urls.iter().filter_map(|url| self.view(url).ok()).collect())
     }
     pub fn register(&self, url: &str) -> Result<RegisteredCollection, String> {
         self.register_with(url, |url| download(&http_client()?, url))
@@ -262,11 +260,11 @@ impl CollectionLibrary {
         fetch: impl FnOnce(&str) -> Result<String, String>,
     ) -> Result<RegisteredCollection, String> {
         let key = CollectionKey::parse(url)?;
-        if key
+        let exists = key
             .manifest(&self.root)
             .try_exists()
-            .map_err(|e| e.to_string())?
-        {
+            .map_err(|e| e.to_string())?;
+        if exists && self.load(&key).is_ok() {
             return Ok(RegisteredCollection {
                 view: self.view(&key.url)?,
                 created: false,
@@ -274,16 +272,14 @@ impl CollectionLibrary {
         }
         let collection =
             parse_collection(&key.url, &fetch(&format!("{}/tasks?lang=ja", key.url))?)?;
-        self.save(&key, &collection, true)?;
+        self.save(&key, &collection, !exists)?;
         Ok(RegisteredCollection {
             view: self.view(&key.url)?,
             created: true,
         })
     }
     pub fn fetch_task(&self, url: &str, task: &str) -> Result<CollectionView, String> {
-        self.fetch_with(url, task, |url| {
-            ProblemLibrary::new(&self.root).problem(url, false)
-        })
+        self.fetch_with(url, task, download_problem)
     }
     fn fetch_with(
         &self,
@@ -334,13 +330,7 @@ impl CollectionLibrary {
     }
 
     pub fn repair_task(&self, url: &str, task: &str) -> Result<RepairedCollectionTask, String> {
-        self.repair_with(url, task, |url| {
-            let client = http_client()?;
-            let html = download(&client, &format!("{url}?lang=ja"))?;
-            let mut problem = parse_problem(url, &html)?;
-            fill_images(&mut problem.statement, |url| download_image(&client, url))?;
-            Ok(problem)
-        })
+        self.repair_with(url, task, download_problem)
     }
     fn repair_with(
         &self,
@@ -373,7 +363,9 @@ impl CollectionLibrary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{parse_problem, DocumentStore, SampleCase};
+    use crate::parse_problem;
+    use crate::presentation::fill_images;
+    use crate::{DocumentStore, SampleCase};
     const URL: &str = "https://atcoder.jp/contests/tessoku-book";
     const HTML: &str = include_str!("../tests/fixtures/atcoder-tessoku-tasks.html");
     fn problem(url: &str) -> crate::Problem {
@@ -384,6 +376,103 @@ mod tests {
             .register_with(URL, |_| Ok(HTML.into()))
             .unwrap()
             .view
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn snapshot_lookup_errors_never_replace_a_readable_manifest() {
+        let root = tempfile::tempdir().unwrap();
+        let library = CollectionLibrary::new(root.path());
+        let mut collection = register(&library).collection;
+        collection.title = "fixed title".into();
+        collection.tasks[0].error = Some("saved failure".into());
+        let key = CollectionKey::parse(URL).unwrap();
+        library.save(&key, &collection, false).unwrap();
+        let manifest = key.manifest(root.path());
+        let original = std::fs::read(&manifest).unwrap();
+        let snapshot = library
+            .snapshot_path(&key, &collection.tasks[0].url)
+            .unwrap();
+        std::fs::create_dir_all(snapshot.parent().unwrap()).unwrap();
+        // A symlink loop produces a real metadata I/O error even when running as root.
+        std::os::unix::fs::symlink(&snapshot, &snapshot).unwrap();
+        assert!(library.view(URL).is_err());
+        assert!(library
+            .register_with(URL, |_| panic!("readable manifest must not be refreshed"))
+            .is_err());
+        assert_eq!(std::fs::read(&manifest).unwrap(), original);
+        let saved = library.load(&key).unwrap();
+        assert_eq!(saved.title, "fixed title");
+        assert_eq!(saved.tasks[0].error.as_deref(), Some("saved failure"));
+    }
+
+    #[test]
+    fn re_registration_repairs_invalid_manifests_and_preserves_snapshots_and_workspaces() {
+        for invalid in [b"broken".to_vec(), br#"{"obsolete":true}"#.to_vec()] {
+            let root = tempfile::tempdir().unwrap();
+            let library = CollectionLibrary::new(root.path());
+            let registered = library.register_with(URL, |_| Ok(HTML.into())).unwrap();
+            let task = &registered.view.collection.tasks[0].url;
+            library
+                .fetch_with(URL, task, |url| Ok(problem(url)))
+                .unwrap();
+            let mut documents = DocumentStore::default();
+            library
+                .open_task(URL, task, documents.revision(), &mut documents)
+                .unwrap();
+            let solution = documents.path().unwrap().to_owned();
+            std::fs::write(&solution, b"my answer").unwrap();
+            let cases = solution.parent().unwrap().join("cases.json");
+            std::fs::write(&cases, b"my edited cases").unwrap();
+            let key = CollectionKey::parse(URL).unwrap();
+            let snapshot = library.snapshot_path(&key, task).unwrap();
+            let original = std::fs::read(&snapshot).unwrap();
+            let manifest = key.manifest(root.path());
+            std::fs::write(&manifest, &invalid).unwrap();
+            assert!(library.list().unwrap().is_empty());
+            assert!(library
+                .register_with(URL, |_| Err("offline".into()))
+                .is_err());
+            assert_eq!(std::fs::read(&manifest).unwrap(), invalid);
+            assert!(library
+                .register_with(URL, |_| Ok("invalid page".into()))
+                .is_err());
+            assert_eq!(std::fs::read(&manifest).unwrap(), invalid);
+            let repaired = library
+                .register_with(URL, |url| {
+                    assert_eq!(url, format!("{URL}/tasks?lang=ja"));
+                    Ok(HTML.into())
+                })
+                .unwrap();
+            assert!(repaired.created);
+            assert_eq!(repaired.view.downloaded, vec![task.clone()]);
+            assert_eq!(library.list().unwrap().len(), 1);
+            assert_eq!(std::fs::read(&snapshot).unwrap(), original);
+            assert_eq!(std::fs::read(solution).unwrap(), b"my answer");
+            assert_eq!(std::fs::read(cases).unwrap(), b"my edited cases");
+            assert!(
+                !library
+                    .register_with(URL, |_| panic!("must reuse repaired manifest"))
+                    .unwrap()
+                    .created
+            );
+        }
+    }
+
+    #[test]
+    fn list_skips_invalid_manifests_without_modifying_them() {
+        let root = tempfile::tempdir().unwrap();
+        let library = CollectionLibrary::new(root.path());
+        library.register_with(URL, |_| Ok(HTML.into())).unwrap();
+        let directory = root.path().join("library/collections");
+        for name in ["broken.json", "invalid name.json"] {
+            std::fs::write(directory.join(name), b"broken").unwrap();
+        }
+        assert_eq!(library.list().unwrap().len(), 1);
+        assert_eq!(
+            std::fs::read(directory.join("broken.json")).unwrap(),
+            b"broken"
+        );
     }
 
     #[test]

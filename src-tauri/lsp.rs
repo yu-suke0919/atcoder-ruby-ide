@@ -3,7 +3,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -231,35 +231,13 @@ impl Session {
         let uri = url::Url::from_file_path(directory.path().join("solution.rb"))
             .map_err(|_| "LSPの文書URIを作れません")?
             .to_string();
-        let mut command = Command::new(ruby);
-        for (key, _) in std::env::vars_os() {
-            let name = key.to_string_lossy().to_ascii_uppercase();
-            if matches!(
-                name.as_str(),
-                "RUBYOPT" | "RUBYLIB" | "GEM_HOME" | "GEM_PATH" | "RUBYGEMS_GEMDEPS"
-            ) || name.starts_with("BUNDLE_")
-                || name.starts_with("BUNDLER_ORIG_")
-            {
-                command.env_remove(key);
-            }
-        }
+        let mut command = crate::process::ruby_command(ruby);
         command
-            .args(["--disable=rubyopt", "-EUTF-8:UTF-8"])
             .arg(script)
             .current_dir(directory.path())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            command.creation_flags(0x08000000);
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            command.process_group(0);
-        }
         let mut child = command
             .spawn()
             .map_err(|e| format!("Ruby LSPを起動できません: {e}"))?;

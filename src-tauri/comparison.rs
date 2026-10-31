@@ -3,10 +3,6 @@ fn normalize(text: &str) -> String {
     text.strip_suffix('\n').unwrap_or(&text).to_owned()
 }
 
-pub fn compare_output(actual: &str, expected: &str) -> bool {
-    normalize(actual) == normalize(expected)
-}
-
 /// A 1-based position and normalized lines. Columns count Unicode scalar values;
 /// a missing line is None, while an empty line is Some("").
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
@@ -18,7 +14,7 @@ pub struct OutputDifference {
     pub expected_line: Option<String>,
 }
 
-/// Locate the first difference using the same normalization as compare_output.
+/// Locate the first difference after normalizing line endings and one trailing newline.
 pub fn first_difference(actual: &str, expected: &str) -> Option<OutputDifference> {
     let actual = normalize(actual);
     let expected = normalize(expected);
@@ -72,7 +68,7 @@ pub fn decode_output(bytes: &[u8], truncated: bool) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{compare_output, first_difference, OutputDifference};
+    use super::{first_difference, normalize, OutputDifference};
 
     fn difference(
         line: usize,
@@ -221,7 +217,7 @@ mod tests {
             for expected in outputs {
                 assert_eq!(
                     first_difference(actual, expected).is_none(),
-                    compare_output(actual, expected),
+                    normalize(actual) == normalize(expected),
                     "{actual:?} / {expected:?}"
                 );
             }

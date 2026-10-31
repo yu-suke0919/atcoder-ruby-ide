@@ -3,7 +3,7 @@ use crate::{decode_output, first_difference, process::ProcessTree, OutputDiffere
 use serde::Serialize;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -54,6 +54,7 @@ struct Capture {
     stdout: Vec<u8>,
     stderr: Vec<u8>,
     bytes: usize,
+    closed: bool,
 }
 
 impl Runner {
@@ -64,9 +65,6 @@ impl Runner {
             timeout,
             output_limit,
         })
-    }
-    pub fn busy(&self) -> bool {
-        self.active.lock().unwrap().is_some()
     }
     pub fn wait_idle(&self) {
         let mut active = self.active.lock().unwrap();
@@ -158,30 +156,15 @@ impl PreparedRun {
         let bootstrap = directory.path().join("stdio.rb");
         std::fs::write(&source, &self.request.code).map_err(|e| e.to_string())?;
         std::fs::write(&bootstrap, "Gem.use_paths(Gem.default_dir); [STDIN, STDOUT, STDERR].each { |io| io.binmode; io.set_encoding(Encoding::UTF_8) }; STDOUT.sync = true; STDERR.sync = true\n").map_err(|e| e.to_string())?;
-        let mut command = Command::new(ruby);
+        let mut command = crate::process::ruby_command(ruby);
         command
-            .env_remove("RUBYOPT")
-            .env_remove("RUBYLIB")
-            .env_remove("BUNDLE_GEMFILE")
-            .env_remove("GEM_HOME")
-            .env_remove("GEM_PATH")
-            .args(["-EUTF-8:UTF-8", "-r"])
+            .arg("-r")
             .arg(&bootstrap)
             .arg(&source)
             .current_dir(self.request.cwd.as_deref().unwrap_or(directory.path()))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            command.creation_flags(0x08000000);
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            command.process_group(0);
-        }
         let mut child = command
             .spawn()
             .map_err(|e| format!("Ruby を起動できません: {e}"))?;
@@ -206,25 +189,43 @@ impl PreparedRun {
                 output(event);
             }
         });
-        let stdout = self.read_stream(
-            child.stdout.take().unwrap(),
-            "stdout",
-            events.clone(),
-            Arc::clone(&capture),
-        );
-        let stderr = self.read_stream(
-            child.stderr.take().unwrap(),
-            "stderr",
-            events,
-            Arc::clone(&capture),
-        );
-        let input = self.request.stdin.as_bytes().to_vec();
+        let stdout_pipe = child.stdout.take().unwrap();
+        let stderr_pipe = child.stderr.take().unwrap();
         let mut pipe = child.stdin.take().unwrap();
+        #[cfg(unix)]
+        for result in [
+            crate::process::nonblocking(&stdout_pipe),
+            crate::process::nonblocking(&stderr_pipe),
+            crate::process::nonblocking(&pipe),
+        ] {
+            if let Err(error) = result {
+                tree.kill();
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("Ruby のパイプを設定できません: {error}"));
+            }
+        }
+        let stdout = self.read_stream(stdout_pipe, "stdout", events.clone(), Arc::clone(&capture));
+        let stderr = self.read_stream(stderr_pipe, "stderr", events, Arc::clone(&capture));
+        let input = self.request.stdin.as_bytes().to_vec();
+        let writer_capture = Arc::clone(&capture);
         let writer = std::thread::spawn(move || {
-            let _ = pipe.write_all(&input);
+            let mut remaining = input.as_slice();
+            while !remaining.is_empty() && !writer_capture.lock().unwrap().closed {
+                match pipe.write(remaining) {
+                    Ok(0) => break,
+                    Ok(count) => remaining = &remaining[count..],
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(10))
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(_) => break,
+                }
+            }
         });
         let mut exit = None;
         let mut wait_error = None;
+        let mut stopped_at = None;
         loop {
             if exit.is_none() {
                 match child.try_wait() {
@@ -243,9 +244,21 @@ impl PreparedRun {
             if started.elapsed() >= self.runner.timeout && self.runner.reason().is_none() {
                 self.runner.stop_for("timeout");
             }
+            if self.runner.reason().is_some() {
+                let stopped = stopped_at.get_or_insert_with(Instant::now);
+                let _ = child.kill();
+                if stopped.elapsed() >= Duration::from_millis(250) {
+                    break;
+                }
+            }
             std::thread::sleep(Duration::from_millis(10));
         }
+        capture.lock().unwrap().closed = true;
         tree.kill();
+        if exit.is_none() {
+            let _ = child.kill();
+            exit = child.wait().ok();
+        }
         let _ = writer.join();
         stdout
             .join()
@@ -258,7 +271,7 @@ impl PreparedRun {
         if let Some(error) = wait_error {
             return Err(error);
         }
-        let exit = exit.unwrap();
+        let exit = exit.ok_or("Ruby の終了状態を取得できません。")?;
         let capture = capture.lock().unwrap();
         let capped = capture.bytes >= self.runner.output_limit;
         let stdout = decode_output(&capture.stdout, capped);
@@ -306,10 +319,17 @@ impl PreparedRun {
         let runner = Arc::clone(&self.runner);
         std::thread::spawn(move || {
             let mut buffer = [0; 4096];
-            while let Ok(length) = reader.read(&mut buffer) {
-                if length == 0 {
-                    break;
-                }
+            while !capture.lock().unwrap().closed {
+                let length = match reader.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(length) => length,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(10));
+                        continue;
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(_) => break,
+                };
                 let (bytes, reached) = {
                     let mut data = capture.lock().unwrap();
                     let count = length.min(runner.output_limit - data.bytes);

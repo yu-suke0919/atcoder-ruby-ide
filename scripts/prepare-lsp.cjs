@@ -18,7 +18,7 @@ async function prepareLsp({ root = repository, ruby = process.platform === 'win3
     await cp(path.join(repository, 'config/ruby-lsp'), staging, { recursive: true });
     const dependencies = [...profile.gems, ...profile.bundledGems.filter(g => g.name !== 'bundler')];
     await writeFile(path.join(staging, 'Gemfile'), `source 'https://rubygems.org'\n${dependencies.map(g => `gem '${g.name}', '= ${g.version}'`).join('\n')}\n`);
-    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(RUBYOPT|RUBYLIB|GEM_HOME|GEM_PATH|BUNDLE_.*)$/i.test(key)));
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(RUBYOPT|RUBYLIB|GEM_HOME|GEM_PATH|RUBYGEMS_GEMDEPS|BUNDLE_.*|BUNDLER_ORIG_.*)$/i.test(key)));
     const { stdout } = await execute(ruby, ['-EUTF-8:UTF-8', path.join(staging, 'server.rb'), '--probe'], { env, timeout: 30000 });
     const versions = JSON.parse(stdout);
     for (const gem of [...profile.gems, ...profile.bundledGems]) {

@@ -231,6 +231,24 @@ pub(crate) fn http_client() -> Result<Client, String> {
         .map_err(|e| e.to_string())
 }
 
+pub(crate) fn download_problem(url: &str) -> Result<Problem, String> {
+    let key = ProblemKey::parse(url)?;
+    let client = http_client()?;
+    let html = download(&client, &format!("{}?lang=ja", key.url))?;
+    problem_from_page(&key, &html, |url| download_image(&client, url))
+}
+
+fn problem_from_page(
+    key: &ProblemKey,
+    html: &str,
+    fetch_image: impl FnMut(&str) -> Result<Vec<u8>, String>,
+) -> Result<Problem, String> {
+    let mut problem = parse_problem(&key.url, html)?;
+    fill_images(&mut problem.statement, fetch_image)?;
+    validate(&problem, key)?;
+    Ok(problem)
+}
+
 pub struct ProblemLibrary {
     root: PathBuf,
 }
@@ -251,22 +269,9 @@ impl ProblemLibrary {
             validate(&problem, &key)?;
             return Ok(problem);
         }
-        let client = http_client()?;
-        self.store_page(&key, &download(&client, &format!("{}?lang=ja", key.url))?)
+        self.store_problem(&key, download_problem(&key.url)?)
     }
-    fn store_page(&self, key: &ProblemKey, html: &str) -> Result<Problem, String> {
-        let client = http_client()?;
-        self.store_page_with(key, html, |url| download_image(&client, url))
-    }
-    fn store_page_with(
-        &self,
-        key: &ProblemKey,
-        html: &str,
-        fetch_image: impl FnMut(&str) -> Result<Vec<u8>, String>,
-    ) -> Result<Problem, String> {
-        let mut problem = parse_problem(&key.url, html)?;
-        fill_images(&mut problem.statement, fetch_image)?;
-        validate(&problem, key)?;
+    fn store_problem(&self, key: &ProblemKey, problem: Problem) -> Result<Problem, String> {
         let data = serde_json::to_vec_pretty(&problem).map_err(|e| e.to_string())?;
         if data.len() > MAX_CACHE_BYTES {
             return Err("保存する問題が32 MiBを超えています。".into());
@@ -277,6 +282,15 @@ impl ProblemLibrary {
         std::fs::create_dir_all(cache.parent().unwrap()).map_err(|e| e.to_string())?;
         write_atomic(&cache, &data).map_err(|e| format!("問題を保存できません: {e}"))?;
         Ok(problem)
+    }
+    pub fn open_problem<D: std::ops::DerefMut<Target = DocumentStore>>(
+        &self,
+        url: &str,
+        revision: u64,
+        documents: impl FnOnce() -> D,
+    ) -> Result<ProblemWorkspace, String> {
+        let problem = self.problem(url, false)?;
+        self.open_workspace(problem, revision, &mut documents())
     }
     pub fn open_workspace(
         &self,
@@ -341,6 +355,22 @@ pub(crate) fn create_if_missing(path: &Path, data: &[u8]) -> Result<(), String> 
 mod tests {
     use super::*;
     use std::net::TcpListener;
+    fn store_page(
+        library: &ProblemLibrary,
+        key: &ProblemKey,
+        html: &str,
+    ) -> Result<Problem, String> {
+        let client = http_client()?;
+        store_page_with(library, key, html, |url| download_image(&client, url))
+    }
+    fn store_page_with(
+        library: &ProblemLibrary,
+        key: &ProblemKey,
+        html: &str,
+        fetch_image: impl FnMut(&str) -> Result<Vec<u8>, String>,
+    ) -> Result<Problem, String> {
+        library.store_problem(key, problem_from_page(key, html, fetch_image)?)
+    }
     fn serve(response: Vec<u8>) -> (String, std::thread::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}/", listener.local_addr().unwrap());
@@ -381,7 +411,7 @@ mod tests {
         let url = "https://atcoder.jp/contests/abs/tasks/practice_1";
         let key = ProblemKey::parse(url).unwrap();
         let html = include_str!("../tests/fixtures/atcoder-task.html");
-        let first = library.store_page(&key, html).unwrap();
+        let first = store_page(&library, &key, html).unwrap();
         let mut documents = DocumentStore::default();
         let workspace = library
             .open_workspace(first, documents.revision(), &mut documents)
@@ -394,14 +424,14 @@ mod tests {
             .directory(root.path(), "library/problems")
             .join("problem.json");
         let old = std::fs::read(&cache).unwrap();
-        assert!(library.store_page(&key, "invalid page").is_err());
+        assert!(store_page(&library, &key, "invalid page").is_err());
         assert_eq!(std::fs::read(&cache).unwrap(), old);
-        let updated = library
-            .store_page(
-                &key,
-                &html.replace("和を求める", "Updated").replace("1 2", "8 9"),
-            )
-            .unwrap();
+        let updated = store_page(
+            &library,
+            &key,
+            &html.replace("和を求める", "Updated").replace("1 2", "8 9"),
+        )
+        .unwrap();
         assert_eq!(updated.samples[0].stdin, "8 9\n");
         let reopened = library
             .open_workspace(updated, documents.revision(), &mut documents)
@@ -420,20 +450,14 @@ mod tests {
         let key = ProblemKey::parse("https://atcoder.jp/contests/test/tasks/task").unwrap();
         let html = r#"<span class="h2">Media</span><div id="task-statement"><p><var>\\frac{1}{2}</var></p><img src="https://img.atcoder.jp/test/figure.svg" alt="図"></div>"#;
         let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50"><rect width="100" height="50"/></svg>"#;
-        library
-            .store_page_with(&key, html, |_| Ok(svg.to_vec()))
-            .unwrap();
+        store_page_with(&library, &key, html, |_| Ok(svg.to_vec())).unwrap();
         let cache = key
             .directory(root.path(), "library/problems")
             .join("problem.json");
         let old = std::fs::read(&cache).unwrap();
-        assert!(library
-            .store_page_with(&key, html, |_| Err("offline".into()))
-            .is_err());
+        assert!(store_page_with(&library, &key, html, |_| Err("offline".into())).is_err());
         assert_eq!(std::fs::read(&cache).unwrap(), old);
-        assert!(library
-            .store_page_with(&key, html, |_| Ok(b"broken image".to_vec()))
-            .is_err());
+        assert!(store_page_with(&library, &key, html, |_| Ok(b"broken image".to_vec())).is_err());
         assert_eq!(std::fs::read(&cache).unwrap(), old);
         let reopened = library.problem(&key.url, false).unwrap();
         assert!(

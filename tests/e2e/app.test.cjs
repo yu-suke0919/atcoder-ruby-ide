@@ -192,13 +192,13 @@ test('M12: Ruby detection can fail and recover without losing edits', async () =
   await page.getByTestId('code-editor').fill('puts "recovered"');
   await page.getByTestId('stdin').fill('keep input');
   await page.evaluate(async () => {
-    const { ide } = await import('./bridge.js');
+    const { ide } = await import('./bridge.mjs');
     const original = ide.rubyInfo;
     let attempt = 0;
     ide.rubyInfo = () => {
       attempt++;
       if (attempt === 1) return new Promise((resolve, reject) => { window.rejectRubyProbe = () => reject(new Error('Ruby probe failed')); });
-      if (attempt === 2) return Promise.resolve({ available: false, version: 'Ruby unavailable' });
+      if (attempt === 2) return Promise.reject(new Error('Ruby unavailable'));
       return original();
     };
   });
@@ -212,7 +212,8 @@ test('M12: Ruby detection can fail and recover without losing edits', async () =
   assert.equal(await page.locator('#run').isDisabled(), true);
   assert.equal(await page.locator('#save').isEnabled(), true);
   await retry.click();
-  await page.locator('#ruby-version').filter({ hasText: 'Ruby unavailable' }).waitFor();
+  await page.locator('#message').filter({ hasText: 'Ruby unavailable' }).waitFor();
+  assert.equal(await page.locator('#ruby-version').textContent(), 'Ruby を起動できません');
   assert.equal(await page.locator('#run').isDisabled(), true);
   await retry.click();
   await page.waitForFunction(() => !document.getElementById('run').disabled);
@@ -338,7 +339,7 @@ test('M11: matching stdout from a failed process is not a passing comparison', a
 test('M11: reject invalid or oversized UTF-8 expectations before running Ruby', async () => {
   for (const expected of [123, 'あ'.repeat(349526)]) {
     const error = await page.evaluate(async (value) => {
-      try { const { ide } = await import('./bridge.js'); await ide.run('puts "must not run"', '', value); }
+      try { const { ide } = await import('./bridge.mjs'); await ide.run('puts "must not run"', '', value); }
       catch (error) { return error.message; }
     }, expected);
     assert.match(error, /期待出力/);
@@ -1030,7 +1031,7 @@ test('P04: refresh keeps edited code and cases and retains the previous statemen
   await page.locator('#problem-library').click();
   // Isolate external HTTP at the bridge; Rust separately verifies HTTP and atomic cache updates.
   await page.evaluate(async problem => {
-    const { ide } = await import('./bridge.js');
+    const { ide } = await import('./bridge.mjs');
     ide.refreshProblem = async () => ({ ...problem, title: 'Updated problem', statement: [...problem.statement, { type: 'text', text: '\nRefreshed' }] });
   }, problem);
   await page.locator('#problem-refresh').click();
@@ -1053,7 +1054,7 @@ test('P04: refresh keeps edited code and cases and retains the previous statemen
   assert.equal(await page.locator('#problem-statement').evaluate(el => el.scrollTop), originalScroll);
   await page.locator('#problem-library').click();
   await page.evaluate(async () => {
-    const { ide } = await import('./bridge.js');
+    const { ide } = await import('./bridge.mjs');
     ide.refreshProblem = async () => { throw new Error('network offline'); };
   });
   await page.locator('#problem-refresh').click(); await waitProblem();
@@ -1096,7 +1097,7 @@ test('P06: refresh can repair a cache before any problem is selected', async () 
   await page.locator('#problem-message').filter({ hasText: '再取得' }).waitFor();
   assert.equal(await page.locator('#problem-refresh').isEnabled(), true);
   await page.evaluate(async problem => {
-    const { ide } = await import('./bridge.js');
+    const { ide } = await import('./bridge.mjs');
     window.refreshedUrl = null;
     ide.refreshProblem = async url => { window.refreshedUrl = url; return problem; };
   }, problem);
@@ -1140,7 +1141,7 @@ test('P07: reading panel allows editing and shortcuts, and toggling preserves ed
   const before = await capture();
   const width = await page.locator('#code-editor').evaluate(el => el.clientWidth);
   await page.evaluate(async () => {
-    const { ide } = await import('./bridge.js');
+    const { ide } = await import('./bridge.mjs');
     for (const name of ['openProblem', 'refreshProblem', 'openCollectionTask', 'fetchCollectionTask', 'repairCollectionTask']) ide[name] = () => { throw new Error('display toggles must stay offline'); };
   });
   await page.locator('#problem-toggle').click();
@@ -1288,7 +1289,7 @@ test('C02: registration fetches sequentially, pauses and resumes only missing ta
     return { collection, downloaded };
   });
   await page.evaluate(async collection => {
-    const { ide } = await import('./bridge.js');
+    const { ide } = await import('./bridge.mjs');
     ide.registerCollection = async () => ({ view: { collection, downloaded: [] }, created: true });
     ide.fetchCollectionTask = (url, task) => window.__collectionFetch(url, task);
   }, collection);
@@ -1297,15 +1298,25 @@ test('C02: registration fetches sequentially, pauses and resumes only missing ta
   await page.locator('#collection-url').fill(collection.url);
   await page.locator('#collection-register').click();
   await firstStarted;
+  assert.equal(await page.locator('#collection-register').isDisabled(), true);
+  assert.equal(await page.locator('#collection-resume').isDisabled(), true);
+  assert.equal(await page.locator('#collection-select').isDisabled(), true);
+  await page.locator('#collection-close').click();
+  await page.getByTestId('code-editor').fill('puts "during fetch"');
+  await runAndWait();
+  assert.equal(await page.getByTestId('stdout').textContent(), 'during fetch\n');
+  const executionMessage = await page.locator('#message').textContent();
+  await page.locator('#collections').click();
   await page.locator('#collection-pause').click();
   releaseFirst();
   await page.waitForFunction(() => !document.getElementById('collection-register').disabled);
   await page.locator('#collection-tasks').filter({ hasText: 'network offline' }).waitFor();
+  assert.equal(await page.locator('#message').textContent(), executionMessage);
   const beforeReload = calls.length;
   assert.ok(beforeReload < 3);
   await page.reload();
   await page.waitForFunction(() => !document.getElementById('run').disabled);
-  await page.evaluate(async () => { const { ide } = await import('./bridge.js'); ide.fetchCollectionTask = (url, task) => window.__collectionFetch(url, task); });
+  await page.evaluate(async () => { const { ide } = await import('./bridge.mjs'); ide.fetchCollectionTask = (url, task) => window.__collectionFetch(url, task); });
   await showCollections();
   await page.locator('#collection-resume').click();
   await page.waitForFunction(() => document.getElementById('collection-progress').textContent.includes('取得済み 3 / 3'));
@@ -1319,6 +1330,37 @@ test('C02: registration fetches sequentially, pauses and resumes only missing ta
   assert.equal(calls.length, total);
   assert.equal(await page.locator('#collection-resume').isDisabled(), true);
   await page.locator('#collection-close').click();
+});
+
+test('C06: running code can reopen collections and pause a pending download without changing run messages', async () => {
+  const collection = await seedCollection(2);
+  await showCollections();
+  await page.evaluate(async collection => {
+    const { ide } = await import('./bridge.mjs');
+    ide.fetchCollectionTask = () => new Promise(resolve => {
+      window.finishCollectionFetch = () => resolve({ collection, downloaded: [] });
+    });
+  }, collection);
+  await page.locator('#collection-resume').click();
+  await page.waitForFunction(() => typeof window.finishCollectionFetch === 'function');
+  await page.locator('#collection-close').click();
+  await page.getByTestId('code-editor').fill('puts "active"; sleep 30');
+  await page.locator('#run').click();
+  await page.locator('#stdout').filter({ hasText: 'active' }).waitFor();
+  assert.equal(await page.locator('#collections').isEnabled(), true);
+  const executionMessage = await page.locator('#message').textContent();
+  await page.locator('#collections').click();
+  for (const id of ['collection-register', 'collection-resume', 'collection-select']) {
+    assert.equal(await page.locator(`#${id}`).isDisabled(), true);
+  }
+  await page.locator('#collection-pause').click();
+  await page.evaluate(() => window.finishCollectionFetch());
+  await page.locator('#collection-message').filter({ hasText: '取得を中断しました' }).waitFor();
+  assert.equal(await page.locator('#message').textContent(), executionMessage);
+  assert.equal(await page.locator('#collection-pause').isDisabled(), true);
+  await page.locator('#collection-close').click();
+  await page.locator('#stop').click();
+  await page.waitForFunction(() => !document.getElementById('run').disabled);
 });
 
 test('C03: tasks without inline samples open, and corrupt snapshots preserve the current document', async () => {
@@ -1347,7 +1389,7 @@ test('C04: individual repair requires confirmation and cancel or Escape never st
   await Promise.all(collection.tasks.slice(0, 2).map(seedCollectionTask));
   const original = await readFile(path.join(app.dataDir, 'library/collections', libraryContest, 'collection_0.json'), 'utf8');
   await page.evaluate(async () => {
-    const { ide } = await import('./bridge.js');
+    const { ide } = await import('./bridge.mjs');
     window.repairCalls = 0;
     ide.repairCollectionTask = async () => { window.repairCalls++; throw new Error('must not request'); };
   });
@@ -1405,7 +1447,7 @@ test('C05: confirmed repair preserves current edits, other snapshots and the pre
     await writeFile(path.join(directory, `${taskUrl.split('/').at(-1)}.json`), JSON.stringify(problem));
     return { view: { collection, downloaded: collection.tasks.map(task => task.url) }, problem };
   });
-  await page.evaluate(async () => { const { ide } = await import('./bridge.js'); ide.repairCollectionTask = (url, task) => window.__collectionRepair(url, task); });
+  await page.evaluate(async () => { const { ide } = await import('./bridge.mjs'); ide.repairCollectionTask = (url, task) => window.__collectionRepair(url, task); });
   await showCollections();
   async function confirmRepair(index) {
     await page.locator('#collection-tasks [data-action="repair"]').nth(index).click();
@@ -1481,7 +1523,7 @@ test('P10: formulas and saved images render offline and enlarge without changing
   await page.locator('#problem-toggle').click();
   await page.locator('#problem-library').click();
   await page.evaluate(async problem => {
-    const { ide } = await import('./bridge.js'); ide.refreshProblem = async () => problem;
+    const { ide } = await import('./bridge.mjs'); ide.refreshProblem = async () => problem;
   }, problem);
   await page.locator('#problem-refresh').click(); await waitProblem();
   assert.equal(await page.locator('#problem-panel').isVisible(), false);

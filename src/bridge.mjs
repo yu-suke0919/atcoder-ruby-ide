@@ -27,7 +27,7 @@ export const ide = {
         } else if (event.type === 'completed') resolve(event.result);
         else if (event.type === 'failed') reject(new Error(event.message));
       };
-      invoke('run_ruby', { code, stdin, expectedOutput, onEvent: channel }).catch(error => reject(new Error(String(error))));
+      invoke('run_ruby', { code, stdin, expectedOutput, onEvent: channel }).catch(reject);
     });
   },
   stop: () => invoke('stop_ruby'),

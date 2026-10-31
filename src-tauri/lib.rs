@@ -1,4 +1,5 @@
 mod collections;
+mod commands;
 mod comparison;
 mod document;
 mod files;
@@ -13,7 +14,8 @@ pub use collections::{
     parse_collection, Collection, CollectionLibrary, CollectionTask, CollectionView,
     RegisteredCollection, RepairedCollectionTask,
 };
-pub use comparison::{compare_output, decode_output, first_difference, OutputDifference};
+pub use commands::{document_save_path, prepare_document_run, ruby_info, RubyInfo};
+pub use comparison::{decode_output, first_difference, OutputDifference};
 pub use document::{DocumentResult, DocumentStore};
 pub use library::{parse_problem, Problem, ProblemLibrary, ProblemWorkspace};
 pub use lsp::{LspInfo, RubyLsp};

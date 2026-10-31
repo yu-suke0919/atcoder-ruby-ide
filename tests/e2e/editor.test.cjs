@@ -139,7 +139,7 @@ test('E06: a pending file action blocks both typing and search replacements', as
   await page.getByRole('textbox', { name: '検索', exact: true }).fill('locked');
   await page.getByRole('textbox', { name: '置換', exact: true }).fill('changed');
   await page.evaluate(async () => {
-    const { ide } = await import('./bridge.js');
+    const { ide } = await import('./bridge.mjs');
     ide.saveFile = () => new Promise(resolve => { window.finishEditorSave = () => resolve({ canceled: true }); });
   });
   await page.locator('#save').click();
@@ -255,7 +255,7 @@ test('E09: completion is blocked during save and composition and resets with the
   await code().fill('previous_secret = 1\npre'); await code().press('Control+Space'); await completions();
   await option('previous_secret').waitFor();
   await page.evaluate(async () => {
-    const { ide } = await import('./bridge.js');
+    const { ide } = await import('./bridge.mjs');
     ide.saveFile = () => new Promise(resolve => { window.finishCompletionSave = () => resolve({ canceled: true }); });
   });
   await code().press('Control+s');
@@ -428,7 +428,7 @@ test('E17: real LSP completes unsaved declarations with UTF-16 edits offline and
 
 test('E18: pending LSP replies are discarded after edit, cursor move, Escape, save and document switch', async () => {
   await page.evaluate(async () => {
-    const { ide } = await import('./bridge.js');
+    const { ide } = await import('./bridge.mjs');
     ide.lspStart = async () => ({});
     ide.lspComplete = (code, _line, character) => code === 'obj.old' && character === 7
       ? new Promise(resolve => { window.finishLsp = () => resolve([{ label: 'stale_method', kind: 2, textEdit: { newText: 'stale_method', range: { start: { line: 0, character: 4 }, end: { line: 0, character: 7 } } } }]); window.lspPending = true; })
@@ -443,7 +443,7 @@ test('E18: pending LSP replies are discarded after edit, cursor move, Escape, sa
     if (action === 'escape') await code().press('Escape');
     if (action === 'save') {
       await page.evaluate(async () => {
-        const { ide } = await import('./bridge.js');
+        const { ide } = await import('./bridge.mjs');
         ide.saveFile = () => new Promise(resolve => { window.finishLspSave = () => resolve({ canceled: true }); });
       });
       await code().press('Control+s');
@@ -489,7 +489,7 @@ test('E19: LSP failure keeps basic completion and execution available and retry 
 
 test('E20: LSP startup keeps editing, saving and execution available and skips an obsolete request', async () => {
   await page.evaluate(async () => {
-    const { ide } = await import('./bridge.js');
+    const { ide } = await import('./bridge.mjs');
     window.startupCalls = [];
     ide.lspStart = () => new Promise(resolve => { window.finishLspStartup = resolve; });
     ide.lspComplete = async code => { window.startupCalls.push(code); return []; };
@@ -548,7 +548,7 @@ test('E11: runtime and syntax errors navigate without changing code, saved state
   await code().press('Control+s'); await page.waitForFunction(() => !document.getElementById('save').disabled);
   assert.equal(await jump.isVisible(), true);
   await page.evaluate(async () => {
-    const { ide } = await import('./bridge.js');
+    const { ide } = await import('./bridge.mjs');
     const save = ide.saveFile;
     ide.saveFile = () => new Promise(resolve => { window.finishErrorSave = () => { ide.saveFile = save; resolve({ canceled: true }); }; });
   });

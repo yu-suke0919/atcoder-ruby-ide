@@ -1,7 +1,7 @@
 //! Test-only stdio transport. All execution and document behavior comes from the app library.
 use atcoder_ruby_ide::{
-    load_samples, save_samples, CollectionLibrary, DocumentStore, ProblemLibrary, RubyLsp,
-    RunEvent, RunRequest, Runner,
+    document_save_path, load_samples, prepare_document_run, ruby_info, save_samples,
+    CollectionLibrary, DocumentStore, ProblemLibrary, RubyLsp, RunEvent, Runner,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -75,7 +75,7 @@ fn main() {
         runner: &runner,
         worker: None,
     };
-    let mut documents = DocumentStore::default();
+    let documents = Mutex::new(DocumentStore::default());
     let library = ProblemLibrary::new(std::env::current_dir().unwrap().join("user-data"));
     let collections = CollectionLibrary::new(std::env::current_dir().unwrap().join("user-data"));
     let sink = Arc::new(Mutex::new(io::stdout()));
@@ -93,29 +93,16 @@ fn main() {
                 serde_json::from_value(args["character"].clone()).map_err(|e| e.to_string())?,
             )?),
             "lsp_stop" => Ok(json!(lsp.stop())),
-            "ruby_info" => {
-                let result = Runner::new(Duration::from_secs(5), 16384)
-                    .prepare(RunRequest {
-                        code: "puts RUBY_DESCRIPTION".into(),
-                        ..Default::default()
-                    })?
-                    .execute(&ruby, |_| {})?;
-                if result.status != "completed" {
-                    return Err(result.stderr);
-                }
-                Ok(json!({"available": true, "version": result.stdout.trim(), "path": ruby}))
-            }
+            "ruby_info" => Ok(json!(ruby_info(&ruby)?)),
             "run_ruby" => {
                 let args: RunArgs = serde_json::from_value(args).map_err(|e| e.to_string())?;
-                let prepared = runner.prepare(RunRequest {
-                    code: args.code,
-                    stdin: args.stdin,
-                    expected_output: args.expected_output,
-                    cwd: documents
-                        .path()
-                        .and_then(|p| p.parent())
-                        .map(|p| p.to_owned()),
-                })?;
+                let prepared = prepare_document_run(
+                    &runner,
+                    &documents.lock().unwrap(),
+                    args.code,
+                    args.stdin,
+                    args.expected_output,
+                )?;
                 let ruby = ruby.clone();
                 let output = Arc::clone(&sink);
                 if let Some(worker) = cleanup.worker.take() {
@@ -139,22 +126,22 @@ fn main() {
             "document_open" => {
                 let path: Option<PathBuf> =
                     serde_json::from_value(args["selected"].clone()).map_err(|e| e.to_string())?;
-                Ok(json!(documents.open(path)?))
+                Ok(json!(documents.lock().unwrap().open(path)?))
             }
             "document_save" => {
-                let path = if args["saveAs"] != true && documents.path().is_some() {
-                    documents.path().map(|p| p.to_owned())
-                } else {
-                    serde_json::from_value(args["selected"].clone()).map_err(|e| e.to_string())?
-                };
-                Ok(json!(documents.save(
+                let path = document_save_path(
+                    documents.lock().unwrap().path().map(|p| p.to_owned()),
+                    args["saveAs"] == true,
+                    |_| serde_json::from_value(args["selected"].clone()).map_err(|e| e.to_string()),
+                )?;
+                Ok(json!(documents.lock().unwrap().save(
                     args["code"].as_str().ok_or("コードを指定してください")?,
                     path
                 )?))
             }
             "document_new" => {
                 cleanup.stop_and_wait();
-                documents.reset();
+                documents.lock().unwrap().reset();
                 Ok(Value::Null)
             }
             "samples_open" => Ok(json!(load_samples(
@@ -165,13 +152,11 @@ fn main() {
                 serde_json::from_value(args["selected"].clone()).map_err(|e| e.to_string())?
             )?)),
             "problem_open" => {
-                let document_revision = documents.revision();
-                let problem =
-                    library.problem(args["url"].as_str().ok_or("URLを指定してください")?, false)?;
-                Ok(json!(library.open_workspace(
-                    problem,
+                let document_revision = documents.lock().unwrap().revision();
+                Ok(json!(library.open_problem(
+                    args["url"].as_str().ok_or("URLを指定してください")?,
                     document_revision,
-                    &mut documents
+                    || documents.lock().unwrap(),
                 )?))
             }
             "collection_list" => Ok(json!(collections.list()?)),
@@ -182,12 +167,15 @@ fn main() {
                 args["url"].as_str().ok_or("URLを指定してください")?,
                 args["task"].as_str().ok_or("問題を指定してください")?
             )?)),
-            "collection_open_task" => Ok(json!(collections.open_task(
-                args["url"].as_str().ok_or("URLを指定してください")?,
-                args["task"].as_str().ok_or("問題を指定してください")?,
-                documents.revision(),
-                &mut documents
-            )?)),
+            "collection_open_task" => {
+                let mut documents = documents.lock().unwrap();
+                Ok(json!(collections.open_task(
+                    args["url"].as_str().ok_or("URLを指定してください")?,
+                    args["task"].as_str().ok_or("問題を指定してください")?,
+                    documents.revision(),
+                    &mut documents
+                )?))
+            }
             "collection_repair_task" => Ok(json!(collections.repair_task(
                 args["url"].as_str().ok_or("URLを指定してください")?,
                 args["task"].as_str().ok_or("問題を指定してください")?
