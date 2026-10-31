@@ -91,3 +91,41 @@ Windows E2E の CDP 接続は検査ポートのブラウザー引数で有効に
 Unixでは停止後250 msで出力パイプが閉じない場合も実行予約を解放する。読み取りはノンブロッキングで停止可能にし、プロセスグループを離れた子孫がパイプを保持しても次の実行を妨げない。ただしsetsidなどでグループを離れた子孫自体は終了できず、実行後も残りうる。WindowsではJobの終了によって子孫とパイプが閉じる前提で、ブロッキングの読み取りスレッドを待つ。
 
 単問と問題集は本文・画像の取得と検証を同じ関数にまとめ、単問の場合だけ取得結果をキャッシュへ保存する。問題を開く処理は取得後に文書を受け取るコールバックで共有し、文書のロック方式は呼び出し側が決める。
+
+## 画面の作り直しの調査（U0）
+
+[画面の仕様](ui.md)の右端のブラウザについて、2026-10-31にTauri 2.12.5（wry 0.57.1）のソースとWindows CIの試作で確かめた結論。U2以降の実装はこの節に従う。試作は`spike/u0-embedded-browser`ブランチにあり、マージしない（[検証記録](verification.md#画面の作り直しの調査u0)）。
+
+### 埋め込み
+
+- Tauriの`unstable`機能の`Window::add_child`で、メインウィンドウにAtCoder用のWebView（ラベル`atcoder`）を子として追加する。設定ファイルで作るメインウィンドウにもそのまま追加でき、`on_page_load`で読み込みの開始・完了とURLを受け取れる。
+- `unstable`のAPIはTauriのマイナー更新で変わり得る。Cargo.lockで版を固定し、Tauriを更新するときはこの節の確認をやり直す。
+- 画面テストでは、子のWebViewにもメインウィンドウと同じ`additional_browser_args`（リモートデバッグのポートを含む）を渡す。同じWebView2の環境を共有するため、引数が違うと作成に失敗する。ログイン状態は同じプロファイル（`WEBVIEW2_USER_DATA_FOLDER`）に置かれる。
+
+### 分離
+
+AtCoderのページからアプリの機能を呼べないよう、次の3つを組み合わせる。
+
+1. capabilityは`webviews: ["main"]`で画面のWebViewだけに与え、`windows`は書かない。`windows`で指定すると、同じウィンドウの子のWebViewにも同じ権限が付く。`remote`も書かない。Tauriはリモートのオリジン（`https://atcoder.jp`）からの呼び出しを、`remote`を指定した権限がない限り拒否する。
+2. アプリのコマンドを`build.rs`の`tauri_build::AppManifest::commands`で宣言し、`allow-<コマンド>`を画面のWebViewのcapabilityにだけ付ける。宣言がないと、ローカルのオリジン（`tauri.localhost`）からのアプリのコマンドは権限を確かめずに実行される。試作では、AtCoderのページに`http://tauri.localhost/`のiframeを差し込むとアプリのページが読み込まれ、宣言があることで`ruby_info`などが拒否された。
+3. AtCoder用のWebViewは`on_navigation`で`https://atcoder.jp`以外への移動を止める。ページ全体の移動は止まるが、iframeの読み込みは止まらないため、2を省略しない。外部サイトへのリンクの扱いはU2で決める。
+
+試作のWindows CIでは、AtCoderのページから`ruby_info`・試作のコマンド・通知・ウィンドウのタイトル変更がすべて「not allowed by ACL」で拒否され、IPCのURLへ直接送った要求も500で拒否された。画面のWebViewからは同じコマンドを実行できた。
+
+### ページからの読み取り
+
+| 方法 | 結論 |
+| --- | --- |
+| A. RustがAtCoder用WebViewのCookieを受け取り、同じURLを取得し直す | 採用 |
+| B. AtCoderのページにスクリプトを入れて内容を読む | 不採用 |
+
+- Aは`Webview::cookies_for_url`でHttpOnlyを含むCookie（`REVEL_SESSION`など）を受け取り、既存の`reqwest`と`scraper`で取得・解析する。AtCoderのページにスクリプトも通信の口も足さない。Windowsでは同期コマンドから呼ぶとデッドロックするため、非同期コマンドから別スレッドで呼ぶ。
+- Bは読んだ内容をアプリへ渡すためにAtCoderのページへIPCを許す必要があり、分離と矛盾する。
+- 取得のきっかけは`on_page_load`の完了で受け取るURLにする。問題ページ・コンテストのトップ・自分の提出一覧を開いたときに、そのURLを1回取得する。頻度と範囲は[AtCoderからの読み取りの規約と頻度](problem-library.md#atcoderからの読み取りの規約と頻度u0の調査)に従う。
+- ログイン状態はページの`userScreenName = "…"`で判断する（空ならログインしていない）。
+- 試作ではログインしていないCookieで、問題ページから200・サンプル3件、自分の提出一覧から302（ログイン画面へ）を得た。ログインした状態での提出結果（ジャッジ中を含む）・参加登録・参加予定のコンテストの読み取りは、利用者が手元で確かめる。
+
+### 通知とクリップボード
+
+- クリップボードは、画面のWebViewの`navigator.clipboard.writeText`で書ける。試作で書いた文字列をPowerShellの`Get-Clipboard`で読めた。プラグインは追加しない。
+- トースト通知は`tauri-plugin-notification`を使う。試作では通知の呼び出しが成功し、権限も許可済みになった。実際にトーストが表示されるか（ZIP版とインストール版の両方）は画面を見ないと確かめられないため、利用者が手元で確かめる。
