@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-spike-loads"
+description = "Enables the spike_loads command without any pre-configured scope."
+commands.allow = ["spike_loads"]
+
+[[permission]]
+identifier = "deny-spike-loads"
+description = "Denies the spike_loads command without any pre-configured scope."
+commands.deny = ["spike_loads"]

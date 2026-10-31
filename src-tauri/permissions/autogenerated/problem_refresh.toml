@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-problem-refresh"
+description = "Enables the problem_refresh command without any pre-configured scope."
+commands.allow = ["problem_refresh"]
+
+[[permission]]
+identifier = "deny-problem-refresh"
+description = "Denies the problem_refresh command without any pre-configured scope."
+commands.deny = ["problem_refresh"]

@@ -6,6 +6,8 @@ use atcoder_ruby_ide::{
     ProblemWorkspace, RegisteredCollection, RepairedCollectionTask, RubyInfo, RubyLsp, RunEvent,
     Runner, SampleCase, SampleResult,
 };
+mod spike;
+
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -402,17 +404,26 @@ async fn confirm_discard(window: tauri::WebviewWindow) -> Result<bool, String> {
 
 fn main() {
     let mut context = tauri::generate_context!();
+    let mut browser_args = None;
     #[cfg(windows)]
     if let Ok(port) = std::env::var("ATCODER_IDE_TEST_PORT") {
         let port: u16 = port
             .parse()
             .expect("ATCODER_IDE_TEST_PORT must be a port number");
+        let args = format!("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port={port}");
         for window in &mut context.config_mut().app.windows {
-            window.additional_browser_args = Some(format!("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port={port}"));
+            window.additional_browser_args = Some(args.clone());
         }
+        browser_args = Some(args);
     }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
+        .manage(spike::SpikeState::default())
+        .setup(move |app| {
+            spike::embed(app, browser_args.clone())?;
+            Ok(())
+        })
         .manage(AppState {
             runner: Runner::new(Duration::from_secs(5), 1048576),
             documents: Arc::new(Mutex::new(DocumentStore::default())),
@@ -439,7 +450,10 @@ fn main() {
             collection_register,
             collection_fetch_task,
             collection_repair_task,
-            collection_open_task
+            collection_open_task,
+            spike::spike_fetch,
+            spike::spike_navigate,
+            spike::spike_loads
         ])
         .build(context)
         .expect("アプリを起動できませんでした")

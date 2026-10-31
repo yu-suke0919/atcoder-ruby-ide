@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-collection-register"
+description = "Enables the collection_register command without any pre-configured scope."
+commands.allow = ["collection_register"]
+
+[[permission]]
+identifier = "deny-collection-register"
+description = "Denies the collection_register command without any pre-configured scope."
+commands.deny = ["collection_register"]

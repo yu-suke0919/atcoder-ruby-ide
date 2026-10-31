@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-samples-save"
+description = "Enables the samples_save command without any pre-configured scope."
+commands.allow = ["samples_save"]
+
+[[permission]]
+identifier = "deny-samples-save"
+description = "Denies the samples_save command without any pre-configured scope."
+commands.deny = ["samples_save"]

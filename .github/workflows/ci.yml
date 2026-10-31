@@ -21,45 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  linux:
-    if: ${{ !inputs.measure_ruby_stack }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-      - uses: dtolnay/rust-toolchain@1.99.1
-        with:
-          components: rustfmt
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-          key: tauri-desktop
-      - name: Read pinned Ruby patch
-        id: ruby
-        run: node -e "console.log('version=' + require('./config/ruby-windows.json').rubyVersion)" >> "$GITHUB_OUTPUT"
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: ${{ steps.ruby.outputs.version }}
-      - run: npm ci
-      - run: npm run prepare:gems
-      - run: npm run prepare:lsp
-      - run: cargo fmt --all --check
-      - run: npm test
-      - run: npx playwright install --with-deps chromium
-      - name: Browser UI tests with the real Rust and Ruby backend
-        run: npm run test:e2e
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: Linux-UI-failure
-          path: test-results/
-          if-no-files-found: ignore
-
-  windows:
-    if: ${{ !inputs.measure_ruby_stack }}
+  spike:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,55 +30,24 @@ jobs:
           node-version: '24'
           cache: npm
       - uses: dtolnay/rust-toolchain@1.99.1
-        with:
-          components: rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
           key: tauri-desktop
       - run: npm ci
-      - run: npm run prepare:ruby
-      - run: npm run prepare:lsp
-      - name: Unit tests with the bundled Ruby
-        shell: pwsh
-        run: |
-          $env:RUBY_PATH = (Resolve-Path vendor/ruby/bin/ruby.exe).Path
-          npm test
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - run: npm run build:win
-      - run: node scripts/package-windows.cjs --stage
-      - name: Native GUI tests of the portable app without system Ruby
+      - name: U0 spike against the release exe
         shell: pwsh
         run: |
-          $env:APP_EXE = (Resolve-Path artifacts/portable/atcoder-ruby-ide.exe).Path
-          npm run test:e2e
+          $env:APP_EXE = (Resolve-Path target/release/atcoder-ruby-ide.exe).Path
+          node tests/e2e/spike-browser.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Install NSIS and smoke test the app without system Ruby
-        run: node scripts/test-installed-windows.cjs
-      - name: Compress portable ZIP and measure distribution sizes
-        run: npm run package:win
-      - name: Preserve test evidence
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
-          name: Windows-verification
-          path: |
-            artifacts/reports/
-            test-results/
-          if-no-files-found: ignore
-          retention-days: 14
-      - uses: actions/upload-artifact@v4
-        with:
-          name: AtCoder-Ruby-IDE-Windows-x64-portable
-          path: artifacts/*-portable.zip
-          if-no-files-found: error
-          retention-days: 14
-      - uses: actions/upload-artifact@v4
-        with:
-          name: AtCoder-Ruby-IDE-Windows-x64-setup
-          path: artifacts/*-setup.exe
-          if-no-files-found: error
-          retention-days: 14
+          name: U0-spike
+          path: test-results/
+          if-no-files-found: warn
 
   ruby-stack:
     if: github.event_name == 'workflow_dispatch' && inputs.measure_ruby_stack

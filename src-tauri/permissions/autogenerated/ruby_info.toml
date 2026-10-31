@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ruby-info"
+description = "Enables the ruby_info command without any pre-configured scope."
+commands.allow = ["ruby_info"]
+
+[[permission]]
+identifier = "deny-ruby-info"
+description = "Denies the ruby_info command without any pre-configured scope."
+commands.deny = ["ruby_info"]

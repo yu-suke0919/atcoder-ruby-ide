@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-run-ruby"
+description = "Enables the run_ruby command without any pre-configured scope."
+commands.allow = ["run_ruby"]
+
+[[permission]]
+identifier = "deny-run-ruby"
+description = "Denies the run_ruby command without any pre-configured scope."
+commands.deny = ["run_ruby"]

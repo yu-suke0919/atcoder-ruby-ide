@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-collection-repair-task"
+description = "Enables the collection_repair_task command without any pre-configured scope."
+commands.allow = ["collection_repair_task"]
+
+[[permission]]
+identifier = "deny-collection-repair-task"
+description = "Denies the collection_repair_task command without any pre-configured scope."
+commands.deny = ["collection_repair_task"]

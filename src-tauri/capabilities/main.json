@@ -1,5 +1,5 @@
 {
   "identifier": "main-window",
-  "windows": ["main"],
-  "permissions": ["core:default", "core:window:allow-set-title", "core:window:allow-destroy"]
+  "webviews": ["main"],
+  "permissions": ["core:default", "core:window:allow-set-title", "core:window:allow-destroy", "notification:default", "allow-ruby-info", "allow-lsp-start", "allow-lsp-complete", "allow-lsp-stop", "allow-run-ruby", "allow-stop-ruby", "allow-document-open", "allow-document-save", "allow-document-new", "allow-samples-open", "allow-samples-save", "allow-confirm-discard", "allow-problem-open", "allow-problem-refresh", "allow-problem-save-cases", "allow-collection-list", "allow-collection-register", "allow-collection-fetch-task", "allow-collection-repair-task", "allow-collection-open-task", "allow-spike-fetch", "allow-spike-navigate", "allow-spike-loads"]
 }

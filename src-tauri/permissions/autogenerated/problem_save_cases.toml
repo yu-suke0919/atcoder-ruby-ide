@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-problem-save-cases"
+description = "Enables the problem_save_cases command without any pre-configured scope."
+commands.allow = ["problem_save_cases"]
+
+[[permission]]
+identifier = "deny-problem-save-cases"
+description = "Denies the problem_save_cases command without any pre-configured scope."
+commands.deny = ["problem_save_cases"]
