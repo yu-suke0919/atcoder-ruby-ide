@@ -4,6 +4,8 @@ Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使
 利用者による Ruby のインストールや PATH 設定は不要です。
 
 - [MVP の仕様と受入条件](docs/mvp.md)
+- [ロードマップ](docs/roadmap.md)
+- [クラウドセッションでの開発](docs/cloud-development.md)
 - [構成と検証方針](docs/architecture.md)
 - [移行と配布容量](docs/tauri-migration.md)
 - [検証記録](docs/verification.md)
