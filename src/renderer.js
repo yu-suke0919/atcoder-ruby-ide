@@ -109,6 +109,7 @@ function updateCaseList() {
     const option = document.createElement('option');
     option.value = String(index);
     option.textContent = `ケース ${index + 1} · ${item.status === 'running' ? '実行中' : item.status && item.status !== 'completed' ? statusLabel(item.status, item.exitCode) : comparisonLabels[item.comparison]}`;
+    if (item.exceededTimeLimitMs !== null) option.textContent += ' · 制限超過の可能性';
     return option;
   }));
   $('case-select').value = String(cases.selected);
@@ -116,7 +117,8 @@ function updateCaseList() {
   const done = cases.items.filter(item => item.status && !['running', 'canceled'].includes(item.status)).length;
   const count = state => cases.items.filter(item => item.comparison === state).length;
   const errors = cases.items.filter(item => ['failed', 'timeout', 'output-limit', 'error'].includes(item.status)).length;
-  $('cases-summary').textContent = `完了 ${done} / ${cases.items.length} · 一致 ${count('matched')} · 不一致 ${count('mismatched')} · エラー ${errors}`;
+  const warnings = cases.items.filter(item => item.exceededTimeLimitMs !== null).length;
+  $('cases-summary').textContent = `完了 ${done} / ${cases.items.length} · 一致 ${count('matched')} · 不一致 ${count('mismatched')} · エラー ${errors}${warnings ? ` · 制限超過の可能性 ${warnings}` : ''}`;
 }
 
 function showResult() {
@@ -124,9 +126,16 @@ function showResult() {
   for (const stream of ['stdout', 'stderr']) $(stream).textContent = item[stream];
   $('run-status').textContent = statusLabel(item.status, item.exitCode);
   $('run-duration').textContent = item.durationMs === null ? '— ms' : `${item.durationMs} ms`;
+  showTimeLimitWarning();
   showComparison(item.comparison);
   showErrorLocation();
   updateCaseList();
+}
+
+function showTimeLimitWarning() {
+  const limit = cases.current.exceededTimeLimitMs;
+  $('time-limit-warning').hidden = limit === null;
+  $('time-limit-warning').textContent = limit === null ? '' : `制限超過の可能性（問題の制限 ${limit / 1000} 秒）`;
 }
 
 function showErrorLocation() {
@@ -152,6 +161,7 @@ function resetComparison(all = false) {
   expectedOutput.disabled = !cases.current.compare;
   showComparison(cases.current.comparison);
   showErrorLocation();
+  showTimeLimitWarning();
   updateCaseList();
 }
 
@@ -258,7 +268,7 @@ async function run(all = false) {
   if (running || fileBusy || closing || !rubyAvailable) return;
   const code = editor.value;
   cases.clear(all);
-  const queue = cases.snapshot(all);
+  const queue = cases.snapshot(all, activeProblem?.timeLimitMs ?? null);
   canceled = false;
   running = true;
   updateButtons();
@@ -370,6 +380,8 @@ document.addEventListener('keydown', (event) => {
 function showProblem() {
   $('problem-title').textContent = activeProblem ? activeProblem.title : '問題を選んでください';
   $('problem-title').title = activeProblem?.title || '';
+  $('problem-limits').textContent = activeProblem
+    ? `実行時間制限: ${activeProblem.timeLimitMs == null ? '不明' : `${activeProblem.timeLimitMs / 1000} 秒`} / メモリ制限: ${activeProblem.memoryLimitMiB == null ? '不明' : `${activeProblem.memoryLimitMiB} MiB`}` : '';
   const statement = $('problem-statement');
   const scroll = statement.scrollTop;
   renderStatement(statement, activeProblem?.statement || []);

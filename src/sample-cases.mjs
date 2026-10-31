@@ -4,6 +4,7 @@ function resetComparison(item) {
   item.comparison = item.compare ? 'pending' : 'none';
   item.difference = null;
   item.errorLine = null;
+  item.exceededTimeLimitMs = null;
 }
 
 function clearResult(item, status = null) {
@@ -83,10 +84,12 @@ export class SampleCases {
     if (item.revision === revision) item.comparison = compare ? 'running' : 'none';
   }
 
-  finish({ item, revision, compare }, result) {
+  finish({ item, revision, compare, timeLimitMs }, result) {
     const { stdout, stderr, status, exitCode, durationMs } = result;
     Object.assign(item, { stdout, stderr, status, exitCode, durationMs });
     item.errorLine = item.revision === revision && status === 'failed' ? result.errorLine ?? null : null;
+    item.exceededTimeLimitMs = item.revision === revision && timeLimitMs != null && durationMs > timeLimitMs
+      && ['completed', 'failed', 'timeout', 'output-limit'].includes(status) ? timeLimitMs : null;
     if (item.revision === revision && compare) {
       item.comparison = result.comparison === null ? 'unavailable' : result.comparison ? 'matched' : 'mismatched';
       item.difference = result.difference;
@@ -97,6 +100,7 @@ export class SampleCases {
     item.status = 'error';
     item.stderr = message;
     item.errorLine = null;
+    item.exceededTimeLimitMs = null;
     if (item.revision === revision && compare) {
       item.comparison = 'unavailable';
       item.difference = null;
@@ -107,7 +111,7 @@ export class SampleCases {
     clearResult(item, 'canceled');
   }
 
-  snapshot(all = false) {
-    return (all ? this.items : [this.current]).map(item => ({ item, stdin: item.stdin, expectedOutput: item.expectedOutput, compare: item.compare, revision: item.revision }));
+  snapshot(all = false, timeLimitMs = null) {
+    return (all ? this.items : [this.current]).map(item => ({ item, stdin: item.stdin, expectedOutput: item.expectedOutput, compare: item.compare, revision: item.revision, timeLimitMs }));
   }
 }

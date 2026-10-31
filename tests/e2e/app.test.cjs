@@ -1588,6 +1588,73 @@ test('P11: SVG styles and internal references render with preformatted and legac
   await verify();
 });
 
+test('P12: optional problem limits and per-case time warnings work offline at both window sizes', async () => {
+  const legacy = await seedProblem('limits_unknown');
+  await openProblemDialog(legacy.url); await page.locator('#problem-open').click(); await waitProblem();
+  assert.equal(await page.locator('#problem-limits').count(), 1);
+  assert.equal(await page.locator('#problem-limits').textContent(), '実行時間制限: 不明 / メモリ制限: 不明');
+  assert.equal(await page.locator('#time-limit-warning').isVisible(), false);
+  const problem = await seedProblem('limits');
+  Object.assign(problem, { timeLimitMs: 1000, memoryLimitMiB: 1024,
+    samples: [{ stdin: '0', expectedOutput: 'ok\n'.repeat(1000), compare: true }, { stdin: '1.1', expectedOutput: 'ok\n'.repeat(1000), compare: true }] });
+  await writeFile(path.join(app.dataDir, 'library/problems', libraryContest, 'limits', 'problem.json'), JSON.stringify(problem));
+  await openProblemDialog(problem.url); await page.locator('#problem-open').click(); await waitProblem();
+  assert.equal(await page.locator('#problem-limits').textContent(), '実行時間制限: 1 秒 / メモリ制限: 1024 MiB');
+  await page.locator('#code-editor').fill('sleep STDIN.read.to_f; 1000.times { puts "ok" }');
+  await page.locator('#run-all').click();
+  await page.locator('#cases-summary').filter({ hasText: /完了 2 \/ 2.*一致 2/ }).waitFor();
+  assert.equal(await page.locator('#time-limit-warning').isVisible(), false);
+  assert.match(await page.locator('#cases-summary').textContent(), /制限超過の可能性 1/);
+  assert.match(await page.locator('#case-select option').nth(1).textContent(), /制限超過の可能性/);
+  await selectCase(2);
+  assert.equal(await page.locator('#time-limit-warning').textContent(), '制限超過の可能性（問題の制限 1 秒）');
+  assert.equal(await page.locator('#time-limit-warning').isVisible(), true);
+  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
+  for (const [width, height] of [[1440, 900], [1200, 650], [900, 650]]) {
+    await page.setViewportSize({ width, height });
+    await page.addStyleTag({ content: '#problem-limits, .run-summary { line-height: 24px; }' });
+    await assertWorkspaceFits();
+    await page.screenshot({ path: `test-results/problem-limits-${width}.png` });
+  }
+  await page.locator('#stdin').fill('0');
+  assert.equal(await page.locator('#time-limit-warning').isVisible(), false);
+  assert.doesNotMatch(await page.locator('#cases-summary').textContent(), /制限超過の可能性/);
+  await runAndWait();
+  assert.equal(await page.locator('#time-limit-warning').isVisible(), false);
+  await page.locator('#code-editor').fill('puts "ready"; sleep 30');
+  await page.locator('#run').click();
+  await page.locator('#stdout').filter({ hasText: 'ready' }).waitFor();
+  await page.locator('#stop').click();
+  await page.locator('#run-status').filter({ hasText: '停止しました' }).waitFor();
+  assert.equal(await page.locator('#time-limit-warning').isVisible(), false);
+  await newDocument();
+  assert.equal(await page.locator('#problem-panel').isVisible(), false);
+  assert.equal(await page.locator('#time-limit-warning').isVisible(), false);
+});
+
+test('P13: refreshing limits applies to the next run and preserves the old result limit', async () => {
+  const problem = await seedProblem('limits_refresh');
+  Object.assign(problem, { timeLimitMs: 1, memoryLimitMiB: 64 });
+  await writeFile(path.join(app.dataDir, 'library/problems', libraryContest, 'limits_refresh', 'problem.json'), JSON.stringify(problem));
+  await openProblemDialog(problem.url); await page.locator('#problem-open').click(); await waitProblem();
+  await page.locator('#code-editor').fill('puts 3');
+  await runAndWait();
+  assert.equal(await page.locator('#time-limit-warning').textContent(), '制限超過の可能性（問題の制限 0.001 秒）');
+  await page.evaluate(async problem => {
+    const { ide } = await import('./bridge.mjs');
+    ide.refreshProblem = async () => ({ ...problem, timeLimitMs: 60000, memoryLimitMiB: 1024 });
+  }, problem);
+  await page.locator('#problem-library').click();
+  await page.locator('#problem-refresh').click(); await waitProblem();
+  assert.equal(await page.locator('#problem-limits').textContent(), '実行時間制限: 60 秒 / メモリ制限: 1024 MiB');
+  assert.equal(await page.locator('#time-limit-warning').isVisible(), true);
+  assert.equal(await page.locator('#time-limit-warning').textContent(), '制限超過の可能性（問題の制限 0.001 秒）');
+  await page.locator('#problem-close').click();
+  await runAndWait();
+  assert.equal(await page.locator('#time-limit-warning').isVisible(), false);
+  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
+});
+
 test('M06/M09: accepting close stops Ruby descendants and exits', async () => {
   const marker = path.join(root, 'orphan.txt').replaceAll('\\', '/');
   await page.getByTestId('code-editor').fill(`require 'rbconfig'; spawn(RbConfig.ruby, '-e', 'sleep 2; File.write(${JSON.stringify(marker)}, "survived")'); puts 'ready'; sleep 30`);

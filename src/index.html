@@ -19,6 +19,7 @@
     <div class="workspace">
       <section id="problem-panel" class="panel problem-panel" aria-labelledby="problem-title" hidden>
         <div class="panel-heading"><h3 id="problem-title">問題を選んでください</h3></div>
+        <div id="problem-limits" aria-label="問題の制限"></div>
         <div id="problem-statement" aria-label="問題文" tabindex="0"></div>
       </section>
       <section class="panel editor-panel" aria-labelledby="editor-heading">
@@ -56,7 +57,7 @@
           <pre id="stdout" data-testid="stdout" aria-label="標準出力" tabindex="0"></pre>
           <div class="output-heading error-heading"><span><span class="output-dot stderr-dot"></span>標準エラー</span><button id="error-location" class="comparison-button" hidden></button><span>stderr</span></div>
           <pre id="stderr" data-testid="stderr" aria-label="標準エラー" tabindex="0"></pre>
-          <div class="run-summary" role="status"><span id="run-status" data-testid="run-status">実行する準備ができています</span><button id="comparison-status" data-testid="comparison-status" class="comparison-button" data-state="none" disabled>比較なし</button><span id="run-duration">— ms</span></div>
+          <div class="run-summary" role="status"><span id="run-status" data-testid="run-status">実行する準備ができています</span><button id="comparison-status" data-testid="comparison-status" class="comparison-button" data-state="none" disabled>比較なし</button><span id="run-duration">— ms</span><span id="time-limit-warning" title="実測時間にはRubyの起動・入出力処理が含まれます。AtCoderの判定とは異なる場合があります。" hidden></span></div>
         </section>
       </div>
     </div>

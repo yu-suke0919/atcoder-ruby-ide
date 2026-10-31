@@ -5,7 +5,7 @@ use crate::presentation::{
 use crate::StatementPart;
 use crate::{load_samples, save_samples, DocumentResult, DocumentStore, SampleCase, SampleResult};
 use reqwest::blocking::Client;
-use scraper::{Html, Node, Selector};
+use scraper::{ElementRef, Html, Node, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
@@ -66,6 +66,9 @@ impl ProblemKey {
 pub struct Problem {
     pub url: String,
     pub title: String,
+    pub time_limit_ms: Option<u32>,
+    #[serde(rename = "memoryLimitMiB")]
+    pub memory_limit_mib: Option<u32>,
     pub statement: Vec<StatementPart>,
     pub samples: Vec<SampleCase>,
 }
@@ -88,6 +91,9 @@ fn validate_content(
     if problem.url != key.url || problem.title.trim().is_empty() || problem.title.len() > 1024 {
         return Err("問題データのURL・タイトルが不正です。".into());
     }
+    if problem.time_limit_ms == Some(0) || problem.memory_limit_mib == Some(0) {
+        return Err("問題の制限値が不正です。".into());
+    }
     validate_statement(&problem.statement, &key.url, require_images)?;
     if problem.samples.is_empty() {
         Ok(())
@@ -98,6 +104,67 @@ fn validate_content(
 fn selector(value: &str) -> Selector {
     Selector::parse(value).unwrap()
 }
+
+fn milliseconds(value: &str) -> Option<u32> {
+    let (seconds, fraction) = value.split_once('.').unwrap_or((value, "0"));
+    if fraction.len() > 3
+        || [seconds, fraction]
+            .iter()
+            .any(|s| s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()))
+    {
+        return None;
+    }
+    seconds
+        .parse::<u32>()
+        .ok()?
+        .checked_mul(1000)?
+        .checked_add(fraction.parse::<u32>().ok()? * 10_u32.pow(3 - fraction.len() as u32))
+}
+
+fn parse_limits(task: ElementRef<'_>) -> Result<(Option<u32>, Option<u32>), String> {
+    let (mut time, mut memory) = (None, None);
+    let invalid = || "問題の制限値が不正です。".to_string();
+    for paragraph in task
+        .prev_siblings()
+        .filter_map(ElementRef::wrap)
+        .filter(|element| element.value().name() == "p")
+    {
+        let text = paragraph.text().collect::<String>();
+        for part in text.split('/') {
+            let part = part.trim();
+            let (target, unit, value) = if let Some(value) = part
+                .strip_prefix("実行時間制限")
+                .or_else(|| part.strip_prefix("Time Limit"))
+            {
+                (&mut time, "sec", value)
+            } else if let Some(value) = part
+                .strip_prefix("メモリ制限")
+                .or_else(|| part.strip_prefix("Memory Limit"))
+            {
+                (&mut memory, "MiB", value)
+            } else {
+                continue;
+            };
+            let value = value.trim_start().strip_prefix(':').ok_or_else(invalid)?;
+            let mut words = value.split_whitespace();
+            let number = words.next().ok_or_else(invalid)?;
+            if target.is_some() || words.next() != Some(unit) || words.next().is_some() {
+                return Err(invalid());
+            }
+            let value = if unit == "sec" {
+                milliseconds(number).ok_or_else(invalid)?
+            } else {
+                number.parse::<u32>().map_err(|_| invalid())?
+            };
+            if value == 0 {
+                return Err(invalid());
+            }
+            *target = Some(value);
+        }
+    }
+    Ok((time, memory))
+}
+
 pub fn parse_problem(url: &str, html: &str) -> Result<Problem, String> {
     let key = ProblemKey::parse(url)?;
     if html.len() > MAX_HTML_BYTES {
@@ -188,9 +255,12 @@ pub fn parse_problem(url: &str, html: &str) -> Result<Problem, String> {
         })
         .collect();
     let statement = parse_statement(body, &key.url)?;
+    let (time_limit_ms, memory_limit_mib) = parse_limits(task)?;
     let problem = Problem {
         url: key.url.clone(),
         title,
+        time_limit_ms,
+        memory_limit_mib,
         statement,
         samples,
     };
@@ -425,6 +495,12 @@ mod tests {
             .join("problem.json");
         let old = std::fs::read(&cache).unwrap();
         assert!(store_page(&library, &key, "invalid page").is_err());
+        assert_eq!(std::fs::read(&cache).unwrap(), old);
+        let invalid_limits = html.replace(
+            "<div id=\"task-statement\">",
+            "<p>Time Limit: 0 sec / Memory Limit: 1024 MiB</p><div id=\"task-statement\">",
+        );
+        assert!(store_page(&library, &key, &invalid_limits).is_err());
         assert_eq!(std::fs::read(&cache).unwrap(), old);
         let updated = store_page(
             &library,

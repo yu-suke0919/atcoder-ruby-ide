@@ -1,0 +1,6 @@
+{
+  "url": "https://atcoder.jp/contests/tessoku-book/tasks/tessoku_book_a",
+  "title": "A01 - Saved problem",
+  "statement": [{ "type": "text", "text": "保存済みの問題文。" }],
+  "samples": [{ "stdin": "21\n", "expectedOutput": "42\n", "compare": true }]
+}
