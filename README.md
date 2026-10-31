@@ -141,6 +141,7 @@ npm run package:win
 Ruby は公式配布元から取得し、[固定した SHA-256](config/ruby-windows.json) を検証します。
 配布物は `artifacts/`、容量とRuby・LSPの全ファイルのハッシュは `artifacts/reports/` に生成します。`ruby-lsp/`の固定bundleも両配布物へ同梱し、画面とバックエンドの両方で未保存コードからの補完取得を検証します。
 [GitHub Actions](.github/workflows/ci.yml) は Linux の共通・画面テストと、Windows の共通テスト・ビルド・ZIP 展開相当のアプリ・NSIS インストール後のアプリ起動スモークテストを実行します。
+資料だけの変更（`docs/**` とルートの `*.md`）では実行せず、同じブランチ・PR に新しい push があると古い実行を止めます。
 成功した Windows ジョブの Artifacts から ZIP またはインストーラーを取得できます。
 
 ## ショートカット
