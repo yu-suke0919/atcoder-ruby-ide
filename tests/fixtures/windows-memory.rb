@@ -28,10 +28,11 @@ when 'reserve'
 when 'single'
   block = 'x' * 1024**3
   abort 'allocation unexpectedly succeeded'
-when 'denied'
+when 'denied', 'denied-exit'
   pointer = WinMemory.VirtualAlloc(nil, 2 * 1024**3, 0x3000, 4)
   abort 'allocation unexpectedly succeeded' unless pointer.null?
   puts 'allocation denied'
+  exit 0 if mode == 'denied-exit'
   # A program may catch allocation failure and keep running. The Job event must stop it.
   sleep 30
 when 'descendants'

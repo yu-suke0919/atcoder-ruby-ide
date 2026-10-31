@@ -14,6 +14,7 @@ fn windows_job_memory_limit_stops_the_tree_and_allows_the_next_run() {
         "reserve",
         "single",
         "denied",
+        "denied-exit",
         "descendants",
         "normal",
     ] {
@@ -52,8 +53,20 @@ fn windows_job_memory_limit_stops_the_tree_and_allows_the_next_run() {
             serde_json::from_str(result.stdout.lines().next().unwrap()).unwrap();
         assert_eq!(first["limit"], 1024_u64.pow(3));
         assert!(!PathBuf::from(first["source"].as_str().unwrap()).exists());
+        let peak = result
+            .stdout
+            .lines()
+            .filter(|line| line.starts_with('{'))
+            .map(|line| {
+                let memory: serde_json::Value = serde_json::from_str(line).unwrap();
+                memory["peak"].as_u64().unwrap()
+            })
+            .max()
+            .unwrap();
+        assert!(peak <= 1024_u64.pow(3));
         if mode == "descendants" {
             assert!(result.stdout.contains("child allocated"));
+            assert!(peak > 600 * 1024_u64.pow(2));
         }
         assert!(runner.prepare(RunRequest::default()).is_ok());
     }
@@ -64,7 +77,8 @@ fn windows_job_memory_limit_stops_the_tree_and_allows_the_next_run() {
         .unwrap();
     assert_eq!(result.status, "failed");
     assert!(result.error_line.is_some());
-    let reports = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../artifacts/reports");
+    // Packaging replaces artifacts/; keep measurements with the preserved test evidence.
+    let reports = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../test-results");
     std::fs::create_dir_all(&reports).unwrap();
     std::fs::write(
         reports.join("ruby-memory.json"),

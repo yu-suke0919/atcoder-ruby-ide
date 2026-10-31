@@ -46,7 +46,7 @@ AtCoderの公開環境はCRubyの `Ruby 3.4 (ruby 3.4.5)`。本アプリは3.4�
 
 ## Windowsの実行メモリ上限
 
-WindowsのRunnerはRubyと子孫のJob全体に1 GiB（1,024 MiB）のコミット上限を設ける。ワーキングセットやAtCoderの計測方法とは異なるため、問題ページのメモリ制限値は表示だけに使い、ローカル上限とは区別する。既存の32 MiB VM設定の測定では起動時に約85 MiBをコミットしており、問題の64 MiBなどをそのまま適用しない。採用値はWindowsで通常起動・大量確保・子孫の合計・確保拒否を実測して確認する。
+WindowsのRunnerはRubyと子孫のJob全体に1 GiB（1,024 MiB）のコミット上限を設ける。ワーキングセットやAtCoderの計測方法とは異なるため、問題ページのメモリ制限値は表示だけに使い、ローカル上限とは区別する。既存の32 MiB VM設定の測定では起動時に約85 MiBをコミットしており、問題の64 MiBなどをそのまま適用しない。Windowsの実Runnerで64 MiBの文字列確保と2 GiBのアドレス予約が完了し、1 GiBの文字列確保・2 GiBのコミット要求・子孫2つによる各600 MiBの要求は上限で停止することを確認して、固定1 GiBを採用した。
 
 Jobを設定してから停止状態のRubyを割り当て、再開する。起動直後の子孫生成も管理対象にする。設定・割り当て・再開の失敗時は子を終了し、実行予約を解除する。LSPも同じ起動手順を使うが、メモリ上限は設けない。Linux開発環境にはメモリ上限を実装しない。
 
@@ -55,6 +55,8 @@ Windowsのハード上限は追加のコミットを拒否するもので、自�
 [Job通知の配信](https://github.com/MicrosoftDocs/win32/blob/docs/desktop-src/ProcThread/job-objects.md)はハード上限では保証されない。通知が確認できない失敗をメモリ超過と推測せず、Rubyのエラーまたは既存の5秒制限として返す。通知が欠落してもコミット上限は有効。[JobMemoryLimitの定義](https://github.com/MicrosoftDocs/sdk-api/blob/docs/sdk-api-src/content/winnt/ns-winnt-jobobject_extended_limit_information.md)を参照する。
 
 保存形式は変更しない。受入条件は、通常実行・通常例外の維持、上限を超える単独／子孫合計の確保拒否と停止理由、起動直後のJob所属、プロセス群の終了・一時ファイル削除・次の実行、全件実行の継続、最小画面での理由表示とする。Windows CIの実Ruby・配布アプリで確認する。
+
+再測定は同梱Rubyを`RUBY_PATH`へ指定し、`cargo test --locked --test contract windows_job_memory -- --nocapture`で行う。`test-results/ruby-memory.json`に条件・結果・時間と、Rubyから照会したJobの上限・ピークコミットを保存する。通常CIでも実行し、Windows-verification artifactに含める。
 
 ## 追加するgem
 
