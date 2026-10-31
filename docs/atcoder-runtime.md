@@ -20,13 +20,17 @@ AtCoderの公開環境はCRubyの `Ruby 3.4 (ruby 3.4.5)`。本アプリは3.4�
 
 通常の `prepare:ruby`・ビルド・CIは固定情報だけを使い、最新版の探索や自動更新を行わない。Linux CIも同じ設定からRubyのパッチを読み取る。開発用Rubyもそのパッチへ揃える。AtCoderの公開バージョンと追加gemの固定情報は `config/atcoder-runtime.json` に分けて残し、Ruby本体の更新で追加gemを自動更新しない。
 
-## 再帰スタックの調査（Step 1-1）
+## 再帰スタック（Step 1-1）
 
-深いDFS相当の再帰について、Rubyの既定値でのSystemStackErrorを再現し、Windows同梱Ruby 3.4.12のメインスレッドに対するRUBY_THREAD_VM_STACK_SIZEの効果を測定してから採用値を決める。既定値と4・16・32・64・128・256 MiBを比較し、深さ0・100,000・1,000,000で、通常のRubyメソッド再帰と配列のeach・mapのブロック処理を挟む再帰の成否・時間・メモリを記録する。VMの設定値とWindows実行ファイルのスタック予約量も記録し、VMスタックを増やしても残る制限を区別する。
+実行用RubyのRUBY_THREAD_VM_STACK_SIZEを32 MiB（33,554,432 bytes）に固定する。Runnerで子プロセスごとに設定し、端末の同変数より優先する。LSPが共有するruby_commandには追加せず、LSPの起動設定は維持する。保存形式は変更しない。
 
-採用する場合はRunnerの子プロセスだけに設定し、LSPが共有するruby_commandには追加しない。値は実測結果と通常実行時のメモリ増加から決め、測定で有効でなければ設定を追加しない。Windows実行ファイルのスタックサイズ変更は対象外とする。
+採用Ruby 3.4.12で、既定値1 MiBでは失敗する通常のRubyメソッド再帰10万段が16 MiB以上で完了し、100万段には128 MiB以上が必要だった。Windowsでは深さ0の測定プロセスのピークコミット量が、既定値約54 MiB、32 MiB設定で約85 MiB、128 MiB設定で約181 MiBになった。100万段のために常に128 MiBを確保する設定は採らず、32 MiBを常用値とし、実Runnerの受入条件を通常再帰20万段の完了にする。メソッドの引数・ローカル変数などによって到達深さは変わる。
 
-受入条件は、再現した深い通常再帰が実Runnerで完了すること、通常の短いコード・SystemStackError後の再実行・手動停止・時間制限・LSPが正常に動くこと。テストを先に追加し、最小の起動設定を実装してLinux・Windowsの全テストとWindows配布検証をPRのCIで確認する。保存形式は変更しない。
+配列のeach・mapでブロックを挟む再帰は、Windows・LinuxともにVMスタックを256 MiBまで増やしても10万段でSystemStackErrorになった。Windows同梱ruby.exeのPEヘッダーのスタック予約量は2 MiBで、VMスタックとは別の制約として残る。Windows実行ファイルやOSのネイティブスタック設定は変更せず、AtCoderと同じ再帰深さは保証しない。深いDFSでは明示的な配列スタックによる反復処理も使う。
+
+測定は通常再帰・each・mapを深さ0・100,000・1,000,000、既定値と4・16・32・64・128・256 MiBで比較した。Windowsの再現はPowerShell 7で `pwsh -NoProfile -File scripts/measure-ruby-stack.ps1` を使い、`artifacts/reports/ruby-stack.json` に成否・実効VM設定・処理時間・ピークワーキングセット・ピークコミット量を保存する。時間は再帰処理部分、メモリは測定用Rubyプロセスの値でありIDE全体の値ではない。メモリ取得用の100 ms待機は再帰処理時間に含めない。
+
+受入条件は通常再帰20万段が実Runnerで完了すること、実際のスタック上限到達後も次の実行ができること、通常コード・手動停止・5秒の時間制限・LSPが正常に動くこと。テストを先に追加し、Linux・Windowsの全テストとWindows配布検証をPRのCIで確認する。
 
 ## 追加するgem
 
@@ -76,7 +80,7 @@ immutable-rubyとsorted_setはgem本体がRubyでも、依存先にrbtreeのC拡
 | Rubyのパッチ | 公開情報は3.4.5 | 検証して固定した3.4系の最新パッチ |
 | OS・ビルド | Linux上のCRuby | WindowsはRubyInstaller、Linux CIはsetup-rubyのCRuby |
 | JIT | `ruby --jit Main.rb` | JITを指定しない。速度・メモリ使用量は同一にならない |
-| スタック | `RUBY_THREAD_VM_STACK_SIZE`を問題のメモリ上限に設定 | Rubyの既定値を使う |
+| スタック | `RUBY_THREAD_VM_STACK_SIZE`を問題のメモリ上限に設定 | 実行用VMスタック32 MiB、ネイティブスタックはOS・ビルドの制限が残る |
 | 入出力 | ジャッジの標準入出力 | UTF-8・バイナリ改行・逐次出力をアプリ側で設定 |
 | 上限 | 問題ごとの時間・メモリ制限 | 5秒、合計出力1MiB。問題ごとのメモリ制限は再現しない |
 | 作業ディレクトリ | ジャッジの提出領域 | 保存したソースのディレクトリ、未保存なら一時ディレクトリ |

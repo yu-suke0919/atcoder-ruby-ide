@@ -158,6 +158,7 @@ impl PreparedRun {
         std::fs::write(&bootstrap, "Gem.use_paths(Gem.default_dir); [STDIN, STDOUT, STDERR].each { |io| io.binmode; io.set_encoding(Encoding::UTF_8) }; STDOUT.sync = true; STDERR.sync = true\n").map_err(|e| e.to_string())?;
         let mut command = crate::process::ruby_command(ruby);
         command
+            .env("RUBY_THREAD_VM_STACK_SIZE", (32 * 1024 * 1024).to_string())
             .arg("-r")
             .arg(&bootstrap)
             .arg(&source)
