@@ -1,4 +1,4 @@
-import { ide } from './bridge.js';
+import { ide } from './bridge.mjs';
 import { createEditor } from './editor.mjs';
 import { createLspClient } from './lsp-completion.mjs';
 import { renderStatement } from './presentation.mjs';

@@ -58,7 +58,7 @@ async function launch(root, { hostEnv = {} } = {}) {
     const ruby = await page.evaluate(() => window.__TAURI__.core.invoke('ruby_info'));
     assert.equal(ruby.version.match(/^ruby (\d+\.\d+\.\d+)\b/i)?.[1], require('../../config/ruby-windows.json').rubyVersion);
     const rubyExecutable = await page.evaluate(async () => {
-      const { ide } = await import('./bridge.js');
+      const { ide } = await import('./bridge.mjs');
       const result = await ide.run('require "rbconfig"; puts File.realpath(RbConfig.ruby)', '');
       if (result.status !== 'completed') throw new Error(`Bundled Ruby probe failed: ${result.stderr}`);
       return result.stdout.trim();

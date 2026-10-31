@@ -3,7 +3,7 @@
 ## 最小構成
 
 - Tauri v2 の Rust コマンドがネイティブダイアログ、ファイル I/O、同梱 Ruby の実行を担当する。
-- HTML / CSS / JavaScript は既存の画面を使う。bridge.js が Tauri の invoke / Channel と画面をつなぐ。
+- HTML / CSS / JavaScript は既存の画面を使う。bridge.mjs が Tauri の invoke / Channel と画面をつなぐ。
 - コード編集は同梱CodeMirror 6で行い、editor.mjsが文書内容・読取専用状態・カーソル・変更通知を画面へ渡す。Ruby用モードと必要な拡張をesbuildで1つのES Moduleへまとめ、依存のライセンスを同梱する。CodeMirrorが生成する表示用CSSをCSPで許可し、スクリプトは同梱ファイルに限定する。
 - ruby-completion.mjsが同梱の基本候補・定型コードとCodeMirrorの文書内単語収集を組み合わせる。この基本候補はRubyプロセスや外部サービスを使わず同期生成する。表示・選択・挿入はCodeMirrorに任せ、手動で開く。
 - lsp-completion.mjsが手動補完時にShopify Ruby LSPへ接続し、候補をCodeMirrorへ渡す。要求を直列化し、無効になった文書・カーソルの応答を捨てる。既存のruby-completion.mjsを基本候補・定型コード・LSPが候補を返せない場合の補完として共有し、候補は表示名で重複を除く。専用gem・固定bundle・文書同期・UTF-8／UTF-16位置変換・終了処理は[Ruby LSP](ruby-lsp.md)を参照する。

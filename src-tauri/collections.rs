@@ -264,13 +264,11 @@ impl CollectionLibrary {
             .manifest(&self.root)
             .try_exists()
             .map_err(|e| e.to_string())?;
-        if exists {
-            if let Ok(view) = self.view(&key.url) {
-                return Ok(RegisteredCollection {
-                    view,
-                    created: false,
-                });
-            }
+        if exists && self.load(&key).is_ok() {
+            return Ok(RegisteredCollection {
+                view: self.view(&key.url)?,
+                created: false,
+            });
         }
         let collection =
             parse_collection(&key.url, &fetch(&format!("{}/tasks?lang=ja", key.url))?)?;
@@ -378,6 +376,34 @@ mod tests {
             .register_with(URL, |_| Ok(HTML.into()))
             .unwrap()
             .view
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn snapshot_lookup_errors_never_replace_a_readable_manifest() {
+        let root = tempfile::tempdir().unwrap();
+        let library = CollectionLibrary::new(root.path());
+        let mut collection = register(&library).collection;
+        collection.title = "fixed title".into();
+        collection.tasks[0].error = Some("saved failure".into());
+        let key = CollectionKey::parse(URL).unwrap();
+        library.save(&key, &collection, false).unwrap();
+        let manifest = key.manifest(root.path());
+        let original = std::fs::read(&manifest).unwrap();
+        let snapshot = library
+            .snapshot_path(&key, &collection.tasks[0].url)
+            .unwrap();
+        std::fs::create_dir_all(snapshot.parent().unwrap()).unwrap();
+        // A symlink loop produces a real metadata I/O error even when running as root.
+        std::os::unix::fs::symlink(&snapshot, &snapshot).unwrap();
+        assert!(library.view(URL).is_err());
+        assert!(library
+            .register_with(URL, |_| panic!("readable manifest must not be refreshed"))
+            .is_err());
+        assert_eq!(std::fs::read(&manifest).unwrap(), original);
+        let saved = library.load(&key).unwrap();
+        assert_eq!(saved.title, "fixed title");
+        assert_eq!(saved.tasks[0].error.as_deref(), Some("saved failure"));
     }
 
     #[test]

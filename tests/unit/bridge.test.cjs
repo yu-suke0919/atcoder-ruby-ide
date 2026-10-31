@@ -13,6 +13,6 @@ test('run preserves the native rejection message exactly', async t => {
     core: { invoke: () => Promise.reject('標準入力は 1 MiB 以下にしてください。'), Channel: class {} },
     window: { getCurrentWindow: () => ({}) }
   } };
-  const { ide } = await import(pathToFileURL(path.join(__dirname, '../../src/bridge.js')).href);
+  const { ide } = await import(pathToFileURL(path.join(__dirname, '../../src/bridge.mjs')).href);
   await assert.rejects(ide.run('', ''), { message: '標準入力は 1 MiB 以下にしてください。' });
 });
