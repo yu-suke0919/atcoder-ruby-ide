@@ -46,15 +46,17 @@ AtCoderの公開環境はCRubyの `Ruby 3.4 (ruby 3.4.5)`。本アプリは3.4�
 
 ## Windowsの実行メモリ上限
 
-WindowsのRunnerはRubyと子孫のJob全体に1 GiB（1,024 MiB）のコミット上限を設ける。ワーキングセットやAtCoderの計測方法とは異なるため、問題ページのメモリ制限値は表示だけに使い、ローカル上限とは区別する。既存の32 MiB VM設定の測定では起動時に約85 MiBをコミットしており、問題の64 MiBなどをそのまま適用しない。Windowsの実Runnerで64 MiBの文字列確保と2 GiBのアドレス予約が完了し、1 GiBの文字列確保・2 GiBのコミット要求・子孫2つによる各600 MiBの要求は上限で停止することを確認して、固定1 GiBを採用した。
+WindowsのRunnerはRubyと子孫のJob全体に1 GiB（1,024 MiB）のコミット上限を設ける。ワーキングセットやAtCoderの計測方法とは異なるため、問題ページのメモリ制限値は表示だけに使い、ローカル上限とは区別する。端末保護の上限1 GiBは維持し、停止理由は「ローカルのメモリ上限で停止（1 GiB）」と表示する。2 GiBへ増やしても計測方法の差は解消しないため、AtCoderの判定を再現する目的では増やさない。既存の32 MiB VM設定の測定では起動時に約85 MiBをコミットしており、問題の64 MiBなどをそのまま適用しない。Windowsの実Runnerで64 MiBの文字列確保と2 GiBのアドレス予約が完了し、1 GiBの文字列確保・2 GiBのコミット要求・子孫2つによる各600 MiBの要求はコミットが拒否され、通知を受けた実行はmemory-limitで停止することを確認して、固定1 GiBを採用した。
 
 Jobを設定してから停止状態のRubyを割り当て、再開する。起動直後の子孫生成も管理対象にする。設定・割り当て・再開の失敗時は子を終了し、実行予約を解除する。LSPも同じ起動手順を使うが、メモリ上限は設けない。Linux開発環境にはメモリ上限を実装しない。
 
 Windowsのハード上限は追加のコミットを拒否するもので、自動終了はしない。Jobの確保拒否通知を受け取ったら`memory-limit`を最初の停止理由として記録し、Job全体を終了する。出力比較とエラー行ジャンプは付けず、全件実行は次のケースへ進む。最初に確定した手動停止・時間制限・出力上限は上書きしない。
 
-[Job通知の配信](https://github.com/MicrosoftDocs/win32/blob/docs/desktop-src/ProcThread/job-objects.md)はハード上限では保証されない。通知が確認できない失敗をメモリ超過と推測せず、Rubyのエラーまたは既存の5秒制限として返す。通知が欠落してもコミット上限は有効。[JobMemoryLimitの定義](https://github.com/MicrosoftDocs/sdk-api/blob/docs/sdk-api-src/content/winnt/ns-winnt-jobobject_extended_limit_information.md)を参照する。
+[Job通知の配信](https://github.com/MicrosoftDocs/win32/blob/docs/desktop-src/ProcThread/job-objects.md)はハード上限では保証されない。通知が確認できない場合はメモリ超過と推測せず、Rubyの実際の終了状態を返す。確保失敗の例外で終了すればfailed、失敗を捕捉して正常終了すればcompleted、動き続ければ既存の5秒制限でtimeoutになる。通知が欠落してもコミット上限は有効。[JobMemoryLimitの定義](https://github.com/MicrosoftDocs/sdk-api/blob/docs/sdk-api-src/content/winnt/ns-winnt-jobobject_extended_limit_information.md)を参照する。
 
-保存形式は変更しない。受入条件は、通常実行・通常例外の維持、上限を超える単独／子孫合計の確保拒否と停止理由、起動直後のJob所属、プロセス群の終了・一時ファイル削除・次の実行、全件実行の継続、最小画面での理由表示とする。Windows CIの実Ruby・配布アプリで確認する。
+保存形式は変更しない。受入条件は、通常実行・通常例外の維持、上限を超える単独／子孫合計の確保拒否、通知に応じた停止理由、起動直後のJob所属、プロセス群の終了・一時ファイル削除・次の実行、全件実行の継続、最小画面での理由表示とする。Windows CIの実Ruby・配布アプリで確認する。
+
+実OSの受入テストは確保拒否と終了後の復帰を検証し、通知の必着を条件にしない。通知を受けた場合のmemory-limit・Job全体の停止・再実行は、テスト専用コードから実際の完了ポートへ通知を投入して検証する。画面の停止理由と全件実行の継続は、固定した実行結果で検証し、実Rubyの画面テストは通知がないときの時間制限も許容する。連続成功回数をOSの配信保証の代わりにはしない。
 
 再測定は同梱Rubyを`RUBY_PATH`へ指定し、`cargo test --locked --test contract windows_job_memory -- --nocapture`で行う。`test-results/ruby-memory.json`に条件・結果・時間と、Rubyから照会したJobの上限・ピークコミットを保存する。通常CIでも実行し、Windows-verification artifactに含める。
 

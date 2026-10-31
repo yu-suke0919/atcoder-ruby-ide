@@ -119,6 +119,26 @@ impl ProcessTree {
             windows_sys::Win32::System::JobObjects::TerminateJobObject(self.job.as_raw_handle(), 1);
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn post_memory_limit_notification(&self) -> io::Result<()> {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::System::SystemServices::JOB_OBJECT_MSG_JOB_MEMORY_LIMIT;
+        use windows_sys::Win32::System::IO::PostQueuedCompletionStatus;
+        // Exercise the real completion port without depending on OS limit-event delivery.
+        if unsafe {
+            PostQueuedCompletionStatus(
+                self.completion.as_ref().unwrap().as_raw_handle(),
+                JOB_OBJECT_MSG_JOB_MEMORY_LIMIT,
+                0,
+                std::ptr::null(),
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
 }
 
 #[cfg(windows)]

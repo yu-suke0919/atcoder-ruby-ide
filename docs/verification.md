@@ -381,3 +381,11 @@ Windows CI の初回では、HTML固定データがCRLFでチェックアウト�
 - ハード上限はOSがコミットを拒否し、通知を受けたRunnerがJob全体を終了する。通知の配信が保証されない制約を資料へ残し、stderrの文言からメモリ上限を推測しない。停止状態での起動・Job割り当て後の再開はRunnerとLSPで共有し、LSPの単体テストも成功した。
 - ローカルLinuxはRust 89件・Node 86件・GUI 89件が成功した（Windows専用のGUI 1件は除外）。全件実行の継続、判定なし・エラー件数・ジャンプなし、900×650での停止理由表示と再実行をWindows配布アプリのテストへ追加した。確保拒否を捕捉して即座に正常終了する場合も追加し、最終コミットの両OS・Windows配布検証はPRのCIで確認する。
 - 測定結果はtest-results/ruby-memory.jsonへ保存する。配布準備がartifacts/を置き換えるため、測定結果はそこへ置かず、既存のWindows-verification artifactに含める。再測定手順は[実行環境](atcoder-runtime.md#windowsの実行メモリ上限)を参照する。
+
+### PR #32レビュー後の通知と表示の検証
+
+- ハード上限の通知は、確保失敗後に実行を継続する場合も含めて配信が保証されない。実OSテストはmemory-limitのほか、singleのfailed、denied・descendantsのtimeout、denied-exitのcompletedを許容し、それぞれNoMemoryError・確保拒否の出力・終了コード・比較状態を検証する。新しい実行と一時ソースの削除の確認も維持する。
+- memory-limitを必須とする検証は、テスト専用のPostQueuedCompletionStatusで実際のJobの完了ポートへ通知を投入するRunnerテストへ分けた。小さいRubyと子孫が動いている間に通知し、Jobの停止・判定なし・ジャンプなし・次の実行を確認する。テスト用メソッドはcfg(test)に限り、配布版には含めない。通常のNoMemoryError例外を通知なしに発生させるケースも追加し、stderrからmemory-limitを推測しないことを確認する。
+- 表示は端末保護の1 GiBを維持して「ローカルのメモリ上限で停止（1 GiB）」に変更した。固定結果を使う両OS共通のGUIテストが旧表示で失敗することを確認してから修正し、全件実行の継続・正常ケースの一致・900×650での配置と再実行が成功した。Windows実RubyのGUIは確保拒否と復帰を別に確認し、通知がない場合の時間制限も許容する。
+- #30の長い時間制限・問題集の全問取り直し、#31の誤差許容の全ケース設定は後続候補としてmvp.mdへ記録した。整数表記だけを厳密比較へ切り替える案は採用せず、現行仕様の相対誤差とf64の精度をcomparison-details.mdへ補足した。
+- レビュー対応後のローカルLinuxはRust 89件・Node 86件・GUI 90件が成功した（Windows専用GUI 1件は除外）。Windowsの通知投入テスト・実Rubyと配布アプリの最終確認は、更新したPRのCIで行う。

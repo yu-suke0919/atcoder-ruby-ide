@@ -404,6 +404,50 @@ fn cleanup(directory: &Path) -> std::io::Result<()> {
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
+    #[test]
+    fn memory_notification_stops_the_job_and_releases_the_runner() {
+        let ruby = PathBuf::from(std::env::var_os("RUBY_PATH").unwrap_or_else(|| "ruby".into()));
+        let runner = Runner::new(Duration::from_secs(5), MAX_TEXT_BYTES);
+        let notified = Arc::clone(&runner);
+        let result = runner
+            .prepare(RunRequest {
+                code: "require 'rbconfig'; spawn(RbConfig.ruby, '-e', 'sleep 30'); puts 'ready'; sleep 30".into(),
+                expected_output: Some("never compared".into()),
+                ..Default::default()
+            })
+            .unwrap()
+            .execute(&ruby, move |_| {
+                let tree = notified
+                    .active
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .unwrap()
+                    .tree
+                    .clone()
+                    .unwrap();
+                tree.post_memory_limit_notification().unwrap();
+            })
+            .unwrap();
+        assert_eq!(result.status, "memory-limit");
+        assert_eq!(result.comparison, None);
+        assert_eq!(result.difference, None);
+        assert_eq!(result.error_line, None);
+        assert_eq!(
+            runner
+                .prepare(RunRequest {
+                    code: "puts 'next'".into(),
+                    ..Default::default()
+                })
+                .unwrap()
+                .execute(&ruby, |_| {})
+                .unwrap()
+                .stdout,
+            "next\n"
+        );
+    }
+
     #[test]
     fn error_frames_match_the_exact_source_and_skip_prism_headers() {
         let source = Path::new("/tmp/日本語 space/solution.rb");

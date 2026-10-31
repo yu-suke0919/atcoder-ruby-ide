@@ -5,7 +5,7 @@ use std::time::Duration;
 
 #[cfg(windows)]
 #[test]
-fn windows_job_memory_limit_stops_the_tree_and_allows_the_next_run() {
+fn windows_job_memory_limit_rejects_allocations_and_allows_the_next_run() {
     let runner = Runner::new(Duration::from_secs(5), 1048576);
     let code = include_str!("fixtures/windows-memory.rb");
     let mut measurements = Vec::new();
@@ -30,20 +30,40 @@ fn windows_job_memory_limit_stops_the_tree_and_allows_the_next_run() {
             result.duration_ms, result.status, result.stdout
         );
         measurements.push(serde_json::json!({ "mode": mode, "status": result.status, "durationMs": result.duration_ms, "stdout": result.stdout, "stderr": result.stderr }));
-        assert_eq!(
+        let allowed: &[&str] = match mode {
+            "normal" | "reserve" => &["completed"],
+            "single" => &["memory-limit", "failed"],
+            "denied-exit" => &["memory-limit", "completed"],
+            _ => &["memory-limit", "timeout"],
+        };
+        assert!(
+            allowed.contains(&result.status.as_str()),
+            "{mode}: {}\n{}",
             result.status,
-            if matches!(mode, "normal" | "reserve") {
-                "completed"
-            } else {
-                "memory-limit"
-            },
-            "{}",
             result.stderr
         );
-        assert_eq!(result.error_line, None);
+        match result.status.as_str() {
+            "failed" => {
+                assert!(result.stderr.contains("NoMemoryError"));
+                assert_ne!(result.exit_code, Some(0));
+            }
+            "timeout" => assert!(result.stdout.contains(if mode == "descendants" {
+                "child denied"
+            } else {
+                "allocation denied"
+            })),
+            "completed" if mode == "denied-exit" => {
+                assert_eq!(result.exit_code, Some(0));
+                assert!(result.stdout.contains("allocation denied"));
+            }
+            _ => {}
+        }
+        if result.status != "failed" {
+            assert_eq!(result.error_line, None);
+        }
         assert_eq!(
             result.comparison,
-            if matches!(mode, "normal" | "reserve") {
+            if result.status == "completed" {
                 Some(false)
             } else {
                 None
@@ -70,13 +90,18 @@ fn windows_job_memory_limit_stops_the_tree_and_allows_the_next_run() {
         }
         assert!(runner.prepare(RunRequest::default()).is_ok());
     }
-    let result = runner
-        .prepare(request("raise 'ordinary exception'", ""))
-        .unwrap()
-        .execute(&ruby(), |_| {})
-        .unwrap();
-    assert_eq!(result.status, "failed");
-    assert!(result.error_line.is_some());
+    for code in [
+        "raise 'ordinary exception'",
+        "raise NoMemoryError, 'not a Job notification'",
+    ] {
+        let result = runner
+            .prepare(request(code, ""))
+            .unwrap()
+            .execute(&ruby(), |_| {})
+            .unwrap();
+        assert_eq!(result.status, "failed");
+        assert!(result.error_line.is_some());
+    }
     // Packaging replaces artifacts/; keep measurements with the preserved test evidence.
     let reports = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../test-results");
     std::fs::create_dir_all(&reports).unwrap();

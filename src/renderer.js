@@ -27,7 +27,7 @@ const sample = 'a = gets.to_i\nb, c = gets.split.map(&:to_i)\ns = gets.chomp\n\n
 const cases = new SampleCases([{ stdin: '1\n2 3\ntest\n', expectedOutput: '6 test\n', compare: false }]);
 let canceled = false;
 const comparisonLabels = { none: '比較なし', pending: '未比較', running: '比較中…', matched: '一致', mismatched: '不一致', unavailable: '判定なし' };
-const statusLabel = (status, exitCode) => ({ completed: '正常終了', failed: `エラー終了${exitCode == null ? '' : ` (${exitCode})`}`, stopped: '停止しました', timeout: '時間制限で停止（5 秒）', 'output-limit': '出力上限で停止（1 MiB）', 'memory-limit': 'メモリ上限で停止（1 GiB）', running: '実行中…', canceled: '未実行（中止）', error: '実行できませんでした' })[status] || '実行する準備ができています';
+const statusLabel = (status, exitCode) => ({ completed: '正常終了', failed: `エラー終了${exitCode == null ? '' : ` (${exitCode})`}`, stopped: '停止しました', timeout: '時間制限で停止（5 秒）', 'output-limit': '出力上限で停止（1 MiB）', 'memory-limit': 'ローカルのメモリ上限で停止（1 GiB）', running: '実行中…', canceled: '未実行（中止）', error: '実行できませんでした' })[status] || '実行する準備ができています';
 let savedCode = sample;
 let filePath = null;
 let running = false;
