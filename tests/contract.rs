@@ -3,6 +3,91 @@ use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
+#[test]
+fn problem_execution_limit_is_frozen_bounded_and_validated_before_reservation() {
+    let runner = Runner::new(Duration::from_secs(5), 1048576);
+    for (problem, expected) in [
+        (None, 5000),
+        (Some(1), 5000),
+        (Some(3999), 5000),
+        (Some(4000), 5000),
+        (Some(4001), 5001),
+        (Some(4500), 5500),
+        (Some(8000), 9000),
+        (Some(28999), 29999),
+        (Some(29000), 30000),
+        (Some(29001), 30000),
+        (Some(u32::MAX), 30000),
+    ] {
+        let prepared = runner
+            .prepare(RunRequest {
+                problem_time_limit_ms: problem,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(prepared.execution_limit_ms(), expected, "{problem:?}");
+    }
+    assert!(runner
+        .prepare(RunRequest {
+            problem_time_limit_ms: Some(0),
+            ..Default::default()
+        })
+        .err()
+        .unwrap()
+        .contains("問題の時間制限"));
+    let prepared = runner
+        .prepare(RunRequest {
+            problem_time_limit_ms: Some(8000),
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(runner.stop());
+    let stopped = prepared
+        .execute(std::path::Path::new("missing-ruby-must-not-start"), |_| {})
+        .unwrap();
+    assert_eq!(stopped.status, "stopped");
+    assert_eq!(stopped.execution_limit_ms, 9000);
+    assert_eq!(stopped.duration_ms, 0);
+    assert_eq!(
+        serde_json::to_value(atcoder_ruby_ide::RunEvent::Started {
+            execution_limit_ms: 9000
+        })
+        .unwrap(),
+        serde_json::json!({ "type": "started", "executionLimitMs": 9000 })
+    );
+}
+
+#[test]
+fn eight_second_problem_can_finish_six_second_code_and_next_run_uses_default() {
+    let runner = Runner::new(Duration::from_secs(5), 1048576);
+    let result = runner
+        .prepare(RunRequest {
+            code: "sleep 6; puts 'ok'".into(),
+            expected_output: Some("ok\n".into()),
+            problem_time_limit_ms: Some(8000),
+            ..Default::default()
+        })
+        .unwrap()
+        .execute(&ruby(), |_| {})
+        .unwrap();
+    assert_eq!(result.status, "completed", "{}", result.stderr);
+    assert_eq!(result.comparison, Some(true));
+    assert_eq!(result.execution_limit_ms, 9000);
+    assert!(result.duration_ms >= 6000);
+    assert_eq!(
+        serde_json::to_value(&result).unwrap()["executionLimitMs"],
+        9000
+    );
+    let next = runner
+        .prepare(request("puts 'next'", ""))
+        .unwrap()
+        .execute(&ruby(), |_| {})
+        .unwrap();
+    assert_eq!(next.status, "completed");
+    assert_eq!(next.execution_limit_ms, 5000);
+    assert_eq!(next.stdout, "next\n");
+}
+
 #[cfg(windows)]
 #[test]
 fn windows_job_memory_limit_rejects_allocations_and_allows_the_next_run() {

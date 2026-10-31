@@ -99,6 +99,7 @@ fn run_ruby(
     stdin: String,
     expected_output: Option<String>,
     tolerance: Option<f64>,
+    problem_time_limit_ms: Option<u32>,
     on_event: Channel<RunEvent>,
 ) -> Result<(), String> {
     let prepared = prepare_document_run(
@@ -108,11 +109,15 @@ fn run_ruby(
         stdin,
         expected_output,
         tolerance,
+        problem_time_limit_ms,
     )?;
     let ruby = ruby_path(&app)?;
     std::thread::Builder::new()
         .name("ruby-runner".into())
         .spawn(move || {
+            let _ = on_event.send(RunEvent::Started {
+                execution_limit_ms: prepared.execution_limit_ms(),
+            });
             let output = on_event.clone();
             let result = prepared.execute(&ruby, move |chunk| {
                 let _ = output.send(RunEvent::Output {

@@ -31,12 +31,14 @@ pub fn prepare_document_run(
     stdin: String,
     expected_output: Option<String>,
     tolerance: Option<f64>,
+    problem_time_limit_ms: Option<u32>,
 ) -> Result<PreparedRun, String> {
     runner.prepare(RunRequest {
         code,
         stdin,
         expected_output,
         tolerance,
+        problem_time_limit_ms,
         cwd: documents
             .path()
             .and_then(|path| path.parent())

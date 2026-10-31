@@ -401,7 +401,7 @@ test('M08: a local memory-limit result is distinct and the batch continues', asy
     const { ide } = await import('./bridge.mjs');
     const run = ide.run;
     ide.run = (code, stdin, ...args) => stdin === 'limit'
-      ? Promise.resolve({ status: 'memory-limit', stdout: '', stderr: '', exitCode: 1, durationMs: 100, comparison: null, difference: null, errorLine: null })
+      ? Promise.resolve({ status: 'memory-limit', stdout: '', stderr: '', exitCode: 1, durationMs: 100, executionLimitMs: 5000, comparison: null, difference: null, errorLine: null })
       : run(code, stdin, ...args);
   });
   await page.getByTestId('code-editor').fill('puts STDIN.read');
@@ -1688,6 +1688,7 @@ test('P13: refreshing limits applies to the next run and preserves the old resul
   await openProblemDialog(problem.url); await page.locator('#problem-open').click(); await waitProblem();
   await page.locator('#code-editor').fill('puts 3');
   await runAndWait();
+  assert.equal(await page.locator('#execution-limit').textContent(), '実行時上限 5 秒');
   assert.equal(await page.locator('#time-limit-warning').textContent(), '制限超過の可能性（問題の制限 0.001 秒）');
   await page.evaluate(async problem => {
     const { ide } = await import('./bridge.mjs');
@@ -1696,12 +1697,71 @@ test('P13: refreshing limits applies to the next run and preserves the old resul
   await page.locator('#problem-library').click();
   await page.locator('#problem-refresh').click(); await waitProblem();
   assert.equal(await page.locator('#problem-limits').textContent(), '実行時間制限: 60 秒 / メモリ制限: 1024 MiB');
+  assert.equal(await page.locator('#execution-limit').textContent(), '実行時上限 5 秒');
   assert.equal(await page.locator('#time-limit-warning').isVisible(), true);
   assert.equal(await page.locator('#time-limit-warning').textContent(), '制限超過の可能性（問題の制限 0.001 秒）');
   await page.locator('#problem-close').click();
   await runAndWait();
+  assert.equal(await page.locator('#execution-limit').textContent(), '実行時上限 30 秒');
   assert.equal(await page.locator('#time-limit-warning').isVisible(), false);
   assert.equal(await page.locator('#comparison-status').textContent(), '一致');
+});
+
+test('P14: long problem runs receive their budget before output and keep per-case limits', async () => {
+  const problem = await seedProblem('long_execution');
+  Object.assign(problem, { timeLimitMs: 8000, memoryLimitMiB: 1024,
+    samples: [{ stdin: '6', expectedOutput: 'ok\n', compare: true }, { stdin: '0', expectedOutput: 'ok\n', compare: true }] });
+  await writeFile(path.join(app.dataDir, 'library/problems', libraryContest, 'long_execution', 'problem.json'), JSON.stringify(problem));
+  await openProblemDialog(problem.url); await page.locator('#problem-open').click(); await waitProblem();
+  assert.equal(await page.locator('#execution-limit').count(), 1);
+  assert.equal(await page.locator('#execution-limit').textContent(), '実行上限 5〜30 秒');
+  await page.locator('#code-editor').fill('sleep STDIN.read.to_f; puts :ok');
+  await page.locator('#run-all').click();
+  await page.locator('#execution-limit').filter({ hasText: '実行時上限 9 秒' }).waitFor();
+  assert.equal(await page.locator('#stdout').textContent(), '');
+  await page.locator('#cases-summary').filter({ hasText: /完了 2 \/ 2.*一致 2/ }).waitFor({ timeout: 12000 });
+  assert.equal(await page.locator('#time-limit-warning').isVisible(), false);
+  await selectCase(2);
+  assert.equal(await page.locator('#execution-limit').textContent(), '実行時上限 9 秒');
+  await page.locator('#code-editor').fill('puts :ready; sleep 30');
+  await page.locator('#run').click();
+  await page.locator('#stdout').filter({ hasText: 'ready' }).waitFor();
+  await page.locator('#stop').click();
+  await page.locator('#run-status').filter({ hasText: '停止しました' }).waitFor();
+  assert.equal(await page.locator('#execution-limit').textContent(), '実行時上限 9 秒');
+  await page.evaluate(async problem => {
+    const { ide } = await import('./bridge.mjs');
+    ide.refreshProblem = async () => ({ ...problem, timeLimitMs: 60000 });
+  }, problem);
+  await page.locator('#problem-library').click(); await page.locator('#problem-refresh').click(); await waitProblem();
+  await page.locator('#problem-close').click();
+  assert.equal(await page.locator('#execution-limit').textContent(), '実行時上限 9 秒');
+  await page.evaluate(async () => {
+    const { ide } = await import('./bridge.mjs');
+    ide.run = async (code, stdin, expectedOutput, tolerance, problemTimeLimitMs, notify) => {
+      if (problemTimeLimitMs !== 60000) throw new Error('run did not use the new problem limit');
+      notify({ type: 'started', executionLimitMs: 30000 });
+      return { status: 'timeout', stdout: '', stderr: '', exitCode: 1, durationMs: 30001, executionLimitMs: 30000, comparison: null, difference: null, errorLine: null };
+    };
+  });
+  await runAndWait('時間制限で停止');
+  assert.equal(await page.locator('#run-status').textContent(), '時間制限で停止（30 秒）');
+  assert.equal(await page.locator('#execution-limit').textContent(), '実行時上限 30 秒');
+  assert.equal(await page.locator('#comparison-status').textContent(), '判定なし');
+  assert.match(await page.locator('#case-select option').nth(1).textContent(), /30 秒/);
+  for (const [width, height] of [[1440, 900], [1200, 650], [900, 650]]) {
+    await page.setViewportSize({ width, height });
+    await assertWorkspaceFits();
+    const right = await page.locator('#execution-limit').evaluate(element => element.getBoundingClientRect().right);
+    assert.ok(right <= width);
+    await page.screenshot({ path: `test-results/execution-limit-${width}.png` });
+  }
+  await selectCase(1);
+  assert.equal(await page.locator('#execution-limit').textContent(), '実行時上限 9 秒');
+  await selectCase(2); await page.locator('#clear-output').click();
+  assert.equal(await page.locator('#execution-limit').textContent(), '実行上限 5〜30 秒');
+  await newDocument();
+  assert.equal(await page.locator('#execution-limit').textContent(), '既定上限 5 秒');
 });
 
 test('T01: tolerant comparison keeps exact whitespace, separate columns and saved per-case settings', async () => {

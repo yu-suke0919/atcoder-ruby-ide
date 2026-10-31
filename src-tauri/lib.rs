@@ -26,8 +26,15 @@ pub use samples::{load_samples, save_samples, ProblemSample, SampleCase, SampleR
 use serde::Serialize;
 
 #[derive(Clone, Serialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 pub enum RunEvent {
+    Started {
+        execution_limit_ms: u64,
+    },
     Output {
         stream: &'static str,
         bytes: Vec<u8>,

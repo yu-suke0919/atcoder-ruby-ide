@@ -142,9 +142,13 @@ test('a disconnected stdout does not panic or prevent host shutdown', { timeout:
 
 
 test('only the UI test host can shorten its Ruby execution timeout', { timeout: 10000 }, async t => {
-  const { host, completed } = await startHost(t, false, { ATCODER_IDE_UI_TIMEOUT_MS: '1000' });
+  const { host, completed, messages } = await startHost(t, false, { ATCODER_IDE_UI_TIMEOUT_MS: '1000' });
   const result = await completed;
   assert.equal(result.status, 'timeout');
+  assert.equal(result.executionLimitMs, 1000);
+  const events = messages.filter(message => message.event).map(message => message.event);
+  assert.deepEqual(events[0], { type: 'started', executionLimitMs: 1000 });
+  assert.equal(events.at(-1).type, 'completed');
   assert.ok(result.durationMs >= 1000 && result.durationMs < 4000, `duration: ${result.durationMs}`);
   host.stdin.end();
 });

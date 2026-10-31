@@ -22,20 +22,22 @@ export const ide = {
     return invoke('problem_save_cases', { url, cases });
   },
   rubyInfo: () => invoke('ruby_info'),
-  run(code, stdin, expectedOutput = null, tolerance = null, output = () => {}) {
+  run(code, stdin, expectedOutput = null, tolerance = null, problemTimeLimitMs = null, notify = () => {}) {
     return new Promise((resolve, reject) => {
       if (expectedOutput !== null && typeof expectedOutput !== 'string') { reject(new Error('期待出力は文字列で指定してください。')); return; }
       validateTolerance(tolerance);
+      if (problemTimeLimitMs !== null && (!Number.isInteger(problemTimeLimitMs) || problemTimeLimitMs <= 0 || problemTimeLimitMs > 4294967295)) throw new Error('問題の時間制限は1〜4,294,967,295ミリ秒の整数にしてください。');
       const decoders = { stdout: new TextDecoder(), stderr: new TextDecoder() };
       const channel = new Channel();
       channel.onmessage = event => {
-        if (event.type === 'output') {
+        if (event.type === 'started') notify({ type: 'started', executionLimitMs: event.executionLimitMs });
+        else if (event.type === 'output') {
           const text = decoders[event.stream].decode(new Uint8Array(event.bytes), { stream: true });
-          if (text) output({ stream: event.stream, text });
+          if (text) notify({ type: 'output', stream: event.stream, text });
         } else if (event.type === 'completed') resolve(event.result);
         else if (event.type === 'failed') reject(new Error(event.message));
       };
-      invoke('run_ruby', { code, stdin, expectedOutput, tolerance, onEvent: channel }).catch(reject);
+      invoke('run_ruby', { code, stdin, expectedOutput, tolerance, problemTimeLimitMs, onEvent: channel }).catch(reject);
     });
   },
   stop: () => invoke('stop_ruby'),

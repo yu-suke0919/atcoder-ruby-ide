@@ -3,6 +3,31 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
+test('problem limits travel to Rust and started carries the actual execution budget', async t => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  t.after(() => { if (previous) Object.defineProperty(globalThis, 'window', previous); else delete globalThis.window; });
+  const calls = [];
+  globalThis.window = { __TAURI__: {
+    core: { invoke: async (command, args) => {
+      calls.push(args);
+      queueMicrotask(() => {
+        args.onEvent.onmessage({ type: 'started', executionLimitMs: 9000 });
+        args.onEvent.onmessage({ type: 'completed', result: { status: 'completed', executionLimitMs: 9000 } });
+      });
+    }, Channel: class {} }, window: { getCurrentWindow: () => ({}) },
+  } };
+  const { ide } = await import(`${pathToFileURL(path.join(__dirname, '../../src/bridge.mjs')).href}?execution-limit-test`);
+  const events = [];
+  const result = await ide.run('', '', null, null, 8000, event => events.push(event));
+  assert.equal(calls[0].problemTimeLimitMs, 8000);
+  assert.deepEqual(events, [{ type: 'started', executionLimitMs: 9000 }]);
+  assert.equal(result.executionLimitMs, 9000);
+  for (const value of [0, -1, 1.5, NaN, Infinity, 4294967296, '8000']) {
+    await assert.rejects(ide.run('', '', null, null, value), /問題の時間制限/);
+  }
+  assert.equal(calls.length, 1);
+});
+
 test('tolerance travels through IPC and invalid values cannot turn into strict mode', async t => {
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
   t.after(() => { if (previous) Object.defineProperty(globalThis, 'window', previous); else delete globalThis.window; });
