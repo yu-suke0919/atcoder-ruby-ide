@@ -104,3 +104,24 @@ jobs:
           path: artifacts/*-setup.exe
           if-no-files-found: error
           retention-days: 14
+
+  stack-measurement:
+    name: Measure Windows Ruby stack
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run prepare:ruby
+      - name: Measure Ruby main-thread recursion and memory
+        shell: pwsh
+        run: ./scripts/measure-ruby-stack.ps1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Windows-Ruby-stack-measurements
+          path: artifacts/reports/ruby-stack.json
+          if-no-files-found: warn
