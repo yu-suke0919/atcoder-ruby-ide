@@ -28,7 +28,15 @@ AtCoderの公開環境はCRubyの `Ruby 3.4 (ruby 3.4.5)`。本アプリは3.4�
 
 配列のeach・mapでブロックを挟む再帰は、Windows・LinuxともにVMスタックを256 MiBまで増やしても10万段でSystemStackErrorになった。Windows同梱ruby.exeのPEヘッダーのスタック予約量は2 MiBで、VMスタックとは別の制約として残る。Windows実行ファイルやOSのネイティブスタック設定は変更せず、AtCoderと同じ再帰深さは保証しない。深いDFSでは明示的な配列スタックによる反復処理も使う。
 
-each・map型の境目は32 MiB設定で別途測定する。各探索は新しいRubyのメインスレッドでtests/fixtures/deep-recursion.rbを実行し、同一プロセス内で深さ0から100,000の間を二分探索する。3回ずつ測り、成功した最大深さとその次の深さでのSystemStackError、Rubyのバージョン、Linuxのネイティブスタック上限を記録する。値はこの固定コードと測定環境での結果であり、DFS全般の保証値ではない。AtCoderの公開tomlにはネイティブスタック・ulimitの設定がなく、AtCoderでeach型がどこまで通るかは不明。
+32 MiB設定でのeach・map型の最大成功深さは次のとおり（Ruby 3.4.12、2026年10月31日）。各探索は新しいRubyのメインスレッドでtests/fixtures/deep-recursion.rbを実行し、同一プロセス内で深さ0から100,000の間を二分探索した。各試行で最大成功深さの次の深さがSystemStackErrorになることも確認した。
+
+| 測定環境 | ネイティブスタックの設定 | each型の最大成功深さ（3回の範囲） | map型の最大成功深さ（3回の範囲） |
+| --- | --- | --- | --- |
+| Windows x64 CI・同梱Ruby | PEヘッダーの予約量2 MiB | 1,102〜1,103 | 1,080 |
+| Linux x64 CI・setup-ruby | RLIMIT_STACKのsoft limit 16 MiB | 16,611〜16,613 | 16,354〜16,358 |
+| Linux x64開発環境 | RLIMIT_STACKのsoft limit 8 MiB | 8,293〜8,294 | 8,164〜8,169 |
+
+値はこの固定コードと測定環境での結果であり、DFS全般の保証値ではない。プロセスごとに数段の差があり、OS・ビルド・ネイティブスタック上限・コードによって変わる。測定でOSのスタック設定は変更していない。AtCoderの公開tomlにはネイティブスタック・ulimitの設定がなく、AtCoderでeach型がどこまで通るかは不明。
 
 測定は通常再帰・each・mapを深さ0・100,000・1,000,000、既定値と4・16・32・64・128・256 MiBで比較した。Windowsの再現はPowerShell 7で `pwsh -NoProfile -File scripts/measure-ruby-stack.ps1` を使い、`artifacts/reports/ruby-stack.json` に成否・実効VM設定・処理時間・ピークワーキングセット・ピークコミット量を保存する。時間は再帰処理部分、メモリは測定用Rubyプロセスの値でありIDE全体の値ではない。メモリ取得用の100 ms待機は再帰処理時間に含めない。
 

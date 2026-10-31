@@ -348,3 +348,10 @@ Windows CI の初回では、HTML固定データがCRLFでチェックアウト�
 - 通常実行時のコミット増加を約31 MiBに抑えつつ通常再帰20万段を受け入れる32 MiBをRunnerだけへ設定する。128 MiB設定は短い処理でも約127 MiBのコミット増加になるため採用しない。LSPのCommandと保存形式は変更しない。
 - ローカルの対象回帰テストで、通常再帰20万段の完了、実際のVMスタック上限到達後の再実行、小さい環境設定の上書きが成功した。最終コミットの両OS・全テスト・配布検証はPR CIで確認する。
 - 最小実装後のLinux共通テストはRust 80件・Node 82件が成功した。測定専用の補助ジョブは通常CIから外し、再現スクリプトと測定記録を残した。
+
+### ブロックを挟む再帰の到達深さ
+
+- [両OSの手動測定](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/41175744697)が成功。f7d260aのscripts/measure-ruby-recursion.cjsで、32 MiBの実効VM設定、深さ0の成功と10万段のSystemStackErrorを確認し、each・map型を各3回二分探索した。最大成功深さと直後の失敗を同一プロセスで再確認し、SystemStackError以外の失敗・タイムアウト・境目の不安定さは測定エラーとして扱う。
+- 結果と環境ごとのネイティブスタック設定は[再帰スタックの仕様](atcoder-runtime.md#再帰スタック)へ記録した。各プローブの成否・Rubyバージョン・実効VM設定・Linuxのsoft limitは、同実行のRuby-stack-Linux / Ruby-stack-Windows artifactのruby-recursion.jsonへ保存した。Windowsでは従来のVMサイズ・メモリ測定も再実行してruby-stack.jsonへ保存した。
+- Linux開発環境でも同じスクリプトで測定。ネイティブスタック上限がCIの16 MiBと異なり8 MiBで、each・map型の境目も約半分になった。AtCoderの公開tomlを再確認し、VMスタック以外にネイティブスタック・ulimitの指定がないことを確認した。
+- 仕様・検証資料の見出しから計画番号を外し、RunnerのVMスタック値を名前付き定数へ変更した。定数化後も実Runnerの通常再帰20万段と上限到達後の再実行が成功。手動測定では通常のテスト・配布ビルドを省略し、通常のPR CIでは測定を省略することを確認した。通常の両OSジョブのテスト・配布手順はYAML比較で維持されていることを確認した。
