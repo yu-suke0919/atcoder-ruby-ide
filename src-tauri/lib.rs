@@ -8,6 +8,7 @@ mod navigation;
 mod process;
 mod runner;
 mod samples;
+mod solutions;
 mod task;
 
 pub use commands::{ruby_info, RubyInfo};

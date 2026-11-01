@@ -1,7 +1,7 @@
 const { editorText } = require('./editor.cjs');
 const { test, describe, before, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtemp, mkdir, readFile, writeFile, rm, access, realpath } = require('node:fs/promises');
+const { mkdtemp, mkdir, readFile, writeFile, rm, access, realpath, cp, readdir } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 const { once } = require('node:events');
@@ -518,9 +518,11 @@ test('M06/M08: show timeout and output-limit reasons in the UI', async () => {
 
 
 test('M02/U2d: the app starts at home, runs Ruby without a problem and keeps home apart from problems', async () => {
-  // Home is shared with the user's own data on Windows, so its files are put back afterwards.
+  // Home is shared with the user's own data on Windows, so it is put back afterwards.
   const home = path.join(app.dataDir, 'home');
-  const original = await Promise.all(['solution.rb', 'cases.json'].map(name => readFile(path.join(home, name)).catch(() => null)));
+  const backup = path.join(root, 'home-backup');
+  const existed = await access(home).then(() => true, () => false);
+  if (existed) await cp(home, backup, { recursive: true });
   try {
     await page.reload();
     await waitInitialized(page);
@@ -537,7 +539,7 @@ test('M02/U2d: the app starts at home, runs Ruby without a problem and keeps hom
     await runAndWait();
     assert.equal(await page.locator('#stdout').textContent(), '42\n');
     await waitSaved();
-    assert.equal(await readFile(path.join(home, 'solution.rb'), 'utf8'), 'puts gets.to_i * 2');
+    assert.equal(await readFile(path.join(home, 'files', 'home_1.rb'), 'utf8'), 'puts gets.to_i * 2');
     await openProblem(page, starterProblem);
     assert.equal(await page.locator('#home-icon').getAttribute('aria-pressed'), 'false');
     assert.equal(await editorText(page), sampleCode);
@@ -551,12 +553,73 @@ test('M02/U2d: the app starts at home, runs Ruby without a problem and keeps hom
     await selectTask(page, starterProblem);
     await page.locator('#problem-title').filter({ hasText: starterProblem.title }).waitFor();
   } finally {
-    await mkdir(home, { recursive: true });
-    for (const [index, name] of ['solution.rb', 'cases.json'].entries()) {
-      if (original[index] === null) await rm(path.join(home, name), { force: true });
-      else await writeFile(path.join(home, name), original[index]);
-    }
+    await rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    if (existed) await cp(backup, home, { recursive: true });
   }
+});
+
+test('M02/U3a: a problem has file tabs that are added, switched, run, renamed and deleted', async () => {
+  const problem = await seedWorkspaceProblem(app, testContest, 'tabs', { code: null, label: 'C', title: 'タブ' });
+  await openProblem(page, problem);
+  const tabs = () => page.locator('#file-tabs [role="tab"]').allTextContents();
+  const selected = () => page.locator('#file-tabs [role="tab"][aria-selected="true"]').textContent();
+  const tab = name => page.locator('#file-tabs [role="tab"]', { hasText: new RegExp(`^${name}$`) });
+  const files = async () => (await readdir(path.join(problem.workspace, 'files'))).sort();
+  assert.deepEqual(await tabs(), ['C_1', 'C_2']);
+  assert.equal(await selected(), 'C_1');
+  await page.locator('#code-editor').fill('puts 1');
+  await tab('C_2').click();
+  await page.waitForFunction(() => document.querySelector('#file-tabs [aria-selected="true"]').textContent === 'C_2');
+  assert.equal(await editorText(page), '');
+  await page.locator('#code-editor').fill('puts 2');
+  await runAndWait();
+  assert.equal(await page.locator('#stdout').textContent(), '2\n');
+  await tab('C_1').click();
+  await page.waitForFunction(() => document.querySelector('#file-tabs [aria-selected="true"]').textContent === 'C_1');
+  assert.equal(await editorText(page), 'puts 1');
+  assert.equal(await readFile(path.join(problem.workspace, 'files', 'C_2.rb'), 'utf8'), 'puts 2');
+  await page.locator('#file-add').click();
+  await page.waitForFunction(() => document.querySelector('#file-tabs [aria-selected="true"]')?.textContent === 'C_3');
+  assert.equal(await editorText(page), '');
+  // Renaming checks the name in the dialog and keeps the dialog open on an error.
+  await tab('C_3').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '名前を変更' }).click();
+  await page.locator('#file-rename-input').fill('a b');
+  await page.locator('#file-rename-ok').click();
+  await page.locator('#file-rename-message').filter({ hasText: '英数字' }).waitFor();
+  await page.locator('#file-rename-input').fill('brute');
+  await page.locator('#file-rename-ok').click();
+  await page.waitForFunction(() => !document.querySelector('dialog[open]'));
+  assert.deepEqual(await tabs(), ['brute', 'C_1', 'C_2']);
+  assert.equal(await selected(), 'brute');
+  assert.deepEqual(await files(), ['C_1.rb', 'C_2.rb', 'brute.rb']);
+  // Deleting asks first, and the last file cannot be deleted.
+  await tab('C_2').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '削除' }).click();
+  await page.locator('#file-delete-cancel').click();
+  assert.deepEqual(await tabs(), ['brute', 'C_1', 'C_2']);
+  for (const name of ['C_2', 'brute']) {
+    await tab(name).click({ button: 'right' });
+    await page.getByRole('menuitem', { name: '削除' }).click();
+    await page.locator('#file-delete-ok').click();
+    await page.waitForFunction(count => document.querySelectorAll('#file-tabs [role="tab"]').length === count, name === 'C_2' ? 2 : 1);
+  }
+  assert.deepEqual(await tabs(), ['C_1']);
+  assert.equal(await editorText(page), 'puts 1');
+  await tab('C_1').click({ button: 'right' });
+  assert.equal(await page.getByRole('menuitem', { name: '削除' }).count(), 0);
+  await page.keyboard.press('Escape');
+  assert.deepEqual(await files(), ['C_1.rb']);
+});
+
+test('U3a: tabs cannot change while samples run', async () => {
+  await page.locator('#code-editor').fill('sleep 1; puts 1');
+  await page.locator('#run-all').click();
+  await page.waitForFunction(() => document.getElementById('stop').disabled === false);
+  assert.equal(await page.locator('#file-add').isDisabled(), true);
+  assert.equal(await page.locator('#file-tabs [role="tab"]').first().isDisabled(), true);
+  await page.locator('#cases-summary').filter({ hasText: /完了 1 \/ 1/ }).waitFor();
+  assert.equal(await page.locator('#file-add').isDisabled(), false);
 });
 
 test('M08: an oversized solution fails to open and preserves the current problem and comparison', async () => {

@@ -13,7 +13,11 @@ export const ide = {
   listContests: () => invoke('contest_list'),
   registerContest: url => invoke('contest_register', { url }),
   setContestHidden: (url, hidden) => invoke('contest_set_hidden', { url, hidden }),
-  openTask: url => invoke('task_open', { url }),
+  openTask: (url, label) => invoke('task_open', { url, label }),
+  openFile: (workspace, name) => invoke('file_open', { workspace, name }),
+  createFile: (workspace, label) => invoke('file_create', { workspace, label }),
+  renameFile: (workspace, from, to) => invoke('file_rename', { workspace, from, to }),
+  deleteFile: (workspace, name) => invoke('file_delete', { workspace, name }),
   saveTaskCases: (url, cases) => {
     cases.forEach(item => validateTolerance(item.tolerance ?? null));
     return invoke('task_save_cases', { url, cases });

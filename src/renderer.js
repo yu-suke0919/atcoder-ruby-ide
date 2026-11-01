@@ -17,7 +17,7 @@ const railMenu = $('rail-menu');
 let activeProblem = null;
 // Home is a workspace of its own that belongs to no task.
 const HOME = 'home';
-const homeProblem = { url: HOME, home: true, title: 'ホーム', timeLimitMs: null, memoryLimitMiB: null };
+const homeProblem = { url: HOME, home: true, label: HOME, title: 'ホーム', timeLimitMs: null, memoryLimitMiB: null };
 let contests = [];
 let selectedContest = null;
 // The task whose page is being read; it opens when its task-page event arrives.
@@ -288,6 +288,8 @@ function updateButtons() {
   $('case-remove').disabled = running || locked || cases.items.length === 1;
   $('case-select').disabled = locked;
   $('stop').disabled = !running;
+  for (const tab of document.querySelectorAll('#file-tabs [role="tab"]')) tab.disabled = running || locked;
+  $('file-add').disabled = running || locked;
   $('clear-output').disabled = running || locked;
   editor.readOnly = locked;
   $('editor-search').disabled = locked;
@@ -420,13 +422,120 @@ function applyWorkspace(result, problem) {
   clearTimeout(saveTimer);
   saveTimer = null;
   saveError = null;
-  activeProblem = problem;
+  activeProblem = { ...problem, files: result.files, file: result.file };
   editor.value = result.document.code;
   savedCode = editor.value;
   filePath = result.document.filePath;
   cases.replace(result.cases, { saved: true });
-  showProblem(); showCase(); updateEditor();
+  showProblem(); showCase(); updateEditor(); renderFiles();
 }
+
+// File tabs: each tab is one file of the open problem; the open tab is the one that runs.
+function renderFiles() {
+  $('file-tabs').replaceChildren(...(activeProblem?.files || []).map(name => {
+    const tab = document.createElement('button');
+    tab.setAttribute('role', 'tab');
+    tab.textContent = name;
+    tab.setAttribute('aria-selected', String(name === activeProblem.file));
+    tab.addEventListener('click', () => switchFile(name));
+    tab.addEventListener('contextmenu', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (fileLocked()) return;
+      showMenu(event, [
+        { label: '名前を変更', action: () => askRename(name) },
+        ...(activeProblem.files.length > 1 ? [{ label: '削除', action: () => askDelete(name) }] : [])
+      ]);
+    });
+    return tab;
+  }));
+  updateButtons();
+}
+const fileLocked = () => !activeProblem || running || fileBusy || closing;
+// Shows another file after the open one is on disk.
+async function showFile(name) {
+  const problem = activeProblem;
+  const opened = await ide.openFile(problem.url, name);
+  if (problem !== activeProblem) return;
+  activeProblem.file = name;
+  editor.value = opened.code;
+  savedCode = editor.value;
+  filePath = opened.filePath;
+  resetComparison(true);
+  updateEditor();
+  renderFiles();
+  editor.focus();
+}
+async function switchFile(name) {
+  if (fileLocked() || name === activeProblem.file) return;
+  // Unsaved edits of the open file are saved first; a failed save asks before leaving them.
+  if (!await leaveProblem()) return;
+  await fileAction(() => showFile(name));
+}
+$('file-add').addEventListener('click', async () => {
+  if (fileLocked() || !await leaveProblem()) return;
+  await fileAction(async () => {
+    const name = await ide.createFile(activeProblem.url, activeProblem.label);
+    activeProblem.files = sortFiles([...activeProblem.files, name]);
+    await showFile(name);
+  });
+});
+// The tab order is the app's: names in natural order, ignoring case.
+const fileOrder = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+const sortFiles = names => [...names].sort(fileOrder.compare);
+
+const renameDialog = $('file-rename-dialog');
+let renaming = null;
+function askRename(name) {
+  renaming = name;
+  $('file-rename-input').value = name;
+  $('file-rename-message').textContent = '';
+  openDialog(renameDialog);
+  $('file-rename-input').select();
+}
+async function rename() {
+  const [from, to] = [renaming, $('file-rename-input').value.trim()];
+  if (fileLocked() || !from) return;
+  if (from !== to && !await leaveProblem()) return;
+  try {
+    if (from !== to) await ide.renameFile(activeProblem.url, from, to);
+  } catch (error) {
+    $('file-rename-message').textContent = error.message;
+    return;
+  }
+  renameDialog.close();
+  activeProblem.files = sortFiles(activeProblem.files.map(name => name === from ? to : name));
+  // The open file is shown again under its new name.
+  if (activeProblem.file === from) await fileAction(() => showFile(to));
+  else renderFiles();
+}
+$('file-rename-ok').addEventListener('click', rename);
+$('file-rename-input').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.isComposing) rename(); });
+$('file-rename-cancel').addEventListener('click', () => renameDialog.close());
+
+const deleteDialog = $('file-delete-dialog');
+let deleting = null;
+function askDelete(name) {
+  deleting = name;
+  $('file-delete-message').textContent = `「${name}」を削除します。元に戻せません。`;
+  openDialog(deleteDialog);
+}
+$('file-delete-cancel').addEventListener('click', () => deleteDialog.close());
+$('file-delete-ok').addEventListener('click', async () => {
+  deleteDialog.close();
+  const name = deleting;
+  if (fileLocked() || !name) return;
+  // The open file is not deleted while open: another tab opens first.
+  if (name === activeProblem.file) {
+    if (!await leaveProblem()) return;
+    await fileAction(() => showFile(activeProblem.files.find(other => other !== name)));
+  }
+  await fileAction(async () => {
+    await ide.deleteFile(activeProblem.url, name);
+    activeProblem.files = activeProblem.files.filter(other => other !== name);
+    renderFiles();
+  });
+});
 
 // Native pages sit above the HTML, so they are hidden while an in-app dialog is open.
 function syncBrowser() {
@@ -604,14 +713,14 @@ async function openPendingTaskNow() {
   const task = pendingTask;
   if (!task) return;
   await fileAction(async () => {
-    const result = await ide.openTask(task.url);
+    const result = await ide.openTask(task.url, task.label);
     if (pendingTask !== task) return;
     if (!result) {
       taskMessage(`${task.label} の問題ページを読み込んでいます。表示されない場合は、右側のブラウザでログインし、開催中のコンテストは参加登録してください。`);
       return;
     }
     pendingTask = null;
-    applyWorkspace(result, { ...result.task, title: `${task.label} - ${task.title}` });
+    applyWorkspace(result, { ...result.task, label: task.label, title: `${task.label} - ${task.title}` });
     taskMessage('');
     message(`${task.label} を開きました。`);
     editor.focus();

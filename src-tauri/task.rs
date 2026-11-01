@@ -1,7 +1,9 @@
 //! A task's samples and limits read from its AtCoder page, and the workspace that holds the user's
 //! solution and samples for that task.
 use crate::files::{read_limited, write_atomic, MAX_TEXT_BYTES};
-use crate::{load_samples, save_samples, DocumentResult, DocumentStore, ProblemSample, SampleCase};
+use crate::{
+    load_samples, save_samples, solutions, DocumentResult, DocumentStore, ProblemSample, SampleCase,
+};
 use scraper::{ElementRef, Html, Node, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -74,6 +76,9 @@ pub struct Task {
 #[serde(rename_all = "camelCase")]
 pub struct TaskWorkspace {
     pub task: Task,
+    /// The file names in tab order; `file` is the open one.
+    pub files: Vec<String>,
+    pub file: String,
     pub document: DocumentResult,
     pub cases: Vec<SampleCase>,
 }
@@ -82,8 +87,20 @@ pub struct TaskWorkspace {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HomeWorkspace {
+    pub files: Vec<String>,
+    pub file: String,
     pub document: DocumentResult,
     pub cases: Vec<SampleCase>,
+}
+
+/// The name the screen and the file commands use for the home workspace.
+const HOME: &str = "home";
+
+struct Opened {
+    files: Vec<String>,
+    file: String,
+    document: DocumentResult,
+    cases: Vec<SampleCase>,
 }
 
 fn empty_case() -> SampleCase {
@@ -95,13 +112,14 @@ fn empty_case() -> SampleCase {
     }
 }
 
-/// Opens the solution and samples in a workspace directory, creating them on first use.
+/// Opens the samples and the first file of a workspace directory, creating them on first use.
 fn open_files(
     directory: &Path,
+    label: &str,
     initial_cases: Vec<SampleCase>,
     expected_document_revision: u64,
     documents: &mut DocumentStore,
-) -> Result<(DocumentResult, Vec<SampleCase>), String> {
+) -> Result<Opened, String> {
     if documents.revision() != expected_document_revision {
         return Err("読み込み中に編集中の問題が変わりました。問題を開き直してください。".into());
     }
@@ -111,9 +129,16 @@ fn open_files(
         .map_err(|e| e.to_string())?;
     create_if_missing(&case_path, &data)?;
     let cases = load_samples(&case_path)?;
-    let code_path = directory.join("solution.rb");
-    create_if_missing(&code_path, b"")?;
-    Ok((documents.open(code_path)?, cases))
+    solutions::ensure(directory, label)?;
+    let files = solutions::list(directory)?;
+    let file = files.first().ok_or("ファイルがありません。")?.clone();
+    let document = documents.open(solutions::path(directory, &file)?)?;
+    Ok(Opened {
+        files,
+        file,
+        document,
+        cases,
+    })
 }
 
 fn validate(task: &Task, key: &TaskKey) -> Result<(), String> {
@@ -321,6 +346,7 @@ impl Workspaces {
     pub fn open(
         &self,
         url: &str,
+        label: &str,
         expected_document_revision: u64,
         documents: &mut DocumentStore,
     ) -> Result<TaskWorkspace, String> {
@@ -333,16 +359,19 @@ impl Workspaces {
         } else {
             task.samples.iter().map(SampleCase::from).collect()
         };
-        let (document, cases) = open_files(
+        let opened = open_files(
             &key.workspace(&self.root),
+            label,
             initial_cases,
             expected_document_revision,
             documents,
         )?;
         Ok(TaskWorkspace {
             task,
-            document,
-            cases,
+            files: opened.files,
+            file: opened.file,
+            document: opened.document,
+            cases: opened.cases,
         })
     }
     /// Opens the home workspace, creating it with one empty, uncompared sample on first use.
@@ -351,16 +380,70 @@ impl Workspaces {
         expected_document_revision: u64,
         documents: &mut DocumentStore,
     ) -> Result<HomeWorkspace, String> {
-        let (document, cases) = open_files(
-            &self.root.join("home"),
+        let opened = open_files(
+            &self.root.join(HOME),
+            HOME,
             vec![empty_case()],
             expected_document_revision,
             documents,
         )?;
-        Ok(HomeWorkspace { document, cases })
+        Ok(HomeWorkspace {
+            files: opened.files,
+            file: opened.file,
+            document: opened.document,
+            cases: opened.cases,
+        })
+    }
+    /// The directory of a workspace: `home`, or a task URL.
+    fn directory(&self, workspace: &str) -> Result<PathBuf, String> {
+        if workspace == HOME {
+            Ok(self.root.join(HOME))
+        } else {
+            Ok(TaskKey::parse(workspace)?.workspace(&self.root))
+        }
+    }
+    pub fn files(&self, workspace: &str) -> Result<Vec<String>, String> {
+        solutions::list(&self.directory(workspace)?)
+    }
+    pub fn open_file(
+        &self,
+        workspace: &str,
+        name: &str,
+        documents: &mut DocumentStore,
+    ) -> Result<DocumentResult, String> {
+        let directory = self.directory(workspace)?;
+        if !self.files(workspace)?.iter().any(|file| file == name) {
+            return Err(format!("「{name}」がありません。"));
+        }
+        documents.open(solutions::path(&directory, name)?)
+    }
+    pub fn create_file(&self, workspace: &str, label: &str) -> Result<String, String> {
+        solutions::create(&self.directory(workspace)?, label)
+    }
+    /// Renames a file. The open file keeps being the open one under its new name.
+    pub fn rename_file(
+        &self,
+        workspace: &str,
+        from: &str,
+        to: &str,
+        documents: &mut DocumentStore,
+    ) -> Result<(), String> {
+        let (old, new) = solutions::rename(&self.directory(workspace)?, from, to)?;
+        if documents.path() == Some(old.as_path()) {
+            documents.open(new)?;
+        }
+        Ok(())
+    }
+    pub fn delete_file(
+        &self,
+        workspace: &str,
+        name: &str,
+        documents: &DocumentStore,
+    ) -> Result<(), String> {
+        solutions::delete(&self.directory(workspace)?, name, documents.path())
     }
     pub fn save_home_cases(&self, cases: Vec<SampleCase>) -> Result<(), String> {
-        let home = self.root.join("home");
+        let home = self.root.join(HOME);
         if !home.is_dir() {
             return Err("ホームを開いてからサンプルを保存してください。".into());
         }

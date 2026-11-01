@@ -28,9 +28,11 @@ async function seedProblem(app, contest, id, { code = sampleCode, cases = sample
   await mkdir(workspace, { recursive: true });
   if (task) await writeFile(path.join(workspace, 'task.json'), JSON.stringify({ url, ...task }));
   if (page) app.atcoder.pages.set(`/contests/${contest}/tasks/${id}`, taskPage(page));
-  if (code !== null) await writeFile(path.join(workspace, 'solution.rb'), code);
+  // The first tab: files/<label>_1.rb, as the app names files.
+  const solution = path.join(workspace, 'files', `${label}_1.rb`);
+  if (code !== null) { await mkdir(path.dirname(solution), { recursive: true }); await writeFile(solution, code); }
   if (cases !== null) await writeFile(path.join(workspace, 'cases.json'), JSON.stringify({ cases }));
-  return { url, contest, id, label, title: `${label} - ${title}`, workspace, solution: path.join(workspace, 'solution.rb'), cases: path.join(workspace, 'cases.json') };
+  return { url, contest, id, label, title: `${label} - ${title}`, workspace, solution, cases: path.join(workspace, 'cases.json') };
 }
 
 // Registers the problem's contest with its task URL, which also opens the task.

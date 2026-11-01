@@ -162,9 +162,15 @@ fn main() {
                 if workspaces.task(url)?.is_none() {
                     return Ok(Value::Null);
                 }
+                let label = args["label"].as_str().ok_or("ラベルを指定してください")?;
                 let mut documents = documents.lock().unwrap();
                 let revision = documents.revision();
-                Ok(json!(workspaces.open(url, revision, &mut documents)?))
+                Ok(json!(workspaces.open(
+                    url,
+                    label,
+                    revision,
+                    &mut documents
+                )?))
             }
             "task_save_cases" => {
                 workspaces.save_cases(
@@ -183,6 +189,32 @@ fn main() {
                     serde_json::from_value(args["cases"].clone()).map_err(|e| e.to_string())?,
                 )?;
                 Ok(Value::Null)
+            }
+            "file_open" | "file_create" | "file_rename" | "file_delete" => {
+                let text = |key: &str| args[key].as_str().ok_or(format!("{key}を指定してください"));
+                let workspace = text("workspace")?;
+                let mut documents = documents.lock().unwrap();
+                match request.command.as_str() {
+                    "file_open" => Ok(json!(workspaces.open_file(
+                        workspace,
+                        text("name")?,
+                        &mut documents
+                    )?)),
+                    "file_create" => Ok(json!(workspaces.create_file(workspace, text("label")?)?)),
+                    "file_rename" => {
+                        workspaces.rename_file(
+                            workspace,
+                            text("from")?,
+                            text("to")?,
+                            &mut documents,
+                        )?;
+                        Ok(Value::Null)
+                    }
+                    _ => {
+                        workspaces.delete_file(workspace, text("name")?, &documents)?;
+                        Ok(Value::Null)
+                    }
+                }
             }
             "browser_task" => {
                 let url = args["url"].as_str().ok_or("URLを指定してください")?;

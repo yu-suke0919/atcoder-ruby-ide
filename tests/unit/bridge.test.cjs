@@ -74,5 +74,17 @@ test('M03: the bridge only saves into the opened workspace and has no external f
   await ide.saveCode('puts 1');
   await ide.resetSession();
   assert.deepEqual(calls, [{ command: 'document_save', args: { code: 'puts 1' } }, { command: 'session_reset', args: undefined }]);
-  for (const name of ['openFile', 'saveFile', 'newFile', 'openCases', 'saveCases', 'confirmDiscard']) assert.equal(ide[name], undefined, name);
+  for (const name of ['saveFile', 'newFile', 'openCases', 'saveCases', 'confirmDiscard']) assert.equal(ide[name], undefined, name);
+  // Files are tabs of a workspace: the commands name the workspace and the tab, never a path.
+  calls.length = 0;
+  await ide.openFile('home', 'home_1');
+  await ide.createFile('https://atcoder.jp/contests/abc430/tasks/abc430_a', 'A');
+  await ide.renameFile('home', 'home_1', 'main');
+  await ide.deleteFile('home', 'home_2');
+  assert.deepEqual(calls, [
+    { command: 'file_open', args: { workspace: 'home', name: 'home_1' } },
+    { command: 'file_create', args: { workspace: 'https://atcoder.jp/contests/abc430/tasks/abc430_a', label: 'A' } },
+    { command: 'file_rename', args: { workspace: 'home', from: 'home_1', to: 'main' } },
+    { command: 'file_delete', args: { workspace: 'home', name: 'home_2' } }
+  ]);
 });
