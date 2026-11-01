@@ -232,24 +232,38 @@ fn tolerant_runner_returns_one_verdict_with_independent_difference_columns() {
 }
 
 #[test]
-fn optional_tolerance_preserves_old_cases_and_rejects_invalid_saved_values() {
-    use atcoder_ruby_ide::{load_samples, save_samples};
+fn the_problem_tolerance_is_optional_and_invalid_saved_values_are_rejected() {
+    use atcoder_ruby_ide::{load_samples, save_samples, SampleCase, Samples};
     let root = tempfile::tempdir().unwrap();
-    let file = root.path().join("cases.json");
-    let original = include_bytes!("fixtures/cases-without-tolerance.json");
-    std::fs::write(&file, original).unwrap();
-    let mut cases = load_samples(&file).unwrap();
-    assert_eq!(cases[0].tolerance, None);
-    assert_eq!(cases[0].stdin, "保存済み\r\n");
-    assert_eq!(std::fs::read(&file).unwrap(), original);
-    cases[0].tolerance = Some(1e-6);
-    cases[1].tolerance = Some(1e-9);
-    save_samples(cases.clone(), &file).unwrap();
-    assert_eq!(load_samples(&file).unwrap(), cases);
+    let file = root.path().join("samples.json");
+    let cases = vec![SampleCase {
+        stdin: "保存済み\r\n".into(),
+        expected_output: "1.000001\n".into(),
+        compare: true,
+    }];
+    let strict = Samples {
+        tolerance: None,
+        cases: cases.clone(),
+    };
+    save_samples(strict.clone(), &file).unwrap();
+    // A problem without a tolerance compares strictly and saves no tolerance at all.
+    assert!(!std::fs::read_to_string(&file)
+        .unwrap()
+        .contains("tolerance"));
+    assert_eq!(load_samples(&file).unwrap(), strict);
+    let tolerant = Samples {
+        tolerance: Some(1e-6),
+        cases,
+    };
+    save_samples(tolerant.clone(), &file).unwrap();
+    assert_eq!(load_samples(&file).unwrap(), tolerant);
     let saved = std::fs::read(&file).unwrap();
     for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY] {
-        cases[0].tolerance = Some(invalid);
-        assert!(save_samples(cases.clone(), &file).is_err());
+        let samples = Samples {
+            tolerance: Some(invalid),
+            ..tolerant.clone()
+        };
+        assert!(save_samples(samples, &file).is_err());
         assert_eq!(std::fs::read(&file).unwrap(), saved);
     }
     for invalid in [
@@ -258,50 +272,60 @@ fn optional_tolerance_preserves_old_cases_and_rejects_invalid_saved_values() {
         serde_json::json!("1e-6"),
         serde_json::json!(true),
     ] {
-        let mut data: serde_json::Value = serde_json::from_slice(original).unwrap();
-        data["cases"][0]["tolerance"] = invalid;
+        let mut data: serde_json::Value = serde_json::from_slice(&saved).unwrap();
+        data["tolerance"] = invalid;
         std::fs::write(&file, serde_json::to_vec(&data).unwrap()).unwrap();
         assert!(load_samples(&file).is_err());
     }
+    // A tolerance per sample was the old format; it is converted, not read as current.
+    std::fs::write(
+        &file,
+        r#"{"cases":[{"stdin":"","expectedOutput":"","compare":true,"tolerance":1e-6}]}"#,
+    )
+    .unwrap();
+    assert!(load_samples(&file).is_err());
 }
 
 #[test]
-fn m14_workspace_cases_roundtrip_and_failed_writes_preserve_files() {
-    use atcoder_ruby_ide::{load_samples, save_samples, SampleCase};
+fn m14_workspace_samples_roundtrip_and_failed_writes_preserve_files() {
+    use atcoder_ruby_ide::{load_samples, save_samples, SampleCase, Samples};
     let root = tempfile::tempdir().unwrap();
-    let file = root.path().join("cases.json");
-    let cases = || {
-        vec![
+    let file = root.path().join("samples.json");
+    let samples = || Samples {
+        tolerance: Some(1e-9),
+        cases: vec![
             SampleCase {
-                tolerance: None,
                 stdin: "日本語\r\n".into(),
                 expected_output: "".into(),
                 compare: true,
             },
             SampleCase {
-                tolerance: None,
                 stdin: "two".into(),
                 expected_output: "ignored".into(),
                 compare: false,
             },
-        ]
+        ],
     };
-    save_samples(cases(), &file).unwrap();
-    assert_eq!(load_samples(&file).unwrap(), cases());
+    save_samples(samples(), &file).unwrap();
+    assert_eq!(load_samples(&file).unwrap(), samples());
     let original = std::fs::read(&file).unwrap();
-    assert!(save_samples(vec![], &file).is_err());
+    let empty = Samples {
+        tolerance: None,
+        cases: vec![],
+    };
+    assert!(save_samples(empty, &file).is_err());
     assert_eq!(std::fs::read(&file).unwrap(), original);
     let protected = root.path().join("directory.json");
     std::fs::create_dir(&protected).unwrap();
     std::fs::write(protected.join("keep"), "preserved").unwrap();
-    assert!(save_samples(cases(), &protected).is_err());
+    assert!(save_samples(samples(), &protected).is_err());
     assert_eq!(
         std::fs::read_to_string(protected.join("keep")).unwrap(),
         "preserved"
     );
     assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
-    save_samples(cases(), &file).unwrap();
-    assert_eq!(load_samples(&file).unwrap(), cases());
+    save_samples(samples(), &file).unwrap();
+    assert_eq!(load_samples(&file).unwrap(), samples());
 }
 
 #[test]
@@ -326,7 +350,7 @@ fn m14_sample_json_rejects_invalid_types_counts_and_utf8_byte_limits() {
         "\u{feff}{\"cases\":[{\"stdin\":\"\",\"expectedOutput\":\"\",\"compare\":true}]}",
     )
     .unwrap();
-    assert_eq!(load_samples(&file).unwrap().len(), 1);
+    assert_eq!(load_samples(&file).unwrap().cases.len(), 1);
 }
 
 fn ruby() -> PathBuf {

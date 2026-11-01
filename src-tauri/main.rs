@@ -4,7 +4,7 @@ mod browser;
 
 use atcoder_ruby_ide::{
     fetch_page, http_client, Contest, Contests, DocumentResult, DocumentStore, HomeWorkspace,
-    LspInfo, RegisteredContest, RubyInfo, RubyLsp, RunEvent, RunRequest, Runner, SampleCase,
+    LspInfo, RegisteredContest, RubyInfo, RubyLsp, RunEvent, RunRequest, Runner, Samples,
     TaskWorkspace, Workspaces,
 };
 use browser::Browser;
@@ -233,14 +233,15 @@ async fn task_open(
     .map_err(|e| e.to_string())?
 }
 
+/// Saves a workspace's samples: `home` or a task URL.
 #[tauri::command]
-async fn task_save_cases(
+async fn samples_save(
     app: tauri::AppHandle,
-    url: String,
-    cases: Vec<SampleCase>,
+    workspace: String,
+    samples: Samples,
 ) -> Result<(), String> {
     let workspaces = Workspaces::new(data_dir(&app)?);
-    tauri::async_runtime::spawn_blocking(move || workspaces.save_cases(&url, cases))
+    tauri::async_runtime::spawn_blocking(move || workspaces.save_samples(&workspace, samples))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -258,14 +259,6 @@ async fn home_open(
     })
     .await
     .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn home_save_cases(app: tauri::AppHandle, cases: Vec<SampleCase>) -> Result<(), String> {
-    let workspaces = Workspaces::new(data_dir(&app)?);
-    tauri::async_runtime::spawn_blocking(move || workspaces.save_home_cases(cases))
-        .await
-        .map_err(|e| e.to_string())?
 }
 
 /// File commands take the workspace: `home` or a task URL.
@@ -375,9 +368,8 @@ fn main() {
             contest_register,
             contest_set_hidden,
             task_open,
-            task_save_cases,
+            samples_save,
             home_open,
-            home_save_cases,
             file_open,
             file_create,
             file_rename,

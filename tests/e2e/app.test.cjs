@@ -70,25 +70,37 @@ async function runAndWait(label = '正常終了') {
   await page.getByTestId('run-status').filter({ hasText: label }).waitFor();
 }
 
+// Measures with standard error unfolded, the tallest state of the output panel.
 async function assertWorkspaceFits() {
-  const layout = await page.evaluate(() => ({
-    outputBottom: document.querySelector('.output-panel').getBoundingClientRect().bottom,
-    toolbarTop: document.querySelector('.run-toolbar').getBoundingClientRect().top,
-    summaryBottom: document.querySelector('.run-summary').getBoundingClientRect().bottom,
-    stdoutHeight: document.querySelector('#stdout').getBoundingClientRect().height,
-    stderrHeight: document.querySelector('#stderr').getBoundingClientRect().height,
-    inputHeight: document.querySelector('#stdin').getBoundingClientRect().height,
-    expectedHeight: document.querySelector('#expected-output').getBoundingClientRect().height,
-    comparisonBottom: document.querySelector('#comparison-status').getBoundingClientRect().bottom,
-    textAreas: ['stdin', 'expected-output', 'stdout', 'stderr'].map((id) => {
-      const element = document.getElementById(id);
-      const style = getComputedStyle(element);
-      return { id, contentHeight: element.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom), lineHeight: parseFloat(style.lineHeight) };
-    }),
-    viewportHeight: innerHeight
-  }));
+  const layout = await page.evaluate(() => {
+    const panel = document.getElementById('stderr-panel');
+    const wasOpen = panel.open;
+    panel.open = true;
+    const rect = selector => document.querySelector(selector).getBoundingClientRect();
+    const measured = {
+      outputBottom: rect('.output-panel').bottom,
+      statusTop: rect('.statusbar').top,
+      area: rect('.editor-area').toJSON(),
+      actions: rect('.run-actions').toJSON(),
+      summaryBottom: rect('.run-summary').bottom,
+      stdoutHeight: rect('#stdout').height,
+      stderrHeight: rect('#stderr').height,
+      inputHeight: rect('#stdin').height,
+      expectedHeight: rect('#expected-output').height,
+      comparisonBottom: rect('#comparison-status').bottom,
+      textAreas: ['stdin', 'expected-output', 'stdout', 'stderr'].map((id) => {
+        const element = document.getElementById(id);
+        const style = getComputedStyle(element);
+        return { id, contentHeight: element.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom), lineHeight: parseFloat(style.lineHeight) };
+      })
+    };
+    panel.open = wasOpen;
+    return measured;
+  });
   const details = JSON.stringify(layout);
-  assert.ok(layout.outputBottom <= layout.toolbarTop, `output must not overlap run controls: ${details}`);
+  const { area, actions } = layout;
+  assert.ok(actions.top >= area.top && actions.bottom <= area.bottom && actions.left >= area.left && actions.right <= area.right, `run controls must float inside the code area: ${details}`);
+  assert.ok(layout.outputBottom <= layout.statusTop, `output must stay above the status bar: ${details}`);
   assert.ok(layout.summaryBottom <= layout.outputBottom, `run summary must remain visible: ${details}`);
   assert.ok(layout.stdoutHeight > 12 && layout.stderrHeight > 12 && layout.inputHeight > 12 && layout.expectedHeight > 12, `text areas must remain usable: ${details}`);
   assert.ok(layout.comparisonBottom <= layout.outputBottom, `comparison must remain visible: ${details}`);
@@ -467,14 +479,14 @@ test('M08: a local memory-limit result is distinct and the batch continues', asy
   await page.locator('#run-all').click();
   await page.getByTestId('cases-summary').filter({ hasText: '完了 2 / 2' }).waitFor({ timeout: 15000 });
   assert.match(await page.getByTestId('cases-summary').textContent(), /エラー 1/);
-  await page.locator('#case-select').selectOption('0');
+  await selectCase(1);
   assert.equal(await page.getByTestId('run-status').textContent(), 'ローカルのメモリ上限で停止（1 GiB）');
   assert.equal(await page.getByTestId('comparison-status').textContent(), '判定なし');
   assert.equal(await page.locator('#error-location').isHidden(), true);
   await page.setViewportSize({ width: 1280, height: 720 });
   await assertWorkspaceFits();
   assert.equal(await page.locator('#run').isEnabled(), true);
-  await page.locator('#case-select').selectOption('1');
+  await selectCase(2);
   assert.match(await page.getByTestId('run-status').textContent(), /正常終了/);
   assert.equal(await page.getByTestId('comparison-status').textContent(), '一致');
   await page.locator('#run').click();
@@ -709,8 +721,9 @@ test('M07/M12: each run uses a fresh temporary directory with the configured Rub
   await assert.rejects(access(path.join(starterProblem.workspace, '入力.json')), { code: 'ENOENT' });
 });
 
+// Sample tabs are numbered from 1.
 async function selectCase(number) {
-  await page.getByLabel('サンプルケース', { exact: true }).selectOption(String(number - 1));
+  await page.locator('#case-tabs [role="tab"]').nth(number - 1).click();
 }
 async function resetCases() {
   while (await page.getByLabel('サンプルケース', { exact: true }).locator('option').count() > 1) {
@@ -1004,7 +1017,7 @@ test('P12: optional problem limits and per-case time warnings work offline at bo
   await page.locator('#cases-summary').filter({ hasText: /完了 2 \/ 2.*一致 2/ }).waitFor();
   assert.equal(await page.locator('#time-limit-warning').isVisible(), false);
   assert.match(await page.locator('#cases-summary').textContent(), /制限超過の可能性 1/);
-  assert.match(await page.locator('#case-select option').nth(1).textContent(), /制限超過の可能性/);
+  assert.match(await page.locator('#case-tabs [role="tab"]').nth(1).getAttribute('title'), /制限超過の可能性/);
   await selectCase(2);
   assert.equal(await page.locator('#time-limit-warning').textContent(), '制限超過の可能性（問題の制限 1 秒）');
   assert.equal(await page.locator('#time-limit-warning').isVisible(), true);
@@ -1059,7 +1072,7 @@ test('P14: long problem runs receive their budget before output and keep per-cas
   assert.equal(await page.locator('#run-status').textContent(), '時間制限で停止（30 秒）');
   assert.equal(await page.locator('#execution-limit').textContent(), '実行時上限 30 秒');
   assert.equal(await page.locator('#comparison-status').textContent(), '判定なし');
-  assert.match(await page.locator('#case-select option').nth(1).textContent(), /30 秒/);
+  assert.match(await page.locator('#case-tabs [role="tab"]').nth(1).getAttribute('title'), /30 秒/);
   for (const [width, height] of [[1440, 900], [1280, 720]]) {
     await page.setViewportSize({ width, height });
     await assertWorkspaceFits();
@@ -1248,7 +1261,7 @@ async function workspaceStillOpen() {
   assert.equal(await page.locator('#stdout').textContent(), '6 test\n');
 }
 
-test('T01: tolerant comparison keeps exact whitespace, separate columns and saved per-case settings', async () => {
+test('T01: the problem tolerance keeps exact whitespace and separate columns and is saved once for the problem', async () => {
   await openStarter({ task: 'tolerance', cases: [{ stdin: '1 2\n', expectedOutput: '3\n', compare: true }, { stdin: '10 20\n', expectedOutput: '30\n', compare: true }] });
   assert.equal(await page.locator('#tolerant-compare').count(), 1);
   assert.equal(await page.locator('#tolerant-compare').isChecked(), false);
@@ -1275,12 +1288,13 @@ test('T01: tolerant comparison keeps exact whitespace, separate columns and save
   await page.locator('#tolerance').fill('1e-9');
   await waitSaved();
   const saved = JSON.parse(await readFile(starterProblem.cases, 'utf8'));
-  assert.equal(saved.cases[0].tolerance, 1e-9);
-  assert.equal(saved.cases[1].tolerance, undefined);
+  assert.equal(saved.tolerance, 1e-9);
+  assert.ok(saved.cases.every(item => !('tolerance' in item)));
+  // Every sample of the problem shares the tolerance.
   await selectCase(2);
-  assert.equal(await page.locator('#tolerant-compare').isChecked(), false);
-  await selectCase(1);
+  assert.equal(await page.locator('#tolerant-compare').isChecked(), true);
   assert.equal(Number(await page.locator('#tolerance').inputValue()), 1e-9);
+  await selectCase(1);
   await runAndWait();
   for (const [width, height] of [[1440, 900], [1280, 720]]) {
     await page.setViewportSize({ width, height });
@@ -1295,37 +1309,40 @@ test('T01: tolerant comparison keeps exact whitespace, separate columns and save
   assert.equal(await page.locator('#comparison-status').textContent(), '未比較');
 });
 
-test('T02: mixed strict and tolerant cases are restored and invalid input is never saved as strict', async () => {
-  const data = { cases: [
-    { stdin: '1.0000001', expectedOutput: '1', compare: true, tolerance: 1e-6 },
+test('T02: the problem tolerance applies to every compared sample, is restored and invalid input is never saved as strict', async () => {
+  const data = { tolerance: 1e-6, cases: [
     { stdin: '1.0000001', expectedOutput: '1', compare: true },
+    { stdin: '1.0000001', expectedOutput: '1', compare: true },
+    { stdin: '1.0000001', expectedOutput: '1', compare: false },
   ] };
-  await openStarter({ task: 'tolerance_mixed', code: 'print STDIN.read', cases: data.cases });
+  await openStarter({ task: 'tolerance_problem', code: 'print STDIN.read', cases: data.cases, tolerance: data.tolerance });
+  assert.equal(await page.locator('#tolerant-compare').isChecked(), true);
   await page.locator('#run-all').click();
-  await page.locator('#cases-summary').filter({ hasText: /完了 2 \/ 2.*一致 1.*不一致 1/ }).waitFor();
-  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
-  await selectCase(2);
-  assert.equal(await page.locator('#comparison-status').textContent(), '不一致');
-  assert.equal(await page.locator('#tolerant-compare').isChecked(), false);
-  await selectCase(1);
+  await page.locator('#cases-summary').filter({ hasText: /完了 3 \/ 3.*一致 2.*不一致 0/ }).waitFor();
+  assert.deepEqual(await page.locator('#case-tabs [role="tab"]').evaluateAll(tabs => tabs.map(tab => tab.dataset.state)), ['matched', 'matched', 'none']);
+  // The tolerance stays usable on a sample that is not compared, since it belongs to the problem.
+  await selectCase(3);
+  assert.equal(await page.locator('#tolerance').isEnabled(), true);
   await page.locator('#tolerance').fill('');
   await waitSaveFailed();
   assert.match(await page.locator('#save-state').getAttribute('title'), /許容誤差/);
   assert.deepEqual(JSON.parse(await readFile(starterProblem.cases, 'utf8')), data);
-  assert.equal(await page.locator('#tolerant-compare').isChecked(), true);
-  assert.equal(await page.locator('#tolerance').inputValue(), '');
-  await page.locator('#tolerance').fill('1e-6');
-  await page.locator('#compare-output').uncheck();
-  assert.equal(await page.locator('#tolerance').isDisabled(), true);
+  await page.locator('#tolerance').fill('1e-8');
   await waitSaved();
-  assert.equal(JSON.parse(await readFile(starterProblem.cases, 'utf8')).cases[0].tolerance, 1e-6);
+  assert.equal(JSON.parse(await readFile(starterProblem.cases, 'utf8')).tolerance, 1e-8);
+  // A changed tolerance invalidates every sample.
+  assert.deepEqual(await page.locator('#case-tabs [role="tab"]').evaluateAll(tabs => tabs.map(tab => tab.dataset.state)), ['pending', 'pending', 'none']);
+  await page.locator('#run-all').click();
+  await page.locator('#cases-summary').filter({ hasText: /完了 3 \/ 3.*一致 0.*不一致 2/ }).waitFor();
+  await page.locator('#tolerant-compare').uncheck();
+  await waitSaved();
+  assert.equal('tolerance' in JSON.parse(await readFile(starterProblem.cases, 'utf8')), false);
+  await page.locator('#tolerant-compare').check();
+  await page.locator('#tolerance').fill('1e-6');
+  await waitSaved();
   await openProblem(page, starterProblem);
   assert.equal(await page.locator('#tolerant-compare').isChecked(), true);
-  assert.equal(await page.locator('#tolerance').isDisabled(), true);
-  await page.locator('#compare-output').check();
-  assert.equal(await page.locator('#tolerance').isEnabled(), true);
-  await runAndWait();
-  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
+  assert.equal(Number(await page.locator('#tolerance').inputValue()), 1e-6);
 });
 test('M06/M09: accepting close stops Ruby descendants and exits', async () => {
   const marker = path.join(root, 'orphan.txt').replaceAll('\\', '/');

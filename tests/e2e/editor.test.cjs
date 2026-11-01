@@ -46,7 +46,7 @@ test('E01: Ruby highlighting, line numbers and search fit the minimum viewport',
     await page.setViewportSize({ width, height });
     await code().press('Control+Home');
     await page.getByRole('button', { name: '検索・置換', exact: true }).click();
-    const layout = await page.locator('.cm-scroller').evaluate(el => ({ scroll: el.scrollHeight > el.clientHeight, horizontal: el.scrollWidth > el.clientWidth, height: el.clientHeight, bottom: el.closest('.editor-panel').getBoundingClientRect().bottom, toolbar: document.querySelector('.run-toolbar').getBoundingClientRect().top, width: document.documentElement.scrollWidth }));
+    const layout = await page.locator('.cm-scroller').evaluate(el => ({ scroll: el.scrollHeight > el.clientHeight, horizontal: el.scrollWidth > el.clientWidth, height: el.clientHeight, bottom: el.closest('.editor-panel').getBoundingClientRect().bottom, toolbar: document.querySelector('.io-row').getBoundingClientRect().top, width: document.documentElement.scrollWidth }));
     assert.ok(layout.scroll && layout.horizontal && layout.height >= 24 && layout.bottom <= layout.toolbar && layout.width <= width, JSON.stringify(layout));
     await mkdir('test-results', { recursive: true });
     await page.screenshot({ path: `test-results/ruby-editor-${width}.png` });
@@ -551,17 +551,17 @@ test('E12: each case keeps its error location and input edits invalidate only th
   await page.locator('#compare-output').uncheck();
   await page.locator('#run-all').click(); await page.waitForFunction(() => !document.getElementById('run-all').disabled);
   await page.getByRole('button', { name: 'コードの5行目へ', exact: true }).click();
-  await page.locator('#case-select').selectOption('0');
+  await page.locator('#case-tabs [role="tab"]').nth(0).click();
   await page.getByRole('button', { name: 'コードの3行目へ', exact: true }).click();
   assert.equal(await page.locator('#cursor-position').textContent(), 'Ln 3, Col 1');
   await page.locator('#stdin').fill('edited');
   assert.equal(await page.locator('#error-location').isVisible(), false);
   assert.equal(await page.locator('.cm-run-error-line').count(), 0);
-  await page.locator('#case-select').selectOption('1');
+  await page.locator('#case-tabs [role="tab"]').nth(1).click();
   await page.getByRole('button', { name: 'コードの5行目へ', exact: true }).waitFor();
   await code().press('Control+Home'); await page.keyboard.insertText('# edited\n');
   for (const index of ['0', '1']) {
-    await page.locator('#case-select').selectOption(index);
+    await page.locator('#case-tabs [role="tab"]').nth(Number(index)).click();
     assert.equal(await page.locator('#error-location').isVisible(), false);
   }
 });
@@ -585,12 +585,12 @@ test('E13: library callers navigate, warnings and unrelated backtraces do not, a
 test('E14: editing during a batch run prevents late errors from restoring old locations', async () => {
   await code().fill("puts 'started'\nsleep 0.4\nraise 'late'\n");
   await page.locator('#case-add').click();
-  await page.locator('#case-select').selectOption('0');
+  await page.locator('#case-tabs [role="tab"]').nth(0).click();
   await page.locator('#run-all').click(); await page.locator('#stdout').filter({ hasText: 'started' }).waitFor();
   await code().press('Control+Home'); await page.keyboard.insertText('# edited\n');
   await page.waitForFunction(() => !document.getElementById('run-all').disabled);
   for (const index of ['0', '1']) {
-    await page.locator('#case-select').selectOption(index);
+    await page.locator('#case-tabs [role="tab"]').nth(Number(index)).click();
     assert.match(await page.locator('#stderr').textContent(), /late/);
     assert.equal(await page.locator('#error-location').isVisible(), false);
     assert.equal(await page.locator('.cm-run-error-line').count(), 0);

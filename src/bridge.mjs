@@ -18,14 +18,11 @@ export const ide = {
   createFile: (workspace, label) => invoke('file_create', { workspace, label }),
   renameFile: (workspace, from, to) => invoke('file_rename', { workspace, from, to }),
   deleteFile: (workspace, name) => invoke('file_delete', { workspace, name }),
-  saveTaskCases: (url, cases) => {
-    cases.forEach(item => validateTolerance(item.tolerance ?? null));
-    return invoke('task_save_cases', { url, cases });
-  },
   openHome: () => invoke('home_open'),
-  saveHomeCases: cases => {
-    cases.forEach(item => validateTolerance(item.tolerance ?? null));
-    return invoke('home_save_cases', { cases });
+  // Saves a workspace's samples: `home` or a task URL, with the problem's tolerance.
+  saveSamples: (workspace, samples) => {
+    validateTolerance(samples.tolerance ?? null);
+    return invoke('samples_save', { workspace, samples });
   },
   browserLayout: (x, y, width, height) => invoke('browser_layout', { x, y, width, height }),
   browserVisible: visible => invoke('browser_visible', { visible }),

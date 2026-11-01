@@ -42,7 +42,7 @@
 
 ## UI・IPC
 
-- `OutputDifference` は `Clone`・serde::SerializeとcamelCaseに対応し、RunResult.differenceでactualLine・expectedLine・expectedColumnを送る。差分は保存データではないため、`task.json`・`cases.json`の形式には影響しない。
+- `OutputDifference` は `Clone`・serde::SerializeとcamelCaseに対応し、RunResult.differenceでactualLine・expectedLine・expectedColumnを送る。差分は保存データではないため、`task.json`・`samples.json`の形式には影響しない。
 - Runner は正常終了・比較有効のときだけ `first_difference` を 1 回呼び、その結果から `comparison` も導く。比較無効・エラー・停止時は両方 null、一致時は `comparison: true`・`difference: null` とする。
 - 結果欄の「不一致」を押すと詳細ダイアログを表示する。1始まりの行・列、期待値・実際値を示し、それぞれの列で強調する。列が同じなら従来の見出し、違うなら両側の列を表示する。
 - 半角空白は `␠`、全角空白は `□`、タブは `⇥` として表示する。空行・行なし・行末はそれぞれ `（空行）`・`（行なし）`・`（行末）` と明記する。
@@ -50,7 +50,7 @@
 - Unicode スカラー値で位置を合わせ、表示は差の前後最大 40 文字に絞る。省略部分を `…` とし、長い 1 行でも全体を DOM に展開しない。本文は HTML として解釈しない。
 - ダイアログは閉じるボタンまたは Escape で閉じる。1280×720 と大きな行高でも本文をスクロールでき、背後の入力・結果・実行ボタンのレイアウトを変えない。
 - 詳細はサンプル別に保持する。サンプルの編集・比較設定・クリアではそのサンプル、コード・実行するファイル・許容誤差の変更では全サンプルを無効にする。新しい実行でも古い詳細を消し、リビジョンが違う結果では復活させない。
-- 自動保存では判定と詳細を保持する。詳細は`cases.json`に保存しない。
+- 自動保存では判定と詳細を保持する。詳細は`samples.json`に保存しない。
 
 ## UI・IPC の受入条件
 

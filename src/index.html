@@ -28,7 +28,10 @@
     <main class="workspace">
       <section class="panel editor-panel" aria-labelledby="editor-heading">
         <div class="panel-heading"><div class="panel-label file-label"><h3 id="editor-heading" class="sr-only">コード</h3><div id="file-tabs" class="file-tabs" role="tablist" aria-label="ファイル"></div><button id="file-add" class="quiet-button file-add" title="ファイルを追加" aria-label="ファイルを追加">＋</button></div><span class="save-status"><span id="save-state" data-testid="save-state" data-state="none" class="subtle" role="status">問題を開いてください</span><button id="save-retry" class="quiet-button" title="Ctrl+S" hidden>保存を再試行</button></span></div>
-        <div id="editor-host" class="editor-container"></div>
+        <div class="editor-area">
+          <div id="editor-host" class="editor-container"></div>
+          <div class="run-actions" role="group" aria-label="実行"><button id="stop" class="stop-button" disabled><span aria-hidden="true">■</span> 停止</button><button id="run-all" class="stop-button">全件実行</button><button id="run" class="run-button"><span aria-hidden="true">&#9654;&#65038;</span> 実行</button></div>
+        </div>
         <div class="completion-state"><span id="completion-state" data-state="idle" role="status" aria-live="polite">補完は初回利用時に準備します</span><button id="completion-retry" class="quiet-button" hidden>再試行</button></div>
         <div class="editor-footer"><span id="file-path" title="問題を開いてください">問題を開いてください</span><button id="editor-complete" class="quiet-button" title="Ctrl+Space">補完</button><button id="editor-search" class="quiet-button" title="Ctrl+F / Ctrl+H">検索・置換</button><span id="cursor-position">Ln 1, Col 1</span></div>
       </section>
@@ -36,7 +39,7 @@
       <div class="io-row">
         <section class="panel input-panel" aria-labelledby="input-heading">
           <div class="panel-heading"><div class="panel-label"><h3 id="input-heading">サンプル</h3><span id="case-count" class="subtle">1 ケース</span></div><span id="problem-limits" class="subtle" aria-label="問題の制限"></span></div>
-          <div class="case-toolbar"><select id="case-select" aria-label="サンプルケース"></select><button id="case-add">ケース追加</button><button id="case-remove">ケース削除</button></div>
+          <div class="case-toolbar"><div id="case-tabs" class="case-tabs" role="tablist" aria-label="サンプル"></div><button id="case-add" class="quiet-button" title="サンプルを追加" aria-label="ケース追加">＋</button><button id="case-remove" class="quiet-button" title="選んでいるサンプルを削除" aria-label="ケース削除">削除</button></div>
           <div class="sample-fields">
             <div class="sample-field">
               <label for="stdin">標準入力</label>
@@ -60,12 +63,13 @@
           <div id="cases-summary" data-testid="cases-summary" class="cases-summary" role="status"></div>
           <div class="output-heading"><span><span class="output-dot stdout-dot"></span>標準出力</span><span>stdout</span></div>
           <pre id="stdout" data-testid="stdout" aria-label="標準出力" tabindex="0"></pre>
-          <div class="output-heading error-heading"><span><span class="output-dot stderr-dot"></span>標準エラー</span><button id="error-location" class="comparison-button" hidden></button><span>stderr</span></div>
-          <pre id="stderr" data-testid="stderr" aria-label="標準エラー" tabindex="0"></pre>
-          <div class="run-summary" role="status"><span id="run-status" data-testid="run-status">実行する準備ができています</span><button id="comparison-status" data-testid="comparison-status" class="comparison-button" data-state="none" disabled>比較なし</button><span id="run-duration">— ms</span><span id="time-limit-warning" title="実測時間にはRubyの起動・入出力処理が含まれます。AtCoderの判定とは異なる場合があります。" hidden></span></div>
+          <details id="stderr-panel" class="stderr-panel">
+            <summary class="output-heading error-heading"><span><span class="output-dot stderr-dot"></span>標準エラー<span id="stderr-count" class="subtle"></span></span><span>stderr</span></summary>
+            <pre id="stderr" data-testid="stderr" aria-label="標準エラー" tabindex="0"></pre>
+          </details>
+          <div class="run-summary" role="status"><span id="run-status" data-testid="run-status">実行する準備ができています</span><button id="error-location" class="comparison-button" hidden></button><button id="comparison-status" data-testid="comparison-status" class="comparison-button" data-state="none" disabled>比較なし</button><span id="run-duration">— ms</span><span id="time-limit-warning" title="実測時間にはRubyの起動・入出力処理が含まれます。AtCoderの判定とは異なる場合があります。" hidden></span></div>
         </section>
       </div>
-    <div class="run-toolbar"><div id="message" role="status">ヒント：Ctrl + Enter でも実行できます。</div><div class="run-actions"><button id="stop" class="stop-button" disabled><span aria-hidden="true">■</span> 停止</button><button id="run-all" class="stop-button">全件実行</button><button id="run" class="run-button"><span aria-hidden="true">&#9654;&#65038;</span> 実行</button></div></div>
     </main>
     <div class="splitter" data-split="browser" role="separator" aria-orientation="vertical" aria-label="エディタとブラウザの境目" title="ドラッグで幅を変更、ダブルクリックで元に戻す"></div>
     <section class="browser-column" aria-label="AtCoder のページ">
@@ -74,7 +78,7 @@
       <div id="browser-host" class="browser-host"><p>AtCoder のページを表示します。ログイン・参加登録・提出はここで行います。</p></div>
     </section>
   </div>
-  <footer class="statusbar"><span><span class="status-dot"></span>ローカル実行</span><span title="Windowsのメモリ上限はRubyと子孫の合計コミット量です。問題ページのメモリ制限値とは異なります。Linuxにはメモリ上限を設定しません。"><span id="execution-limit" title="選択ケースの実行時の打ち切り時間です。制限既知は問題の制限＋1秒（最低5秒・最大30秒）。正確な値は開始時に確定します。">既定上限 5 秒</span> <span class="separator">·</span> 入力上限 1 MiB・出力上限 合計 1 MiB <span class="separator">·</span> Windows メモリ 1 GiB</span></footer>
+  <footer class="statusbar"><span class="status-left"><span class="status-dot"></span>ローカル実行<span id="message" role="status">ヒント：Ctrl + Enter でも実行できます。</span></span><span title="Windowsのメモリ上限はRubyと子孫の合計コミット量です。問題ページのメモリ制限値とは異なります。Linuxにはメモリ上限を設定しません。"><span id="execution-limit" title="選択ケースの実行時の打ち切り時間です。制限既知は問題の制限＋1秒（最低5秒・最大30秒）。正確な値は開始時に確定します。">既定上限 5 秒</span> <span class="separator">·</span> 入力上限 1 MiB・出力上限 合計 1 MiB <span class="separator">·</span> Windows メモリ 1 GiB</span></footer>
   <dialog id="contest-dialog" aria-labelledby="contest-dialog-heading">
     <h2 id="contest-dialog-heading">コンテスト・問題集を登録</h2>
     <label for="contest-url">コンテストまたは問題のURL</label>

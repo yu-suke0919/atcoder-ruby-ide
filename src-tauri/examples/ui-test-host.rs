@@ -172,10 +172,12 @@ fn main() {
                     &mut documents
                 )?))
             }
-            "task_save_cases" => {
-                workspaces.save_cases(
-                    args["url"].as_str().ok_or("URLを指定してください")?,
-                    serde_json::from_value(args["cases"].clone()).map_err(|e| e.to_string())?,
+            "samples_save" => {
+                workspaces.save_samples(
+                    args["workspace"]
+                        .as_str()
+                        .ok_or("作業領域を指定してください")?,
+                    serde_json::from_value(args["samples"].clone()).map_err(|e| e.to_string())?,
                 )?;
                 Ok(Value::Null)
             }
@@ -183,12 +185,6 @@ fn main() {
                 let mut documents = documents.lock().unwrap();
                 let revision = documents.revision();
                 Ok(json!(workspaces.open_home(revision, &mut documents)?))
-            }
-            "home_save_cases" => {
-                workspaces.save_home_cases(
-                    serde_json::from_value(args["cases"].clone()).map_err(|e| e.to_string())?,
-                )?;
-                Ok(Value::Null)
             }
             "file_open" | "file_create" | "file_rename" | "file_delete" => {
                 let text = |key: &str| args[key].as_str().ok_or(format!("{key}を指定してください"));

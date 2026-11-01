@@ -18,7 +18,7 @@ function serveTaskList(app, contest, title = `テスト ${contest}`) {
  * Seeds a task. `task` writes task.json as if its page had been read; pass `page` instead to
  * serve the task page so the app reads it. `code` and `cases` seed the user's workspace.
  */
-async function seedProblem(app, contest, id, { code = sampleCode, cases = sampleCases, task = { samples: [] }, page = null, label = id, title = 'テスト用の問題' } = {}) {
+async function seedProblem(app, contest, id, { code = sampleCode, cases = sampleCases, tolerance = null, task = { samples: [] }, page = null, label = id, title = 'テスト用の問題' } = {}) {
   const url = `https://atcoder.jp/contests/${contest}/tasks/${id}`;
   if (!contestTasks.has(contest)) contestTasks.set(contest, new Map());
   contestTasks.get(contest).set(id, { id, label, title });
@@ -31,8 +31,9 @@ async function seedProblem(app, contest, id, { code = sampleCode, cases = sample
   // The first tab: files/<label>_1.rb, as the app names files.
   const solution = path.join(workspace, 'files', `${label}_1.rb`);
   if (code !== null) { await mkdir(path.dirname(solution), { recursive: true }); await writeFile(solution, code); }
-  if (cases !== null) await writeFile(path.join(workspace, 'cases.json'), JSON.stringify({ cases }));
-  return { url, contest, id, label, title: `${label} - ${title}`, workspace, solution, cases: path.join(workspace, 'cases.json') };
+  const samples = path.join(workspace, 'samples.json');
+  if (cases !== null) await writeFile(samples, JSON.stringify({ ...(tolerance === null ? {} : { tolerance }), cases }));
+  return { url, contest, id, label, title: `${label} - ${title}`, workspace, solution, cases: samples };
 }
 
 // Registers the problem's contest with its task URL, which also opens the task.
