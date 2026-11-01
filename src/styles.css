@@ -116,6 +116,7 @@ h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 .rail-icon, .rail-add { --icon: calc(var(--rail-width) - 16px); width: var(--icon); height: var(--icon); flex-shrink: 0; padding: 0; border: 1px solid var(--border); border-radius: calc(var(--icon) / 4); background: var(--panel); color: var(--text); font-size: calc(var(--icon) * .28); font-weight: 650; overflow: hidden; text-overflow: ellipsis; }
 .rail-icon[aria-pressed="true"] { background: #493760; border-color: #a78bfa; color: white; }
 .rail-add { font-size: calc(var(--icon) * .45); color: var(--muted); }
+.rail-home { font-size: calc(var(--icon) * .5); }
 .rail-menu { position: fixed; z-index: 10; min-width: 220px; max-height: 60vh; overflow: auto; padding: 4px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); box-shadow: 0 8px 24px #0008; }
 .rail-menu[hidden] { display: none; }
 .rail-menu button { display: block; width: 100%; text-align: left; }

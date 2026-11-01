@@ -12,6 +12,8 @@ Tauri の `app.path().app_local_data_dir()` を使う。Windows では通常 `%L
   workspaces/<contest-id>/<task-id>/task.json    問題ページから読み取った内容
   workspaces/<contest-id>/<task-id>/cases.json   サンプル（利用者の編集を含む）と許容誤差
   workspaces/<contest-id>/<task-id>/*.rb         解答ファイル
+  home/cases.json                                ホームのサンプルと許容誤差
+  home/*.rb                                      ホームのファイル
   submissions/<contest-id>.json                  アプリのブラウザで行った提出の結果
   settings.json                                  設定
 ```
@@ -28,6 +30,7 @@ U2bの時点の形式は次のとおり。どれも未知の項目を拒否す�
 - `contests/<contest-id>.json`：`url`（`https://atcoder.jp/contests/<id>`）、`title`、`hidden`（真偽値）、`tasks`（`label`・`title`・`url`の配列、1〜1,000件）。登録の経緯と開始・終了の時刻はU6で任意項目として加える。
 - `task.json`：`url`、`samples`（`stdin`・`expectedOutput`の配列、0〜100件）、任意の`timeLimitMs`・`memoryLimitMiB`。入力形式はU4で任意項目として加える。
 - `cases.json`と`solution.rb`：U2aまでと同じ形式。
+- `home/cases.json`と`home/solution.rb`（U2d）：問題の作業領域と同じ形式。初めて開いたときに、比較しない空のサンプル1件と空のファイルを作る。
 
 ## 保存形式を変えるときの方針
 

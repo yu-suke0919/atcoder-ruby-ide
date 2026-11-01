@@ -3,8 +3,9 @@
 mod browser;
 
 use atcoder_ruby_ide::{
-    fetch_page, http_client, Contest, Contests, DocumentStore, LspInfo, RegisteredContest,
-    RubyInfo, RubyLsp, RunEvent, RunRequest, Runner, SampleCase, TaskWorkspace, Workspaces,
+    fetch_page, http_client, Contest, Contests, DocumentStore, HomeWorkspace, LspInfo,
+    RegisteredContest, RubyInfo, RubyLsp, RunEvent, RunRequest, Runner, SampleCase, TaskWorkspace,
+    Workspaces,
 };
 use browser::Browser;
 use std::path::PathBuf;
@@ -243,6 +244,29 @@ async fn task_save_cases(
         .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+async fn home_open(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<HomeWorkspace, String> {
+    let workspaces = Workspaces::new(data_dir(&app)?);
+    let documents = Arc::clone(&state.documents);
+    let revision = documents.lock().unwrap().revision();
+    tauri::async_runtime::spawn_blocking(move || {
+        workspaces.open_home(revision, &mut documents.lock().unwrap())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn home_save_cases(app: tauri::AppHandle, cases: Vec<SampleCase>) -> Result<(), String> {
+    let workspaces = Workspaces::new(data_dir(&app)?);
+    tauri::async_runtime::spawn_blocking(move || workspaces.save_home_cases(cases))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 fn main() {
     // UI tests open a debugging port on Windows. Child webviews share the WebView2 environment,
     // so they need the same arguments.
@@ -289,6 +313,8 @@ fn main() {
             contest_set_hidden,
             task_open,
             task_save_cases,
+            home_open,
+            home_save_cases,
             browser::browser_layout,
             browser::browser_visible,
             browser::browser_home,

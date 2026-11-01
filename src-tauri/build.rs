@@ -17,6 +17,8 @@ fn main() {
             "contest_set_hidden",
             "task_open",
             "task_save_cases",
+            "home_open",
+            "home_save_cases",
             "browser_layout",
             "browser_visible",
             "browser_home",

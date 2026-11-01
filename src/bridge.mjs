@@ -18,6 +18,11 @@ export const ide = {
     cases.forEach(item => validateTolerance(item.tolerance ?? null));
     return invoke('task_save_cases', { url, cases });
   },
+  openHome: () => invoke('home_open'),
+  saveHomeCases: cases => {
+    cases.forEach(item => validateTolerance(item.tolerance ?? null));
+    return invoke('home_save_cases', { cases });
+  },
   browserLayout: (x, y, width, height) => invoke('browser_layout', { x, y, width, height }),
   browserVisible: visible => invoke('browser_visible', { visible }),
   browserHome: url => invoke('browser_home', { url }),
