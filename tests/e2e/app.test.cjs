@@ -1035,6 +1035,82 @@ test('M18: each task has its own page, pages close with the contest and the memo
   assert.ok(open.processes > 1, JSON.stringify(open));
 });
 
+const LAYOUT_KEY = 'atcoder-ide-layout';
+const paneSizes = () => page.evaluate(() => Object.fromEntries(Object.entries({ rail: '#contest-rail', tasks: '.task-panel', center: '.workspace', browser: '.browser-column', editor: '.editor-panel', input: '.input-panel', icon: '.rail-icon' })
+  .map(([name, selector]) => { const rect = document.querySelector(selector).getBoundingClientRect(); return [name, { width: rect.width, height: rect.height }]; })));
+async function drag(name, dx, dy) {
+  const box = await page.locator(`.splitter[data-split="${name}"]`).boundingBox();
+  const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + dx, y + dy, { steps: 5 });
+  await page.mouse.up();
+}
+const near = (actual, expected, label) => assert.ok(Math.abs(actual - expected) <= 2, `${label}: ${actual} != ${expected}`);
+
+test('U2c: dragging the borders resizes every pane, scales the icons, survives a reload and double-click restores it', async () => {
+  try {
+    const before = await paneSizes();
+    near(before.icon.width, before.rail.width - 16, 'icon at the default width');
+    // Each drag moves its border by the pointer's distance, measured from the panes just before it.
+    for (const [name, dx, dy, pane, dimension, change] of [
+      ['rail', 24, 0, 'rail', 'width', 24], ['tasks', 40, 0, 'tasks', 'width', 40], ['browser', -40, 0, 'browser', 'width', 40],
+      ['editor', 0, -60, 'editor', 'height', -60], ['input', -20, 0, 'input', 'width', -20]
+    ]) {
+      const start = (await paneSizes())[pane][dimension];
+      await drag(name, dx, dy);
+      near((await paneSizes())[pane][dimension], start + change, name);
+    }
+    const after = await paneSizes();
+    near(after.icon.width, after.rail.width - 16, 'icon follows the rail');
+    const accept = dialog => dialog.accept();
+    page.on('dialog', accept);
+    try { await page.reload(); } finally { page.off('dialog', accept); }
+    await waitInitialized(page);
+    const restored = await paneSizes();
+    for (const name of ['rail', 'tasks', 'browser', 'editor', 'input']) near(restored[name].width, after[name].width, `${name} after reload`);
+    near(restored.editor.height, after.editor.height, 'editor height after reload');
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const small = await paneSizes();
+    assert.ok(small.center.width >= 480 && small.browser.width >= 360, JSON.stringify(small));
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await page.setViewportSize({ width: 1280, height: 850 });
+    for (const name of ['rail', 'tasks', 'browser', 'editor', 'input']) await page.locator(`.splitter[data-split="${name}"]`).dblclick();
+    const reset = await paneSizes();
+    for (const name of ['rail', 'tasks', 'browser', 'input']) near(reset[name].width, before[name].width, `${name} reset`);
+    near(reset.editor.height, before.editor.height, 'editor reset');
+  } finally {
+    await page.evaluate(key => localStorage.removeItem(key), LAYOUT_KEY);
+  }
+});
+
+test('U2c: the URL field follows the shown page and opens only AtCoder pages', async () => {
+  const field = page.locator('#browser-url');
+  const showing = url => page.waitForFunction(expected => document.getElementById('browser-url').value === expected, url);
+  await showing(starterProblem.url);
+  await field.fill('https://example.com/');
+  await field.press('Enter');
+  await page.locator('#browser-message').filter({ hasText: 'https://atcoder.jp' }).waitFor();
+  const list = `https://atcoder.jp/contests/${testContest}/tasks`;
+  await field.fill(list.replace('https://', ''));
+  await field.press('Enter');
+  await showing(list);
+  assert.equal(await page.locator('#browser-message').textContent(), '');
+  if (runner !== 'native') return; // The test host has no pages to go back and forward in.
+  await page.locator('#browser-back').click();
+  await showing(starterProblem.url);
+  await page.locator('#browser-forward').click();
+  await showing(list);
+  const loads = () => app.atcoder.requests.filter(request => request === `/contests/${testContest}/tasks`).length;
+  const count = loads();
+  await page.locator('#browser-reload').click();
+  const deadline = Date.now() + 10000;
+  while (loads() === count) {
+    assert.ok(Date.now() < deadline, 'reload did not request the page again');
+    await pause(100);
+  }
+});
+
 test('M16: a task without saved data is read from its page with samples and limits', async () => {
   const problem = await seedWorkspaceProblem(app, testContest, 'read_page', { task: null, code: null, cases: null, page: { samples: [['1 2\n', '3\n'], ['10 20\n', '30\n']], timeLimit: '2 sec', memoryLimit: '256 MiB' } });
   await openProblem(page, problem);

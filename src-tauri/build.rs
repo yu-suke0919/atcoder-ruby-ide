@@ -22,6 +22,9 @@ fn main() {
             "browser_home",
             "browser_task",
             "browser_close_tasks",
+            "browser_open",
+            "browser_history",
+            "browser_reload",
         ]),
     ))
     .expect("failed to run tauri-build");

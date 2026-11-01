@@ -291,7 +291,10 @@ fn main() {
             browser::browser_visible,
             browser::browser_home,
             browser::browser_task,
-            browser::browser_close_tasks
+            browser::browser_close_tasks,
+            browser::browser_open,
+            browser::browser_history,
+            browser::browser_reload
         ])
         .build(context)
         .expect("アプリを起動できませんでした")

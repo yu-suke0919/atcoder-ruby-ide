@@ -17,11 +17,13 @@
       <div id="contest-icons" class="rail-icons"></div>
       <button id="contest-add" class="rail-add" title="コンテスト・問題集を登録" aria-label="コンテスト・問題集を登録">＋</button>
     </nav>
+    <div class="splitter" data-split="rail" role="separator" aria-orientation="vertical" aria-label="アイコンと問題一覧の境目" title="ドラッグで幅を変更、ダブルクリックで元に戻す"></div>
     <nav class="task-panel" aria-labelledby="contest-title">
       <h2 id="contest-title">コンテストを選んでください</h2>
       <div id="task-list" class="task-list"></div>
       <p id="task-message" class="task-message" role="status"></p>
     </nav>
+    <div class="splitter" data-split="tasks" role="separator" aria-orientation="vertical" aria-label="問題一覧とエディタの境目" title="ドラッグで幅を変更、ダブルクリックで元に戻す"></div>
     <main class="workspace">
       <section class="panel editor-panel" aria-labelledby="editor-heading">
         <div class="panel-heading"><div class="panel-label"><span class="file-icon" aria-hidden="true">⌘</span><h3 id="editor-heading">コード</h3><span class="language-pill">Ruby</span></div><span class="save-status"><span id="save-state" data-testid="save-state" data-state="none" class="subtle" role="status">問題を開いてください</span><button id="save-retry" class="quiet-button" title="Ctrl+S" hidden>保存を再試行</button></span></div>
@@ -29,7 +31,7 @@
         <div class="completion-state"><span id="completion-state" data-state="idle" role="status" aria-live="polite">補完は初回利用時に準備します</span><button id="completion-retry" class="quiet-button" hidden>再試行</button></div>
         <div class="editor-footer"><span id="file-path" title="問題を開いてください">問題を開いてください</span><button id="editor-complete" class="quiet-button" title="Ctrl+Space">補完</button><button id="editor-search" class="quiet-button" title="Ctrl+F / Ctrl+H">検索・置換</button><span id="cursor-position">Ln 1, Col 1</span></div>
       </section>
-
+      <div class="splitter" data-split="editor" role="separator" aria-orientation="horizontal" aria-label="エディタとサンプルの境目" title="ドラッグで高さを変更、ダブルクリックで元に戻す"></div>
       <div class="io-row">
         <section class="panel input-panel" aria-labelledby="input-heading">
           <div class="panel-heading"><div class="panel-label"><h3 id="input-heading">サンプル</h3><span id="case-count" class="subtle">1 ケース</span></div><span id="problem-limits" class="subtle" aria-label="問題の制限"></span></div>
@@ -51,6 +53,7 @@
             <span id="comparison-help" class="sr-only">改行コードと末尾の改行1つは揃えます。誤差許容では数値だけを絶対誤差または相対誤差で比較し、空白は区別します。</span>
           </div>
         </section>
+        <div class="splitter" data-split="input" role="separator" aria-orientation="vertical" aria-label="サンプルと実行結果の境目" title="ドラッグで幅を変更、ダブルクリックで元に戻す"></div>
         <section class="panel output-panel" aria-labelledby="output-heading">
           <div class="panel-heading"><div class="panel-label"><h3 id="output-heading">実行結果</h3></div><button id="clear-output" class="quiet-button">クリア</button></div>
           <div id="cases-summary" data-testid="cases-summary" class="cases-summary" role="status"></div>
@@ -63,7 +66,12 @@
       </div>
     <div class="run-toolbar"><div id="message" role="status">ヒント：Ctrl + Enter でも実行できます。</div><div class="run-actions"><button id="stop" class="stop-button" disabled><span aria-hidden="true">■</span> 停止</button><button id="run-all" class="stop-button">全件実行</button><button id="run" class="run-button"><span aria-hidden="true">&#9654;&#65038;</span> 実行</button></div></div>
     </main>
-    <section id="browser-host" class="browser-host" aria-label="AtCoder のページ"><p>AtCoder のページを表示します。ログイン・参加登録・提出はここで行います。</p></section>
+    <div class="splitter" data-split="browser" role="separator" aria-orientation="vertical" aria-label="エディタとブラウザの境目" title="ドラッグで幅を変更、ダブルクリックで元に戻す"></div>
+    <section class="browser-column" aria-label="AtCoder のページ">
+      <div class="browser-toolbar"><button id="browser-back" title="戻る" aria-label="戻る">←</button><button id="browser-forward" title="進む" aria-label="進む">→</button><button id="browser-reload" title="更新" aria-label="更新">↻</button><input id="browser-url" type="text" aria-label="URL" spellcheck="false" autocomplete="off"></div>
+      <p id="browser-message" class="browser-message" role="status"></p>
+      <div id="browser-host" class="browser-host"><p>AtCoder のページを表示します。ログイン・参加登録・提出はここで行います。</p></div>
+    </section>
   </div>
   <footer class="statusbar"><span><span class="status-dot"></span>ローカル実行</span><span title="Windowsのメモリ上限はRubyと子孫の合計コミット量です。問題ページのメモリ制限値とは異なります。Linuxにはメモリ上限を設定しません。"><span id="execution-limit" title="選択ケースの実行時の打ち切り時間です。制限既知は問題の制限＋1秒（最低5秒・最大30秒）。正確な値は開始時に確定します。">既定上限 5 秒</span> <span class="separator">·</span> 入力上限 1 MiB・出力上限 合計 1 MiB <span class="separator">·</span> Windows メモリ 1 GiB</span></footer>
   <dialog id="contest-dialog" aria-labelledby="contest-dialog-heading">

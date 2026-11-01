@@ -72,7 +72,7 @@ async function launch(root, { hostEnv = {} } = {}) {
     }
   });
   try {
-    const assets = new Map([['/', 'index.html'], ...['index.html', 'renderer.js', 'bridge.mjs', 'sample-cases.mjs', 'editor.mjs', 'ruby-completion.mjs', 'lsp-completion.mjs', 'ruby-methods.mjs', 'ruby-receivers.mjs', 'vendor/editor/codemirror.mjs', 'styles.css'].map(name => [`/${name}`, name])]);
+    const assets = new Map([['/', 'index.html'], ...['index.html', 'renderer.js', 'bridge.mjs', 'sample-cases.mjs', 'editor.mjs', 'ruby-completion.mjs', 'lsp-completion.mjs', 'ruby-methods.mjs', 'ruby-receivers.mjs', 'layout.mjs', 'vendor/editor/codemirror.mjs', 'styles.css'].map(name => [`/${name}`, name])]);
     app.server = http.createServer(async (req, res) => {
       const name = assets.get(new URL(req.url, 'http://localhost').pathname);
       if (!name) { res.writeHead(404).end(); return; }

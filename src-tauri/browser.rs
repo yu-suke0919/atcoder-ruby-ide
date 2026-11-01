@@ -1,6 +1,6 @@
 //! The AtCoder pages in the right column: one home page and one page per task of the selected
 //! contest. Pages cannot call the app; the app reads a task page after it has loaded.
-use atcoder_ruby_ide::{is_task_page, read_task_page, Workspaces};
+use atcoder_ruby_ide::{browser_target, is_allowed, is_task_page, read_task_page, Workspaces};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -44,11 +44,40 @@ pub fn origin() -> String {
 pub fn to_origin(url: &str) -> Result<Url, String> {
     Url::parse(&url.replacen(ATCODER, &origin(), 1)).map_err(|e| e.to_string())
 }
+/// The AtCoder URL of a loaded page, undoing the UI tests' origin.
+fn from_origin(url: &Url) -> Option<Url> {
+    let origin = origin();
+    let url = match url.as_str().strip_prefix(origin.trim_end_matches('/')) {
+        Some(rest) if origin != ATCODER => Url::parse(&format!("{ATCODER}{rest}")).ok()?,
+        _ => url.clone(),
+    };
+    is_allowed(&url).then_some(url)
+}
 fn allowed(url: &Url) -> bool {
-    let origin = Url::parse(&origin()).unwrap();
-    url.scheme() == origin.scheme()
-        && url.host_str() == origin.host_str()
-        && url.port_or_known_default() == origin.port_or_known_default()
+    from_origin(url).is_some()
+}
+
+/// Tells the screen which URL the shown page has.
+fn show_url(webview: &tauri::Webview, url: &Url) {
+    let browser = webview.state::<Browser>();
+    if *browser.shown.lock().unwrap() != webview.label() {
+        return;
+    }
+    if let Some(url) = from_origin(url) {
+        let _ = webview.emit_to("main", "browser-url", url.as_str());
+    }
+}
+fn shown(app: &tauri::AppHandle, browser: &Browser) -> Result<tauri::Webview, String> {
+    let label = browser.shown.lock().unwrap().clone();
+    app.get_webview(&label)
+        .ok_or_else(|| "ブラウザを準備できません。".into())
+}
+fn show_current_url(app: &tauri::AppHandle, browser: &Browser) {
+    if let Ok(webview) = shown(app, browser) {
+        if let Ok(url) = webview.url() {
+            show_url(&webview, &url);
+        }
+    }
 }
 
 fn open_workspaces(app: &tauri::AppHandle) -> Result<Workspaces, String> {
@@ -106,15 +135,16 @@ fn builder(
             }
             NewWindowResponse::Deny
         });
-    if let Some(task_url) = task {
-        builder = builder.on_page_load(move |webview, payload| {
+    builder = builder.on_page_load(move |webview, payload| {
+        show_url(&webview, payload.url());
+        if let Some(task_url) = &task {
             if payload.event() == tauri::webview::PageLoadEvent::Finished
-                && is_task_page(&task_url, payload.url())
+                && is_task_page(task_url, payload.url())
             {
                 read_if_needed(&webview, task_url.clone());
             }
-        });
-    }
+        }
+    });
     let args = app.state::<Browser>().args.lock().unwrap().clone();
     if let Some(args) = args {
         builder = builder.additional_browser_args(&args);
@@ -209,6 +239,7 @@ pub async fn browser_home(
         .map_err(|e| e.to_string())?;
     *browser.shown.lock().unwrap() = HOME.into();
     browser.apply(&app);
+    show_current_url(&app, &browser);
     Ok(())
 }
 
@@ -251,6 +282,7 @@ pub async fn browser_task(
         };
     *browser.shown.lock().unwrap() = label;
     browser.apply(&app);
+    show_current_url(&app, &browser);
     Ok(())
 }
 
@@ -273,7 +305,46 @@ pub async fn browser_close_tasks(
     }
     *browser.shown.lock().unwrap() = HOME.into();
     browser.apply(&app);
+    show_current_url(&app, &browser);
     Ok(())
+}
+
+/// Opens a URL typed in the URL field in the shown page.
+#[tauri::command]
+pub async fn browser_open(
+    app: tauri::AppHandle,
+    browser: tauri::State<'_, Browser>,
+    url: String,
+) -> Result<(), String> {
+    let url = to_origin(browser_target(&url)?.as_str())?;
+    shown(&app, &browser)?
+        .navigate(url)
+        .map_err(|e| e.to_string())
+}
+
+/// Goes back or forward in the shown page's history.
+#[tauri::command]
+pub async fn browser_history(
+    app: tauri::AppHandle,
+    browser: tauri::State<'_, Browser>,
+    forward: bool,
+) -> Result<(), String> {
+    let script = if forward {
+        "history.forward()"
+    } else {
+        "history.back()"
+    };
+    shown(&app, &browser)?
+        .eval(script)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn browser_reload(
+    app: tauri::AppHandle,
+    browser: tauri::State<'_, Browser>,
+) -> Result<(), String> {
+    shown(&app, &browser)?.reload().map_err(|e| e.to_string())
 }
 
 /// The browser's cookies for AtCoder, read from the home page. Async so WebView2 does not deadlock.
