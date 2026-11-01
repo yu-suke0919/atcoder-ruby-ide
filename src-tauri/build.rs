@@ -20,6 +20,7 @@ fn main() {
             "home_open",
             "file_open",
             "file_create",
+            "file_copy",
             "file_rename",
             "file_delete",
             "browser_layout",

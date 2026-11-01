@@ -462,6 +462,7 @@ function renderFiles() {
       if (fileLocked()) return;
       showMenu(event, [
         { label: '名前を変更', action: () => askRename(name) },
+        { label: 'コピー', action: () => copyFile(name) },
         ...(activeProblem.files.length > 1 ? [{ label: '削除', action: () => askDelete(name) }] : [])
       ]);
     });
@@ -498,6 +499,15 @@ $('file-add').addEventListener('click', async () => {
     await showFile(name);
   });
 });
+// Copies a file, with its unsaved edits, into a new tab and opens it.
+async function copyFile(name) {
+  if (fileLocked() || !await leaveProblem()) return;
+  await fileAction(async () => {
+    const copy = await ide.copyFile(activeProblem.url, name, activeProblem.label);
+    activeProblem.files = sortFiles([...activeProblem.files, copy]);
+    await showFile(copy);
+  });
+}
 // The tab order is the app's: names in natural order, ignoring case.
 const fileOrder = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
 const sortFiles = names => [...names].sort(fileOrder.compare);

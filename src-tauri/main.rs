@@ -291,6 +291,19 @@ async fn file_create(
 }
 
 #[tauri::command]
+async fn file_copy(
+    app: tauri::AppHandle,
+    workspace: String,
+    name: String,
+    label: String,
+) -> Result<String, String> {
+    let workspaces = Workspaces::new(data_dir(&app)?);
+    tauri::async_runtime::spawn_blocking(move || workspaces.copy_file(&workspace, &name, &label))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn file_rename(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
@@ -372,6 +385,7 @@ fn main() {
             home_open,
             file_open,
             file_create,
+            file_copy,
             file_rename,
             file_delete,
             browser::browser_layout,

@@ -16,6 +16,7 @@ export const ide = {
   openTask: (url, label) => invoke('task_open', { url, label }),
   openFile: (workspace, name) => invoke('file_open', { workspace, name }),
   createFile: (workspace, label) => invoke('file_create', { workspace, label }),
+  copyFile: (workspace, name, label) => invoke('file_copy', { workspace, name, label }),
   renameFile: (workspace, from, to) => invoke('file_rename', { workspace, from, to }),
   deleteFile: (workspace, name) => invoke('file_delete', { workspace, name }),
   openHome: () => invoke('home_open'),

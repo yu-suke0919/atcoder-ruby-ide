@@ -186,7 +186,7 @@ fn main() {
                 let revision = documents.revision();
                 Ok(json!(workspaces.open_home(revision, &mut documents)?))
             }
-            "file_open" | "file_create" | "file_rename" | "file_delete" => {
+            "file_open" | "file_create" | "file_copy" | "file_rename" | "file_delete" => {
                 let text = |key: &str| args[key].as_str().ok_or(format!("{key}を指定してください"));
                 let workspace = text("workspace")?;
                 let mut documents = documents.lock().unwrap();
@@ -197,6 +197,11 @@ fn main() {
                         &mut documents
                     )?)),
                     "file_create" => Ok(json!(workspaces.create_file(workspace, text("label")?)?)),
+                    "file_copy" => Ok(json!(workspaces.copy_file(
+                        workspace,
+                        text("name")?,
+                        text("label")?
+                    )?)),
                     "file_rename" => {
                         workspaces.rename_file(
                             workspace,

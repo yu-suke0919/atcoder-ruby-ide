@@ -465,6 +465,20 @@ fn files_are_added_renamed_and_deleted_with_safe_unique_names_in_natural_order()
         .open(URL, "A", documents.revision(), &mut documents)
         .unwrap();
     assert_eq!(workspaces.create_file(URL, "A").unwrap(), "A_3");
+    // A copy has the same code under the next free name.
+    std::fs::write(
+        root.path().join("workspaces/abs/practice_1/files/A_2.rb"),
+        "puts 'copy me'",
+    )
+    .unwrap();
+    assert_eq!(workspaces.copy_file(URL, "A_2", "A").unwrap(), "A_4");
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("workspaces/abs/practice_1/files/A_4.rb"))
+            .unwrap(),
+        "puts 'copy me'"
+    );
+    assert!(workspaces.copy_file(URL, "missing", "A").is_err());
+    workspaces.delete_file(URL, "A_4", &documents).unwrap();
     workspaces
         .rename_file(URL, "A_3", "brute", &mut documents)
         .unwrap();
