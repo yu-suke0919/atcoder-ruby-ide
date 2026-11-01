@@ -424,6 +424,8 @@ Windows CI の初回では、HTML固定データがCRLFでチェックアウト�
 - 試作（`spike/u0-embedded-browser` c70ff9d、マージしない）を[Windows CI run 41236250512](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/41236250512)のリリースビルドで動かし、CDPで画面とAtCoderの両方のWebViewを操作した。結果は[構成と検証方針](architecture.md#画面の作り直しの調査u0)のとおりで、報告のJSONとスクリーンショットは同じrunの`U0-spike` Artifactにある。
 - Linuxでは`libwebkit2gtk-4.1-dev`を入れてデスクトップ版をビルドし、Xvfbで起動しても子のWebViewの追加で異常終了しないことだけを確かめた。
 
+- 1問あたりの通信を1回にするため、試作（3df54bb、[run 41272264658](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/41272264658)）で、Rustの`eval_with_callback`がAtCoder用WebViewの読み込み済みHTML（約59 KB、サンプル3件）を返し、ページの読み込みを起こさないこと、AtCoderのページから読み取りのコマンドを呼べないことを確かめた。隠した子のWebViewでも1秒ごとのタイマーが15秒で15回動き、`document.visibilityState`は`visible`のままだった。数分以上隠したときの動作は確かめていないため、提出結果の読み取り（U5）で確かめる。
+
 ### 利用者による確認（2026-11-01）
 
 試作のexe（`spike/u0-embedded-browser` 391ea75、[run 41237515728](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/41237515728)の`U0-spike-exe`）と、手元のChromeで確かめた。
@@ -438,3 +440,9 @@ Windows CI の初回では、HTML固定データがCRLFでチェックアウト�
 | 参加予定のコンテストが出るページ | 見当たらない |
 
 結果を受けて、開催中の問題はABCを含めログインと参加登録を前提とし、アプリの外で参加登録したコンテストを起動時に読む機能をやめ、ジャッジ中の提出一覧を取得し直す理由と、インストールしていないexeではトーストが出ないことを資料に反映した。
+
+## 資料の書き換え（U1）
+
+- main 5c265e9から開始。[画面の仕様](ui.md)を、MVPの受入条件（M02・M03・M07・M09・M13・M14・M16〜M18を書き直し、M20提出結果・M21クリップボードを追加）、構成と検証方針、問題ライブラリ（保存先の構成、登録、問題ページからの読み取り、作業領域）、複数サンプル（問題ごとの共通サンプルと許容誤差、作業領域への自動保存）、エディタ仕様、README、レビューで維持する修正（R01・R06・R07）へ反映した。problem-presentation.mdは削除した。
+- 受入条件には実装するロードマップの項目を付け、実装までは以前の仕様のテストとコードが残ることを明記した。
+- 資料内の相対リンクと見出しへのリンクがすべて解決すること、テスト・ビルド・スクリプトが資料を読まないことを確認した。資料だけの変更のためCIは実行されない。
