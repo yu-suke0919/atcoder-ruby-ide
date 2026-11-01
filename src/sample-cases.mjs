@@ -12,8 +12,8 @@ function clearResult(item, status = null) {
   resetComparison(item);
 }
 
-function createCase({ stdin = '', expectedOutput = '', compare = true, tolerance = null }) {
-  const item = { stdin, expectedOutput, compare, tolerance, revision: 0 };
+function createCase({ stdin = '', expectedOutput = '', compare = true }) {
+  const item = { stdin, expectedOutput, compare, revision: 0 };
   clearResult(item);
   return item;
 }
@@ -21,8 +21,9 @@ function createCase({ stdin = '', expectedOutput = '', compare = true, tolerance
 export class SampleCases {
   #savedData;
 
-  constructor(data) {
-    this.replace(data, { saved: true });
+  // The tolerance belongs to the problem: it applies to every compared sample.
+  constructor(data, tolerance = null) {
+    this.replace(data, { saved: true, tolerance });
   }
 
   get current() {
@@ -33,20 +34,25 @@ export class SampleCases {
     return JSON.stringify(this.data()) !== this.#savedData;
   }
 
+  // What samples.json keeps: the tolerance, if any, and each sample's editable inputs.
   data() {
-    return this.items.map(({ stdin, expectedOutput, compare, tolerance }) => ({ stdin, expectedOutput, compare, ...(tolerance === null ? {} : { tolerance }) }));
+    return {
+      ...(this.tolerance === null ? {} : { tolerance: this.tolerance }),
+      cases: this.items.map(({ stdin, expectedOutput, compare }) => ({ stdin, expectedOutput, compare }))
+    };
   }
 
   markSaved(data = this.data()) {
     this.#savedData = JSON.stringify(data);
   }
 
-  replace(data, { saved = false } = {}) {
+  replace(data, { saved = false, tolerance = null } = {}) {
     if (!Array.isArray(data) || data.length < 1 || data.length > MAX_CASES) {
       throw new Error('ケースは 1〜100 件にしてください。');
     }
     const items = data.map(createCase);
     this.items = items;
+    this.tolerance = tolerance;
     this.selected = 0;
     if (saved) this.markSaved();
   }
@@ -116,6 +122,6 @@ export class SampleCases {
   }
 
   snapshot(all = false, timeLimitMs = null) {
-    return (all ? this.items : [this.current]).map(item => ({ item, stdin: item.stdin, expectedOutput: item.expectedOutput, compare: item.compare, tolerance: item.tolerance, revision: item.revision, timeLimitMs }));
+    return (all ? this.items : [this.current]).map(item => ({ item, stdin: item.stdin, expectedOutput: item.expectedOutput, compare: item.compare, tolerance: this.tolerance, revision: item.revision, timeLimitMs }));
   }
 }

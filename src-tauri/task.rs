@@ -1,8 +1,10 @@
 //! A task's samples and limits read from its AtCoder page, and the workspace that holds the user's
 //! solution and samples for that task.
 use crate::files::{read_limited, write_atomic, MAX_TEXT_BYTES};
+use crate::samples::convert_cases;
 use crate::{
-    load_samples, save_samples, solutions, DocumentResult, DocumentStore, ProblemSample, SampleCase,
+    load_samples, save_samples, solutions, DocumentResult, DocumentStore, ProblemSample,
+    SampleCase, Samples,
 };
 use scraper::{ElementRef, Html, Node, Selector};
 use serde::{Deserialize, Serialize};
@@ -80,7 +82,7 @@ pub struct TaskWorkspace {
     pub files: Vec<String>,
     pub file: String,
     pub document: DocumentResult,
-    pub cases: Vec<SampleCase>,
+    pub samples: Samples,
 }
 
 /// The home workspace: code and samples that belong to no task.
@@ -90,7 +92,7 @@ pub struct HomeWorkspace {
     pub files: Vec<String>,
     pub file: String,
     pub document: DocumentResult,
-    pub cases: Vec<SampleCase>,
+    pub samples: Samples,
 }
 
 /// The name the screen and the file commands use for the home workspace.
@@ -100,7 +102,7 @@ struct Opened {
     files: Vec<String>,
     file: String,
     document: DocumentResult,
-    cases: Vec<SampleCase>,
+    samples: Samples,
 }
 
 fn empty_case() -> SampleCase {
@@ -108,7 +110,6 @@ fn empty_case() -> SampleCase {
         stdin: String::new(),
         expected_output: String::new(),
         compare: false,
-        tolerance: None,
     }
 }
 
@@ -124,11 +125,27 @@ fn open_files(
         return Err("読み込み中に編集中の問題が変わりました。問題を開き直してください。".into());
     }
     std::fs::create_dir_all(directory).map_err(|e| format!("作業領域を作成できません: {e}"))?;
-    let case_path = directory.join("cases.json");
-    let data = serde_json::to_vec_pretty(&serde_json::json!({ "cases": initial_cases }))
-        .map_err(|e| e.to_string())?;
-    create_if_missing(&case_path, &data)?;
-    let cases = load_samples(&case_path)?;
+    let sample_path = directory.join("samples.json");
+    if !sample_path.try_exists().map_err(|e| e.to_string())? {
+        // cases.json of U3a and before is converted once and left as it was.
+        let old = directory.join("cases.json");
+        let initial = if old.try_exists().map_err(|e| e.to_string())? {
+            convert_cases(&old).map_err(|e| {
+                format!(
+                    "サンプルを変換できません（{} は元のまま残します）: {e}",
+                    old.display()
+                )
+            })?
+        } else {
+            Samples {
+                tolerance: None,
+                cases: initial_cases,
+            }
+        };
+        let data = serde_json::to_vec_pretty(&initial).map_err(|e| e.to_string())?;
+        create_if_missing(&sample_path, &data)?;
+    }
+    let samples = load_samples(&sample_path)?;
     solutions::ensure(directory, label)?;
     let files = solutions::list(directory)?;
     let file = files.first().ok_or("ファイルがありません。")?.clone();
@@ -137,7 +154,7 @@ fn open_files(
         files,
         file,
         document,
-        cases,
+        samples,
     })
 }
 
@@ -371,7 +388,7 @@ impl Workspaces {
             files: opened.files,
             file: opened.file,
             document: opened.document,
-            cases: opened.cases,
+            samples: opened.samples,
         })
     }
     /// Opens the home workspace, creating it with one empty, uncompared sample on first use.
@@ -391,7 +408,7 @@ impl Workspaces {
             files: opened.files,
             file: opened.file,
             document: opened.document,
-            cases: opened.cases,
+            samples: opened.samples,
         })
     }
     /// The directory of a workspace: `home`, or a task URL.
@@ -445,19 +462,13 @@ impl Workspaces {
     ) -> Result<(), String> {
         solutions::delete(&self.directory(workspace)?, name, documents.path())
     }
-    pub fn save_home_cases(&self, cases: Vec<SampleCase>) -> Result<(), String> {
-        let home = self.root.join(HOME);
-        if !home.is_dir() {
-            return Err("ホームを開いてからサンプルを保存してください。".into());
-        }
-        save_samples(cases, &home.join("cases.json"))
-    }
-    pub fn save_cases(&self, url: &str, cases: Vec<SampleCase>) -> Result<(), String> {
-        let workspace = TaskKey::parse(url)?.workspace(&self.root);
-        if !workspace.is_dir() {
+    /// Saves the samples of an open workspace: `home` or a task URL.
+    pub fn save_samples(&self, workspace: &str, samples: Samples) -> Result<(), String> {
+        let directory = self.directory(workspace)?;
+        if !directory.is_dir() {
             return Err("問題を開いてからサンプルを保存してください。".into());
         }
-        save_samples(cases, &workspace.join("cases.json"))
+        save_samples(samples, &directory.join("samples.json"))
     }
 }
 

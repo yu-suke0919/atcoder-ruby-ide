@@ -20,7 +20,7 @@ test('execution budgets belong to runs, survive edits and are excluded from case
   cases.begin(queue[1]); cases.started(queue[1], 30000);
   cases.finish(queue[1], { status: 'stopped', stdout: '', stderr: '', comparison: null, executionLimitMs: 30000 });
   assert.deepEqual(cases.items.map(item => item.executionLimitMs), [9000, 30000]);
-  assert.deepEqual(cases.data(), [sample(), sample('two')]);
+  assert.deepEqual(cases.data(), { cases: [sample(), sample('two')] });
   assert.equal(cases.dirty, false);
   cases.clear(true);
   assert.deepEqual(cases.items.map(item => item.executionLimitMs), [null, null]);
@@ -28,26 +28,26 @@ test('execution budgets belong to runs, survive edits and are excluded from case
   assert.equal(cases.current.executionLimitMs, null);
 });
 
-test('tolerance is optional, saved per case and frozen with the run snapshot', async () => {
+test('the tolerance belongs to the problem, is saved with the samples and frozen with the run snapshot', async () => {
   const { SampleCases } = await load();
-  const cases = new SampleCases([sample(), { ...sample('two', '', false), tolerance: 1e-9 }]);
-  assert.equal(cases.current.tolerance, null);
-  assert.deepEqual(cases.data()[0], sample());
+  const cases = new SampleCases([sample(), sample('two', '', false)], 1e-9);
+  assert.deepEqual(cases.data(), { tolerance: 1e-9, cases: [sample(), sample('two', '', false)] });
   const queue = cases.snapshot(true);
-  assert.equal(queue[1].tolerance, 1e-9);
-  cases.items[1].tolerance = 1e-6;
-  cases.selected = 1;
-  cases.invalidate();
+  assert.deepEqual(queue.map(item => item.tolerance), [1e-9, 1e-9]);
+  cases.tolerance = 1e-6;
+  cases.invalidate(true);
   assert.equal(cases.dirty, true);
-  assert.equal(queue[1].tolerance, 1e-9);
-  cases.finish(queue[1], { status: 'completed', stdout: '', stderr: '', comparison: true, difference: null });
-  assert.equal(cases.current.comparison, 'none');
+  assert.equal(queue[0].tolerance, 1e-9);
+  // A run that started before the change does not bring back a comparison.
+  cases.finish(queue[0], { status: 'completed', stdout: '', stderr: '', comparison: true, difference: null });
+  assert.equal(cases.items[0].comparison, 'pending');
   cases.markSaved();
   assert.equal(cases.dirty, false);
-  assert.equal(cases.data()[1].tolerance, 1e-6);
-  cases.current.tolerance = '';
-  assert.equal(cases.data()[1].tolerance, '');
+  cases.tolerance = null;
+  assert.deepEqual(cases.data(), { cases: [sample(), sample('two', '', false)] });
   assert.equal(cases.dirty, true);
+  cases.replace([sample()], { saved: true });
+  assert.equal(cases.tolerance, null);
 });
 
 test('problem time warnings use the run limit, strict boundary and actual completion status', async () => {
@@ -65,7 +65,7 @@ test('problem time warnings use the run limit, strict boundary and actual comple
     cases.finish(snapshot, { status, stdout: 'ONE', stderr: '', durationMs: duration, exitCode: 0, comparison: status === 'completed' ? true : null });
     assert.equal(cases.current.exceededTimeLimitMs, warning, `${status}: ${duration} / ${limit}`);
     assert.equal(cases.current.comparison, status === 'completed' ? 'matched' : 'unavailable');
-    assert.deepEqual(cases.data(), [sample()]);
+    assert.deepEqual(cases.data(), { cases: [sample()] });
     assert.equal(cases.dirty, false);
   }
 });
@@ -104,7 +104,7 @@ test('error locations are per case, independent of comparison, and excluded from
     cases.finish(snapshot, { status: 'failed', stdout: '', stderr: 'boom', exitCode: 1, durationMs: 1, comparison: null, errorLine: index + 2 });
   }
   assert.deepEqual(cases.items.map(item => item.errorLine), [2, 3]);
-  assert.ok(cases.data().every(item => !('errorLine' in item)));
+  assert.ok(cases.data().cases.every(item => !('errorLine' in item)));
   assert.equal(cases.dirty, false);
   cases.markSaved();
   assert.equal(cases.current.errorLine, 2);
@@ -142,9 +142,9 @@ test('case data contains only editable inputs and does not share imported object
   assert.equal(cases.current.comparison, 'none');
   assert.equal(cases.current.difference, null);
   Object.assign(cases.current, { stdout: 'output', status: 'completed', durationMs: 12, difference: { line: 1 } });
-  assert.deepEqual(cases.data(), original);
+  assert.deepEqual(cases.data(), { cases: original });
   const data = cases.data();
-  data[0].stdin = 'changed copy';
+  data.cases[0].stdin = 'changed copy';
   assert.equal(cases.current.stdin, '日本語');
   assert.equal(cases.dirty, false);
 });

@@ -1,6 +1,6 @@
 use atcoder_ruby_ide::{
     browser_target, fetch_page, http_client, parse_task, parse_task_list, Contest, ContestKey,
-    Contests, DocumentStore, SampleCase, Task, Workspaces,
+    Contests, DocumentStore, SampleCase, Samples, Task, Workspaces,
 };
 use std::path::Path;
 
@@ -200,14 +200,13 @@ fn workspace_opens_only_after_the_page_was_read_and_keeps_user_data_on_rereads()
         .path()
         .join("workspaces/abs/practice_1/solution.rb")
         .exists());
-    assert!(opened
-        .cases
-        .iter()
-        .all(|case| case.compare && case.tolerance.is_none()));
+    assert!(opened.samples.cases.iter().all(|case| case.compare));
+    assert_eq!(opened.samples.tolerance, None);
     documents.save("puts 'mine'").unwrap();
-    let mut edited = opened.cases.clone();
-    edited[0].stdin = "edited\n".into();
-    workspaces.save_cases(URL, edited.clone()).unwrap();
+    let mut edited = opened.samples.clone();
+    edited.cases[0].stdin = "edited\n".into();
+    edited.tolerance = Some(1e-6);
+    workspaces.save_samples(URL, edited.clone()).unwrap();
 
     let reread = Task {
         time_limit_ms: Some(3000),
@@ -219,7 +218,7 @@ fn workspace_opens_only_after_the_page_was_read_and_keeps_user_data_on_rereads()
         .unwrap();
     assert_eq!(reopened.task.time_limit_ms, Some(3000));
     assert_eq!(reopened.document.code, "puts 'mine'");
-    assert_eq!(reopened.cases, edited);
+    assert_eq!(reopened.samples, edited);
 }
 
 #[test]
@@ -236,21 +235,23 @@ fn home_opens_without_a_task_and_keeps_its_code_and_samples_apart_from_problems(
         Path::new(&home.document.file_path),
         root.path().join("home/files/home_1.rb")
     );
-    assert_eq!(home.cases.len(), 1);
-    assert!(!home.cases[0].compare && home.cases[0].stdin.is_empty());
+    assert_eq!(home.samples.cases.len(), 1);
+    assert!(!home.samples.cases[0].compare && home.samples.cases[0].stdin.is_empty());
     documents.save("puts gets").unwrap();
-    let cases = vec![SampleCase {
-        stdin: "1\n".into(),
-        expected_output: "1\n".into(),
-        compare: true,
+    let samples = Samples {
         tolerance: None,
-    }];
-    workspaces.save_home_cases(cases.clone()).unwrap();
+        cases: vec![SampleCase {
+            stdin: "1\n".into(),
+            expected_output: "1\n".into(),
+            compare: true,
+        }],
+    };
+    workspaces.save_samples("home", samples.clone()).unwrap();
     let reopened = workspaces
         .open_home(documents.revision(), &mut documents)
         .unwrap();
     assert_eq!(reopened.document.code, "puts gets");
-    assert_eq!(reopened.cases, cases);
+    assert_eq!(reopened.samples, samples);
     assert!(!root.path().join("workspaces").exists());
     let stale = documents.revision();
     documents.reset();
@@ -282,7 +283,7 @@ fn unreadable_task_data_is_read_again_and_late_opens_do_not_replace_the_document
     documents.open(current.clone()).unwrap();
     assert!(workspaces.open(URL, "A", revision, &mut documents).is_err());
     assert_eq!(documents.path(), Some(current.as_path()));
-    std::fs::write(directory.join("cases.json"), r#"{"cases":[]}"#).unwrap();
+    std::fs::write(directory.join("samples.json"), r#"{"cases":[]}"#).unwrap();
     assert!(workspaces
         .open(URL, "A", documents.revision(), &mut documents)
         .is_err());
@@ -302,9 +303,8 @@ fn tasks_without_samples_open_with_one_uncompared_empty_case() {
         .open(URL, "A", documents.revision(), &mut documents)
         .unwrap();
     assert_eq!(
-        opened.cases,
+        opened.samples.cases,
         vec![SampleCase {
-            tolerance: None,
             stdin: String::new(),
             expected_output: String::new(),
             compare: false
@@ -332,7 +332,7 @@ fn existing_solutions_and_cases_are_reused_when_the_task_is_read_for_the_first_t
         .open(URL, "A", documents.revision(), &mut documents)
         .unwrap();
     assert_eq!(opened.document.code, "puts 'before U2b'");
-    assert_eq!(opened.cases[0].stdin, "保存済み\r\n");
+    assert_eq!(opened.samples.cases[0].stdin, "保存済み\r\n");
     // solution.rb becomes the first file once and stays as it was.
     assert_eq!(opened.files, ["A_1", "A_2"]);
     let read = |name: &str| std::fs::read_to_string(directory.join(name)).unwrap();
@@ -344,6 +344,84 @@ fn existing_solutions_and_cases_are_reused_when_the_task_is_read_for_the_first_t
         .open(URL, "A", documents.revision(), &mut documents)
         .unwrap();
     assert_eq!(reopened.document.code, "puts 'before U2b'");
+}
+
+#[test]
+fn per_sample_tolerances_become_the_problem_tolerance_once_and_cases_json_stays() {
+    let root = tempfile::tempdir().unwrap();
+    let directory = root.path().join("workspaces/abs/practice_1");
+    std::fs::create_dir_all(&directory).unwrap();
+    let old = r#"{"cases":[{"stdin":"1\r\n","expectedOutput":"1\n","compare":false},{"stdin":"2","expectedOutput":"2.000001","compare":true,"tolerance":1e-6},{"stdin":"3","expectedOutput":"","compare":true,"tolerance":1e-9}]}"#;
+    std::fs::write(directory.join("cases.json"), old).unwrap();
+    let workspaces = Workspaces::new(root.path());
+    workspaces
+        .store_task(&parse_task(URL, HTML).unwrap())
+        .unwrap();
+    let mut documents = DocumentStore::default();
+    let opened = workspaces
+        .open(URL, "A", documents.revision(), &mut documents)
+        .unwrap();
+    // The first tolerance found becomes the problem's; inputs, outputs and compare stay.
+    assert_eq!(opened.samples.tolerance, Some(1e-6));
+    let texts: Vec<_> = opened
+        .samples
+        .cases
+        .iter()
+        .map(|case| {
+            (
+                case.stdin.as_str(),
+                case.expected_output.as_str(),
+                case.compare,
+            )
+        })
+        .collect();
+    assert_eq!(
+        texts,
+        [
+            ("1\r\n", "1\n", false),
+            ("2", "2.000001", true),
+            ("3", "", true)
+        ]
+    );
+    assert_eq!(
+        std::fs::read_to_string(directory.join("cases.json")).unwrap(),
+        old
+    );
+    std::fs::write(directory.join("cases.json"), r#"{"cases":[]}"#).unwrap();
+    let reopened = workspaces
+        .open(URL, "A", documents.revision(), &mut documents)
+        .unwrap();
+    assert_eq!(reopened.samples, opened.samples);
+}
+
+#[test]
+fn unreadable_old_samples_are_left_as_they_were_and_named_on_open() {
+    let root = tempfile::tempdir().unwrap();
+    // Joined part by part so the message's path matches on Windows too.
+    let directory = root
+        .path()
+        .join("workspaces")
+        .join("abs")
+        .join("practice_1");
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(directory.join("cases.json"), "not json").unwrap();
+    let workspaces = Workspaces::new(root.path());
+    workspaces
+        .store_task(&parse_task(URL, HTML).unwrap())
+        .unwrap();
+    let mut documents = DocumentStore::default();
+    let error = workspaces
+        .open(URL, "A", documents.revision(), &mut documents)
+        .unwrap_err();
+    assert!(
+        error.contains(&directory.join("cases.json").display().to_string()),
+        "{error}"
+    );
+    assert!(!directory.join("samples.json").exists());
+    assert_eq!(
+        std::fs::read_to_string(directory.join("cases.json")).unwrap(),
+        "not json"
+    );
 }
 
 #[test]
@@ -367,7 +445,7 @@ fn a_solution_that_cannot_be_converted_is_left_as_it_was() {
         .map(|entry| entry.unwrap().file_name().into_string().unwrap())
         .collect();
     names.sort();
-    assert_eq!(names, ["cases.json", "solution.rb", "task.json"]);
+    assert_eq!(names, ["samples.json", "solution.rb", "task.json"]);
     assert_eq!(
         std::fs::read_to_string(directory.join("solution.rb/keep.txt")).unwrap(),
         "keep"
@@ -632,8 +710,8 @@ fn live_atcoder_task_list_and_ended_task_pages_run_every_sample() {
         let opened = workspaces
             .open(url, "A", documents.revision(), &mut documents)
             .unwrap();
-        assert!(!opened.cases.is_empty());
-        for case in opened.cases {
+        assert!(!opened.samples.cases.is_empty());
+        for case in opened.samples.cases {
             let result = Runner::new(Duration::from_secs(10), 1048576)
                 .prepare(RunRequest {
                     code: code.into(),

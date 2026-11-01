@@ -92,7 +92,7 @@ async function saveNow() {
     try {
       if (codeChanged) { await ide.saveCode(code); if (problem.url === activeProblem?.url) savedCode = code; }
       if (casesChanged) {
-        await (problem.home ? ide.saveHomeCases(data) : ide.saveTaskCases(problem.url, data));
+        await ide.saveSamples(problem.url, data);
         if (problem.url === activeProblem?.url) cases.markSaved(data);
       }
       saveError = null;
@@ -178,15 +178,26 @@ function openDifference() {
 $('comparison-status').addEventListener('click', openDifference);
 $('difference-close').addEventListener('click', () => differenceDialog.close());
 
+// Sample tabs: the color shows each sample's verdict, the title the full state.
+function caseState(item) {
+  if (item.status === 'running') return 'running';
+  if (['failed', 'timeout', 'output-limit', 'memory-limit', 'error'].includes(item.status)) return 'error';
+  return item.comparison;
+}
 function updateCaseList() {
-  $('case-select').replaceChildren(...cases.items.map((item, index) => {
-    const option = document.createElement('option');
-    option.value = String(index);
-    option.textContent = `ケース ${index + 1} · ${item.status === 'running' ? '実行中' : item.status && item.status !== 'completed' ? statusLabel(item.status, item.exitCode, item.executionLimitMs) : comparisonLabels[item.comparison]}`;
-    if (item.exceededTimeLimitMs !== null) option.textContent += ' · 制限超過の可能性';
-    return option;
+  $('case-tabs').replaceChildren(...cases.items.map((item, index) => {
+    const tab = document.createElement('button');
+    tab.setAttribute('role', 'tab');
+    tab.textContent = String(index + 1);
+    tab.dataset.state = caseState(item);
+    tab.title = `サンプル ${index + 1} · ${item.status === 'running' ? '実行中' : item.status && item.status !== 'completed' ? statusLabel(item.status, item.exitCode, item.executionLimitMs) : comparisonLabels[item.comparison]}${item.exceededTimeLimitMs !== null ? ' · 制限超過の可能性' : ''}`;
+    if (item.exceededTimeLimitMs !== null) tab.classList.add('warning');
+    tab.setAttribute('aria-label', tab.title);
+    tab.setAttribute('aria-selected', String(index === cases.selected));
+    tab.disabled = !activeProblem || fileBusy || closing;
+    tab.addEventListener('click', () => { cases.selected = index; showCase(); });
+    return tab;
   }));
-  $('case-select').value = String(cases.selected);
   $('case-count').textContent = `${cases.items.length} ケース`;
   const done = cases.items.filter(item => item.status && !['running', 'canceled'].includes(item.status)).length;
   const count = state => cases.items.filter(item => item.comparison === state).length;
@@ -198,6 +209,8 @@ function updateCaseList() {
 function showResult() {
   const item = cases.current;
   for (const stream of ['stdout', 'stderr']) $(stream).textContent = item[stream];
+  $('stderr-count').textContent = item.stderr ? `（${item.stderr.split('\n').filter(Boolean).length} 行）` : '';
+  if (['failed', 'error'].includes(item.status) && item.stderr) $('stderr-panel').open = true;
   $('run-status').textContent = statusLabel(item.status, item.exitCode, item.executionLimitMs);
   $('run-duration').textContent = item.durationMs === null ? '— ms' : `${item.durationMs} ms`;
   showExecutionLimit();
@@ -239,10 +252,10 @@ function showCase() {
 }
 
 function showTolerance() {
-  tolerantCompare.checked = cases.current.tolerance !== null;
-  toleranceInput.value = cases.current.tolerance ?? 1e-6;
-  toleranceInput.setCustomValidity(typeof cases.current.tolerance === 'number' && cases.current.tolerance > 0 && Number.isFinite(cases.current.tolerance)
-    || cases.current.tolerance === null ? '' : '許容誤差は0より大きい有限の数にしてください。');
+  tolerantCompare.checked = cases.tolerance !== null;
+  toleranceInput.value = cases.tolerance ?? 1e-6;
+  toleranceInput.setCustomValidity(typeof cases.tolerance === 'number' && cases.tolerance > 0 && Number.isFinite(cases.tolerance)
+    || cases.tolerance === null ? '' : '許容誤差は0より大きい有限の数にしてください。');
 }
 
 function resetComparison(all = false) {
@@ -286,7 +299,7 @@ function updateButtons() {
   for (const id of ['run', 'run-all']) $(id).disabled = running || !rubyAvailable || locked;
   $('case-add').disabled = running || locked || cases.items.length >= MAX_CASES;
   $('case-remove').disabled = running || locked || cases.items.length === 1;
-  $('case-select').disabled = locked;
+  for (const tab of document.querySelectorAll('#case-tabs [role="tab"]')) tab.disabled = locked;
   $('stop').disabled = !running;
   for (const tab of document.querySelectorAll('#file-tabs [role="tab"]')) tab.disabled = running || locked;
   $('file-add').disabled = running || locked;
@@ -298,8 +311,8 @@ function updateButtons() {
   $('error-location').disabled = locked;
   input.readOnly = expectedOutput.readOnly = locked;
   compareOutput.disabled = locked;
-  tolerantCompare.disabled = locked || !cases.current.compare;
-  toleranceInput.disabled = locked || !cases.current.compare || cases.current.tolerance === null;
+  tolerantCompare.disabled = locked;
+  toleranceInput.disabled = locked || cases.tolerance === null;
 }
 
 async function fileAction(action, report = message) {
@@ -366,7 +379,6 @@ async function stop() {
 $('run').addEventListener('click', () => run());
 $('run-all').addEventListener('click', () => run(true));
 $('stop').addEventListener('click', stop);
-$('case-select').addEventListener('change', () => { cases.selected = Number($('case-select').value); showCase(); });
 $('case-add').addEventListener('click', () => {
   cases.add();
   showCase();
@@ -389,15 +401,21 @@ function editCase(field, value) {
 input.addEventListener('input', () => editCase('stdin', input.value));
 expectedOutput.addEventListener('input', () => editCase('expectedOutput', expectedOutput.value));
 compareOutput.addEventListener('change', () => { editCase('compare', compareOutput.checked); updateButtons(); });
+// The tolerance is the problem's: changing it invalidates every sample.
+function editTolerance(value) {
+  cases.tolerance = value;
+  resetComparison(true);
+  scheduleSave();
+}
 tolerantCompare.addEventListener('change', () => {
-  editCase('tolerance', tolerantCompare.checked ? 1e-6 : null);
+  editTolerance(tolerantCompare.checked ? 1e-6 : null);
   showTolerance();
   updateButtons();
 });
 toleranceInput.addEventListener('input', () => {
   const value = toleranceInput.valueAsNumber;
   // Keep incomplete input as a string so JSON cannot silently turn NaN into null/strict mode.
-  editCase('tolerance', Number.isFinite(value) ? value : toleranceInput.value);
+  editTolerance(Number.isFinite(value) ? value : toleranceInput.value);
   toleranceInput.setCustomValidity(Number.isFinite(value) && value > 0 ? '' : '許容誤差は0より大きい有限の数にしてください。');
 });
 document.addEventListener('keydown', (event) => {
@@ -426,7 +444,7 @@ function applyWorkspace(result, problem) {
   editor.value = result.document.code;
   savedCode = editor.value;
   filePath = result.document.filePath;
-  cases.replace(result.cases, { saved: true });
+  cases.replace(result.samples.cases, { saved: true, tolerance: result.samples.tolerance ?? null });
   showProblem(); showCase(); updateEditor(); renderFiles();
 }
 
