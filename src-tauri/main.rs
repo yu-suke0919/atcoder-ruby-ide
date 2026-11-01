@@ -3,9 +3,9 @@
 mod browser;
 
 use atcoder_ruby_ide::{
-    fetch_page, http_client, Contest, Contests, DocumentStore, HomeWorkspace, LspInfo,
-    RegisteredContest, RubyInfo, RubyLsp, RunEvent, RunRequest, Runner, SampleCase, TaskWorkspace,
-    Workspaces,
+    fetch_page, http_client, Contest, Contests, DocumentResult, DocumentStore, HomeWorkspace,
+    LspInfo, RegisteredContest, RubyInfo, RubyLsp, RunEvent, RunRequest, Runner, SampleCase,
+    TaskWorkspace, Workspaces,
 };
 use browser::Browser;
 use std::path::PathBuf;
@@ -216,6 +216,7 @@ async fn task_open(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     url: String,
+    label: String,
 ) -> Result<Option<TaskWorkspace>, String> {
     let workspaces = Workspaces::new(data_dir(&app)?);
     let documents = Arc::clone(&state.documents);
@@ -225,7 +226,7 @@ async fn task_open(
             return Ok(None);
         }
         workspaces
-            .open(&url, revision, &mut documents.lock().unwrap())
+            .open(&url, &label, revision, &mut documents.lock().unwrap())
             .map(Some)
     })
     .await
@@ -265,6 +266,68 @@ async fn home_save_cases(app: tauri::AppHandle, cases: Vec<SampleCase>) -> Resul
     tauri::async_runtime::spawn_blocking(move || workspaces.save_home_cases(cases))
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// File commands take the workspace: `home` or a task URL.
+#[tauri::command]
+async fn file_open(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+    name: String,
+) -> Result<DocumentResult, String> {
+    let workspaces = Workspaces::new(data_dir(&app)?);
+    let documents = Arc::clone(&state.documents);
+    tauri::async_runtime::spawn_blocking(move || {
+        workspaces.open_file(&workspace, &name, &mut documents.lock().unwrap())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn file_create(
+    app: tauri::AppHandle,
+    workspace: String,
+    label: String,
+) -> Result<String, String> {
+    let workspaces = Workspaces::new(data_dir(&app)?);
+    tauri::async_runtime::spawn_blocking(move || workspaces.create_file(&workspace, &label))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn file_rename(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+    from: String,
+    to: String,
+) -> Result<(), String> {
+    let workspaces = Workspaces::new(data_dir(&app)?);
+    let documents = Arc::clone(&state.documents);
+    tauri::async_runtime::spawn_blocking(move || {
+        workspaces.rename_file(&workspace, &from, &to, &mut documents.lock().unwrap())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn file_delete(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+    name: String,
+) -> Result<(), String> {
+    let workspaces = Workspaces::new(data_dir(&app)?);
+    let documents = Arc::clone(&state.documents);
+    tauri::async_runtime::spawn_blocking(move || {
+        workspaces.delete_file(&workspace, &name, &documents.lock().unwrap())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn main() {
@@ -315,6 +378,10 @@ fn main() {
             task_save_cases,
             home_open,
             home_save_cases,
+            file_open,
+            file_create,
+            file_rename,
+            file_delete,
             browser::browser_layout,
             browser::browser_visible,
             browser::browser_home,

@@ -27,7 +27,7 @@
     <div class="splitter" data-split="tasks" role="separator" aria-orientation="vertical" aria-label="問題一覧とエディタの境目" title="ドラッグで幅を変更、ダブルクリックで元に戻す"></div>
     <main class="workspace">
       <section class="panel editor-panel" aria-labelledby="editor-heading">
-        <div class="panel-heading"><div class="panel-label"><span class="file-icon" aria-hidden="true">⌘</span><h3 id="editor-heading">コード</h3><span class="language-pill">Ruby</span></div><span class="save-status"><span id="save-state" data-testid="save-state" data-state="none" class="subtle" role="status">問題を開いてください</span><button id="save-retry" class="quiet-button" title="Ctrl+S" hidden>保存を再試行</button></span></div>
+        <div class="panel-heading"><div class="panel-label file-label"><h3 id="editor-heading" class="sr-only">コード</h3><div id="file-tabs" class="file-tabs" role="tablist" aria-label="ファイル"></div><button id="file-add" class="quiet-button file-add" title="ファイルを追加" aria-label="ファイルを追加">＋</button></div><span class="save-status"><span id="save-state" data-testid="save-state" data-state="none" class="subtle" role="status">問題を開いてください</span><button id="save-retry" class="quiet-button" title="Ctrl+S" hidden>保存を再試行</button></span></div>
         <div id="editor-host" class="editor-container"></div>
         <div class="completion-state"><span id="completion-state" data-state="idle" role="status" aria-live="polite">補完は初回利用時に準備します</span><button id="completion-retry" class="quiet-button" hidden>再試行</button></div>
         <div class="editor-footer"><span id="file-path" title="問題を開いてください">問題を開いてください</span><button id="editor-complete" class="quiet-button" title="Ctrl+Space">補完</button><button id="editor-search" class="quiet-button" title="Ctrl+F / Ctrl+H">検索・置換</button><span id="cursor-position">Ln 1, Col 1</span></div>
@@ -84,6 +84,18 @@
     <div class="dialog-actions"><button id="contest-cancel">キャンセル</button><button id="contest-register">登録</button></div>
   </dialog>
   <div id="rail-menu" class="rail-menu" role="menu" hidden></div>
+  <dialog id="file-rename-dialog" aria-labelledby="file-rename-heading">
+    <h2 id="file-rename-heading">ファイル名を変更</h2>
+    <label for="file-rename-input">新しい名前（英数字・_・-の1〜40文字）</label>
+    <input id="file-rename-input" spellcheck="false" autocomplete="off">
+    <p id="file-rename-message" role="status"></p>
+    <div class="dialog-actions"><button id="file-rename-cancel">キャンセル</button><button id="file-rename-ok">変更</button></div>
+  </dialog>
+  <dialog id="file-delete-dialog" aria-labelledby="file-delete-heading" aria-describedby="file-delete-message">
+    <h2 id="file-delete-heading">ファイルを削除</h2>
+    <p id="file-delete-message"></p>
+    <div class="dialog-actions"><button id="file-delete-cancel" autofocus>キャンセル</button><button id="file-delete-ok">削除</button></div>
+  </dialog>
   <dialog id="save-failed-dialog" aria-labelledby="save-failed-heading" aria-describedby="save-failed-message">
     <h2 id="save-failed-heading">保存できなかった変更があります</h2>
     <p id="save-failed-message"></p>

@@ -173,13 +173,10 @@ fn workspace_opens_only_after_the_page_was_read_and_keeps_user_data_on_rereads()
     let mut documents = DocumentStore::default();
     assert!(workspaces.task(URL).unwrap().is_none());
     assert!(workspaces
-        .open(URL, documents.revision(), &mut documents)
+        .open(URL, "A", documents.revision(), &mut documents)
         .unwrap_err()
         .contains("読み取っていません"));
-    assert!(!root
-        .path()
-        .join("workspaces/abs/practice_1/solution.rb")
-        .exists());
+    assert!(!root.path().join("workspaces/abs/practice_1/files").exists());
 
     let task = parse_task(
         URL,
@@ -188,10 +185,21 @@ fn workspace_opens_only_after_the_page_was_read_and_keeps_user_data_on_rereads()
     .unwrap();
     workspaces.store_task(&task).unwrap();
     let opened = workspaces
-        .open(URL, documents.revision(), &mut documents)
+        .open(URL, "A", documents.revision(), &mut documents)
         .unwrap();
     assert_eq!(opened.task, task);
+    // The first open makes two empty files named after the task's label.
+    assert_eq!(opened.files, ["A_1", "A_2"]);
+    assert_eq!(opened.file, "A_1");
+    assert_eq!(
+        Path::new(&opened.document.file_path),
+        root.path().join("workspaces/abs/practice_1/files/A_1.rb")
+    );
     assert_eq!(opened.document.code, "");
+    assert!(!root
+        .path()
+        .join("workspaces/abs/practice_1/solution.rb")
+        .exists());
     assert!(opened
         .cases
         .iter()
@@ -207,7 +215,7 @@ fn workspace_opens_only_after_the_page_was_read_and_keeps_user_data_on_rereads()
     };
     workspaces.store_task(&reread).unwrap();
     let reopened = workspaces
-        .open(URL, documents.revision(), &mut documents)
+        .open(URL, "A", documents.revision(), &mut documents)
         .unwrap();
     assert_eq!(reopened.task.time_limit_ms, Some(3000));
     assert_eq!(reopened.document.code, "puts 'mine'");
@@ -223,9 +231,10 @@ fn home_opens_without_a_task_and_keeps_its_code_and_samples_apart_from_problems(
         .open_home(documents.revision(), &mut documents)
         .unwrap();
     assert_eq!(home.document.code, "");
+    assert_eq!(home.files, ["home_1", "home_2"]);
     assert_eq!(
         Path::new(&home.document.file_path),
-        root.path().join("home/solution.rb")
+        root.path().join("home/files/home_1.rb")
     );
     assert_eq!(home.cases.len(), 1);
     assert!(!home.cases[0].compare && home.cases[0].stdin.is_empty());
@@ -271,11 +280,11 @@ fn unreadable_task_data_is_read_again_and_late_opens_do_not_replace_the_document
     let mut documents = DocumentStore::default();
     let revision = documents.revision();
     documents.open(current.clone()).unwrap();
-    assert!(workspaces.open(URL, revision, &mut documents).is_err());
+    assert!(workspaces.open(URL, "A", revision, &mut documents).is_err());
     assert_eq!(documents.path(), Some(current.as_path()));
     std::fs::write(directory.join("cases.json"), r#"{"cases":[]}"#).unwrap();
     assert!(workspaces
-        .open(URL, documents.revision(), &mut documents)
+        .open(URL, "A", documents.revision(), &mut documents)
         .is_err());
     assert_eq!(documents.path(), Some(current.as_path()));
 }
@@ -290,7 +299,7 @@ fn tasks_without_samples_open_with_one_uncompared_empty_case() {
     workspaces.store_task(&task).unwrap();
     let mut documents = DocumentStore::default();
     let opened = workspaces
-        .open(URL, documents.revision(), &mut documents)
+        .open(URL, "A", documents.revision(), &mut documents)
         .unwrap();
     assert_eq!(
         opened.cases,
@@ -320,10 +329,109 @@ fn existing_solutions_and_cases_are_reused_when_the_task_is_read_for_the_first_t
         .unwrap();
     let mut documents = DocumentStore::default();
     let opened = workspaces
-        .open(URL, documents.revision(), &mut documents)
+        .open(URL, "A", documents.revision(), &mut documents)
         .unwrap();
     assert_eq!(opened.document.code, "puts 'before U2b'");
     assert_eq!(opened.cases[0].stdin, "保存済み\r\n");
+    // solution.rb becomes the first file once and stays as it was.
+    assert_eq!(opened.files, ["A_1", "A_2"]);
+    let read = |name: &str| std::fs::read_to_string(directory.join(name)).unwrap();
+    assert_eq!(read("files/A_1.rb"), "puts 'before U2b'");
+    assert_eq!(read("files/A_2.rb"), "");
+    assert_eq!(read("solution.rb"), "puts 'before U2b'");
+    std::fs::write(directory.join("solution.rb"), "puts 'changed later'").unwrap();
+    let reopened = workspaces
+        .open(URL, "A", documents.revision(), &mut documents)
+        .unwrap();
+    assert_eq!(reopened.document.code, "puts 'before U2b'");
+}
+
+#[test]
+fn a_solution_that_cannot_be_converted_is_left_as_it_was() {
+    let root = tempfile::tempdir().unwrap();
+    let directory = root.path().join("workspaces/abs/practice_1");
+    // A directory where solution.rb should be cannot be read, so nothing is converted.
+    std::fs::create_dir_all(directory.join("solution.rb")).unwrap();
+    std::fs::write(directory.join("solution.rb/keep.txt"), "keep").unwrap();
+    let workspaces = Workspaces::new(root.path());
+    workspaces
+        .store_task(&parse_task(URL, HTML).unwrap())
+        .unwrap();
+    let mut documents = DocumentStore::default();
+    let error = workspaces
+        .open(URL, "A", documents.revision(), &mut documents)
+        .unwrap_err();
+    assert!(error.contains("solution.rb"), "{error}");
+    let mut names: Vec<_> = std::fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["cases.json", "solution.rb", "task.json"]);
+    assert_eq!(
+        std::fs::read_to_string(directory.join("solution.rb/keep.txt")).unwrap(),
+        "keep"
+    );
+    assert_eq!(documents.path(), None);
+}
+
+#[test]
+fn files_are_added_renamed_and_deleted_with_safe_unique_names_in_natural_order() {
+    let root = tempfile::tempdir().unwrap();
+    let workspaces = Workspaces::new(root.path());
+    workspaces
+        .store_task(&parse_task(URL, HTML).unwrap())
+        .unwrap();
+    let mut documents = DocumentStore::default();
+    workspaces
+        .open(URL, "A", documents.revision(), &mut documents)
+        .unwrap();
+    assert_eq!(workspaces.create_file(URL, "A").unwrap(), "A_3");
+    workspaces
+        .rename_file(URL, "A_3", "brute", &mut documents)
+        .unwrap();
+    for invalid in [
+        "",
+        "a b",
+        "../x",
+        "x.rb",
+        "CON",
+        "日本語",
+        &"a".repeat(41),
+        "a_1",
+    ] {
+        assert!(
+            workspaces
+                .rename_file(URL, "brute", invalid, &mut documents)
+                .is_err(),
+            "{invalid}"
+        );
+    }
+    workspaces
+        .rename_file(URL, "brute", "A_10", &mut documents)
+        .unwrap();
+    assert_eq!(workspaces.files(URL).unwrap(), ["A_1", "A_2", "A_10"]);
+    // The open file follows its new name.
+    workspaces
+        .rename_file(URL, "A_1", "main", &mut documents)
+        .unwrap();
+    let file = root.path().join("workspaces/abs/practice_1/files/main.rb");
+    assert_eq!(documents.path(), Some(file.as_path()));
+    documents.save("puts 'renamed'").unwrap();
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "puts 'renamed'");
+    assert!(workspaces.delete_file(URL, "main", &documents).is_err());
+    workspaces.delete_file(URL, "A_2", &documents).unwrap();
+    workspaces.delete_file(URL, "A_10", &documents).unwrap();
+    assert_eq!(workspaces.files(URL).unwrap(), ["main"]);
+    let opened = workspaces.open_file(URL, "main", &mut documents).unwrap();
+    assert_eq!(opened.code, "puts 'renamed'");
+    documents.reset();
+    // The last file stays even when it is not open.
+    assert!(workspaces.delete_file(URL, "main", &documents).is_err());
+    assert!(workspaces
+        .open_file(URL, "../task", &mut documents)
+        .is_err());
+    assert!(workspaces.create_file("home", "home").is_err());
 }
 
 #[test]
@@ -508,7 +616,7 @@ fn live_atcoder_task_list_and_ended_task_pages_run_every_sample() {
         workspaces.store_task(&task).unwrap();
         let mut documents = DocumentStore::default();
         let opened = workspaces
-            .open(url, documents.revision(), &mut documents)
+            .open(url, "A", documents.revision(), &mut documents)
             .unwrap();
         assert!(!opened.cases.is_empty());
         for case in opened.cases {

@@ -11,9 +11,10 @@ Tauri の `app.path().app_local_data_dir()` を使う。Windows では通常 `%L
   contests/<contest-id>.json                     登録したコンテスト・問題集と問題一覧
   workspaces/<contest-id>/<task-id>/task.json    問題ページから読み取った内容
   workspaces/<contest-id>/<task-id>/cases.json   サンプル（利用者の編集を含む）と許容誤差
-  workspaces/<contest-id>/<task-id>/*.rb         解答ファイル
+  workspaces/<contest-id>/<task-id>/files/*.rb   解答ファイル（タブ）
+  workspaces/<contest-id>/<task-id>/solution.rb  U3aより前の解答（変換元として残す）
   home/cases.json                                ホームのサンプルと許容誤差
-  home/*.rb                                      ホームのファイル
+  home/files/*.rb                                ホームのファイル（タブ）
   submissions/<contest-id>.json                  アプリのブラウザで行った提出の結果
   settings.json                                  設定
 ```
@@ -23,14 +24,24 @@ Tauri の `app.path().app_local_data_dir()` を使う。Windows では通常 `%L
 - `cases.json`：初めて開いたときに`task.json`のサンプルから作り、以後は利用者の編集だけで変わる。読み取り直しで上書きしない。
 - 解答ファイルは問題ごとに複数持つ。初めて開いたときに2つ作る。
 
-以前の仕様の`library/problems`（単問キャッシュ）と`library/collections`（問題集の一覧と、問題文を含む固定原本）はU2bから読まない。残ったファイルは利用者が手動で削除してよい。以前に登録した問題集は、同じURLを「＋」で登録し直すと問題一覧を取り直し、`workspaces`の解答とサンプルをそのまま使える。`submissions`・`settings.json`と複数の解答ファイルは、[ロードマップ](roadmap.md)のU3・U5で加える。移すPRで、次の保存形式の方針に従う。
+以前の仕様の`library/problems`（単問キャッシュ）と`library/collections`（問題集の一覧と、問題文を含む固定原本）はU2bから読まない。残ったファイルは利用者が手動で削除してよい。以前に登録した問題集は、同じURLを「＋」で登録し直すと問題一覧を取り直し、`workspaces`の解答とサンプルをそのまま使える。`submissions`・`settings.json`は、[ロードマップ](roadmap.md)のU5で加える。移すPRで、次の保存形式の方針に従う。
 
 U2bの時点の形式は次のとおり。どれも未知の項目を拒否する。
 
 - `contests/<contest-id>.json`：`url`（`https://atcoder.jp/contests/<id>`）、`title`、`hidden`（真偽値）、`tasks`（`label`・`title`・`url`の配列、1〜1,000件）。登録の経緯と開始・終了の時刻はU6で任意項目として加える。
 - `task.json`：`url`、`samples`（`stdin`・`expectedOutput`の配列、0〜100件）、任意の`timeLimitMs`・`memoryLimitMiB`。入力形式はU4で任意項目として加える。
-- `cases.json`と`solution.rb`：U2aまでと同じ形式。
-- `home/cases.json`と`home/solution.rb`（U2d）：問題の作業領域と同じ形式。初めて開いたときに、比較しない空のサンプル1件と空のファイルを作る。
+- `cases.json`：U2aまでと同じ形式。
+- `files/<名前>.rb`（U3a）：1つが1つのタブ。タブは名前の自然順（`A_2`は`A_10`より前）に並べ、開いたときは最初のタブを表示する。名前は英数字・`_`・`-`の1〜40文字で、大文字小文字を区別せずに重複させない。最後の1つは削除できない。
+- `home/`（U2d）：問題の作業領域と同じ形式。初めて開いたときに、比較しない空のサンプル1件を作る。ファイルの名前は`home_1`・`home_2`から始まる。
+
+### 解答ファイルの変換（U3a）
+
+U2dまでの作業領域は解答を`solution.rb`の1つだけに持っていた。U3aで`files/`に複数のファイルを持つようにしたため、この変換は[開発ルール](../AGENTS.md)の「移行は追加しない」の例外として利用者が決めたもので、次のように一度だけ行う。
+
+- 作業領域を開いたとき`files/`がなければ、作業領域の中の一時フォルダーに`<表示番号>_1.rb`（`solution.rb`の内容。なければ空）と空の`<表示番号>_2.rb`を書き、最後に`files/`へ名前を変えて確定する。`files/`があれば変換しない。
+- `solution.rb`は消さずに残し、以後は読み書きしない。利用者が手動で削除してよい。
+- 変換できない場合（`files/`を作れない、`solution.rb`を読めないなど）は一時フォルダーを消して元のまま残し、その問題を開くときに理由を表示する。
+- 変換前後の内容が同じこと、一度だけ行うこと、失敗時に元のファイルが残ることを固定データで検証する。
 
 ## 保存形式を変えるときの方針
 

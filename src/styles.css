@@ -13,6 +13,11 @@ button:disabled { opacity: .35; cursor: default; }
 .panel { border: 1px solid var(--border); border-radius: 10px; background: var(--panel); overflow: hidden; min-width: 0; min-height: 0; }
 .panel-heading { display: flex; justify-content: space-between; align-items: center; height: 49px; padding: 0 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .panel-label { display: flex; align-items: center; gap: 9px; }
+.file-label { min-width: 0; flex: 1; gap: 4px; }
+.file-tabs { display: flex; gap: 2px; min-width: 0; overflow-x: auto; }
+.file-tabs [role="tab"] { padding: 5px 10px; border-radius: 6px 6px 0 0; font: 12px Consolas, monospace; color: var(--muted); }
+.file-tabs [role="tab"][aria-selected="true"] { background: #2d2540; color: white; box-shadow: inset 0 -2px var(--accent); }
+.file-add { flex-shrink: 0; font-size: 14px; }
 h3 { font-weight: 500; font-size: 12px; margin: 0; }
 .file-icon { color: #bca4ff; font-size: 19px; }
 .language-pill { color: #e7a5b5; background: #382733; border-radius: 4px; padding: 3px 6px; font-size: 9px; }
@@ -148,12 +153,12 @@ h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 .browser-message:empty { display: none; }
 .browser-host { flex: 1; min-width: 0; min-height: 0; background: #0c1016; display: grid; place-items: center; color: var(--muted); font-size: 11px; padding: 16px; text-align: center; }
 .statusbar { display: flex; justify-content: space-between; padding: 6px 16px; border-top: 1px solid var(--border); color: #75849b; font-size: 10px; flex-shrink: 0; background: #121720; }
-#contest-dialog, #save-failed-dialog { width: min(560px, calc(100vw - 36px)); padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); }
-#contest-dialog::backdrop, #save-failed-dialog::backdrop { background: #000a; }
-#contest-dialog h2, #save-failed-dialog h2 { margin: 0 0 12px; font-size: 15px; }
-#contest-url { display: block; width: 100%; margin-top: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 8px; font: inherit; }
-.dialog-help, #contest-message, #save-failed-message { color: var(--muted); font-size: 11px; line-height: 1.6; white-space: pre-line; }
-#contest-message[data-error="true"] { color: #f5a3b2; }
+#contest-dialog, #save-failed-dialog, #file-rename-dialog, #file-delete-dialog { width: min(560px, calc(100vw - 36px)); padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); }
+#contest-dialog::backdrop, #save-failed-dialog::backdrop, #file-rename-dialog::backdrop, #file-delete-dialog::backdrop { background: #000a; }
+#contest-dialog h2, #save-failed-dialog h2, #file-rename-dialog h2, #file-delete-dialog h2 { margin: 0 0 12px; font-size: 15px; }
+#contest-url, #file-rename-input { display: block; width: 100%; margin-top: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 8px; font: inherit; }
+.dialog-help, #contest-message, #save-failed-message, #file-rename-message, #file-delete-message { color: var(--muted); font-size: 11px; line-height: 1.6; white-space: pre-line; }
+#contest-message[data-error="true"], #file-rename-message { color: #f5a3b2; }
 .dialog-actions, .repair-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 @media (max-height: 760px) {
   .io-row .panel-heading { height: 28px; }
