@@ -165,15 +165,17 @@ impl Browser {
     }
 }
 
+// The commands are async: on Windows, creating or changing a webview from a synchronous command,
+// which runs on the main thread, deadlocks WebView2.
 #[tauri::command]
-pub fn browser_layout(
+pub async fn browser_layout(
     app: tauri::AppHandle,
     browser: tauri::State<'_, Browser>,
     x: f64,
     y: f64,
     width: f64,
     height: f64,
-) {
+) -> Result<(), String> {
     *browser.bounds.lock().unwrap() = Bounds {
         x,
         y,
@@ -181,17 +183,23 @@ pub fn browser_layout(
         height,
     };
     browser.apply(&app);
+    Ok(())
 }
 
 /// Hides every page while an in-app dialog covers the window.
 #[tauri::command]
-pub fn browser_visible(app: tauri::AppHandle, browser: tauri::State<'_, Browser>, visible: bool) {
+pub async fn browser_visible(
+    app: tauri::AppHandle,
+    browser: tauri::State<'_, Browser>,
+    visible: bool,
+) -> Result<(), String> {
     *browser.hidden.lock().unwrap() = !visible;
     browser.apply(&app);
+    Ok(())
 }
 
 #[tauri::command]
-pub fn browser_home(
+pub async fn browser_home(
     app: tauri::AppHandle,
     browser: tauri::State<'_, Browser>,
     url: Option<String>,
@@ -207,7 +215,7 @@ pub fn browser_home(
 /// Shows the page of a task, creating it on first use. An already open page is read again
 /// when its samples are still missing.
 #[tauri::command]
-pub fn browser_task(
+pub async fn browser_task(
     app: tauri::AppHandle,
     browser: tauri::State<'_, Browser>,
     url: String,
@@ -249,7 +257,10 @@ pub fn browser_task(
 
 /// Closes the task pages of the previous contest.
 #[tauri::command]
-pub fn browser_close_tasks(app: tauri::AppHandle, browser: tauri::State<'_, Browser>) {
+pub async fn browser_close_tasks(
+    app: tauri::AppHandle,
+    browser: tauri::State<'_, Browser>,
+) -> Result<(), String> {
     for label in browser
         .tasks
         .lock()
@@ -263,6 +274,7 @@ pub fn browser_close_tasks(app: tauri::AppHandle, browser: tauri::State<'_, Brow
     }
     *browser.shown.lock().unwrap() = HOME.into();
     browser.apply(&app);
+    Ok(())
 }
 
 /// The browser's cookies for AtCoder, read from the home page. Async so WebView2 does not deadlock.
