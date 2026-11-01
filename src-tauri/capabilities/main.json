@@ -24,6 +24,7 @@
     "allow-home-save-cases",
     "allow-file-open",
     "allow-file-create",
+    "allow-file-copy",
     "allow-file-rename",
     "allow-file-delete",
     "allow-browser-layout",

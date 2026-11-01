@@ -141,6 +141,18 @@ pub(crate) fn create(workspace: &Path, label: &str) -> Result<String, String> {
     Ok(name)
 }
 
+/// Adds a file with the next free `<label>_<n>` name and the code of another file.
+pub(crate) fn copy(workspace: &Path, name: &str, label: &str) -> Result<String, String> {
+    if !list(workspace)?.iter().any(|used| used == name) {
+        return Err(format!("「{name}」がありません。"));
+    }
+    let code = read_limited(&path(workspace, name)?, MAX_TEXT_BYTES)
+        .map_err(|e| format!("コピーできません: {e}"))?;
+    let copy = create(workspace, label)?;
+    std::fs::write(path(workspace, &copy)?, code).map_err(|e| format!("コピーできません: {e}"))?;
+    Ok(copy)
+}
+
 pub(crate) fn rename(workspace: &Path, from: &str, to: &str) -> Result<(PathBuf, PathBuf), String> {
     let (old, new) = (path(workspace, from)?, path(workspace, to)?);
     let names = list(workspace)?;

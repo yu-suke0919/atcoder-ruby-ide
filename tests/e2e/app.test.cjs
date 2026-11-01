@@ -578,6 +578,19 @@ test('M02/U3a: a problem has file tabs that are added, switched, run, renamed an
   await page.waitForFunction(() => document.querySelector('#file-tabs [aria-selected="true"]').textContent === 'C_1');
   assert.equal(await editorText(page), 'puts 1');
   assert.equal(await readFile(path.join(problem.workspace, 'files', 'C_2.rb'), 'utf8'), 'puts 2');
+  // A copy opens with the unsaved code of the file it came from.
+  await page.locator('#code-editor').fill('puts 3');
+  await tab('C_1').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'コピー' }).click();
+  await page.waitForFunction(() => document.querySelector('#file-tabs [aria-selected="true"]')?.textContent === 'C_3');
+  assert.equal(await editorText(page), 'puts 3');
+  assert.equal(await readFile(path.join(problem.workspace, 'files', 'C_3.rb'), 'utf8'), 'puts 3');
+  await tab('C_3').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '削除' }).click();
+  await page.locator('#file-delete-ok').click();
+  await page.waitForFunction(() => document.querySelectorAll('#file-tabs [role="tab"]').length === 2);
+  assert.equal(await selected(), 'C_1');
+  await page.locator('#code-editor').fill('puts 1');
   await page.locator('#file-add').click();
   await page.waitForFunction(() => document.querySelector('#file-tabs [aria-selected="true"]')?.textContent === 'C_3');
   assert.equal(await editorText(page), '');

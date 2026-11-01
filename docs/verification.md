@@ -504,3 +504,9 @@ Windows CI の初回では、HTML固定データがCRLFでチェックアウト�
 - ブリッジのテストが禁じていた`openFile`は、以前の外部ファイルを開くAPIの名前だった。新しい`openFile`は作業領域とタブの名前だけを渡すことをテストで確かめるようにした。
 - クラウドセッション（Linux、root）で、Rust（rootで失敗する既知の`r02_cleanup_failure_releases_reservation`以外）、Node単体96件、`cargo fmt --all --check`、画面テスト78件（Windows専用3件を除く）が成功した。Windowsのネイティブ画面・NSIS・ZIPはPRのCIで確認する。
 
+## ファイルのコピー
+
+- main 24e529cから開始。利用者の要望で、タブの右クリックメニューに「コピー」を加えた。選んだファイル（開いているファイルなら編集中の内容）と同じ内容のファイルを、「＋」と同じ次の番号の名前で作って開く。[画面の仕様](ui.md#中央エディタ)とMVPのM02を先に書いた。
+- Rustは`copy_file`がないことによるコンパイル失敗を確かめてから実装し、内容と名前、ないファイルのコピーの拒否を確かめた。E2Eは、保存前の編集を含めてコピーされ、コピーが開くことを確かめる。
+- クラウドセッション（Linux、root）で、Rust（rootで失敗する既知の`r02_cleanup_failure_releases_reservation`以外）、Node単体96件、`cargo fmt --all --check`、画面テスト78件（Windows専用3件を除く）が成功した。
+
