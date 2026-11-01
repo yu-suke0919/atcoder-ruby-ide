@@ -262,6 +262,8 @@ fn main() {
         }
     }
     tauri::Builder::default()
+        // Restores the window size, position and maximized state of the last run.
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(AppState {
             runner: Runner::new(Duration::from_secs(5), 1048576),
             documents: Arc::new(Mutex::new(DocumentStore::default())),

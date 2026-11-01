@@ -102,6 +102,12 @@ async function requestClose(app) {
   ]);
 }
 
+// Moves and resizes the app window as the user would, in physical pixels.
+async function moveWindow(app, { x, y, width, height }) {
+  await execute(system('WindowsPowerShell/v1.0/powershell.exe'), ['-NoProfile', '-NonInteractive', '-Command',
+    `Add-Type -Namespace Win32 -Name Window -MemberDefinition '[DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr window, int x, int y, int width, int height, bool repaint);'; if (![Win32.Window]::MoveWindow((Get-Process -Id ${app.child.pid}).MainWindowHandle, ${x}, ${y}, ${width}, ${height}, $true)) { throw 'Cannot move the app window' }`]);
+}
+
 // Sums the memory of the app and its descendants, which include the WebView2 processes.
 async function memoryUse(app) {
   const script = `$all = Get-CimInstance Win32_Process; $ids = @(${app.child.pid}); do { $count = $ids.Count; $ids = @($ids + @($all | Where-Object { $ids -contains $_.ParentProcessId } | ForEach-Object ProcessId) | Select-Object -Unique) } while ($ids.Count -gt $count); $tree = @($all | Where-Object { $ids -contains $_.ProcessId }); @{ processes = $tree.Count; workingSetMiB = [math]::Round(($tree | Measure-Object WorkingSetSize -Sum).Sum / 1MB); privateMiB = [math]::Round(($tree | Measure-Object PrivatePageCount -Sum).Sum / 1MB) } | ConvertTo-Json -Compress`;
@@ -109,4 +115,4 @@ async function memoryUse(app) {
   return JSON.parse(stdout);
 }
 
-module.exports = { requestClose, launch, close, pause, memoryUse };
+module.exports = { requestClose, launch, close, pause, memoryUse, moveWindow };
