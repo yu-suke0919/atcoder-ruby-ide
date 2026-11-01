@@ -1,7 +1,7 @@
 //! Test-only stdio transport. All execution and document behavior comes from the app library.
 use atcoder_ruby_ide::{
-    fetch_page, http_client, read_task_page, ruby_info, Contests, DocumentStore, RubyLsp, RunEvent,
-    RunRequest, Runner, Workspaces,
+    browser_target, fetch_page, http_client, read_task_page, ruby_info, Contests, DocumentStore,
+    RubyLsp, RunEvent, RunRequest, Runner, Workspaces,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -175,6 +175,7 @@ fn main() {
             }
             "browser_task" => {
                 let url = args["url"].as_str().ok_or("URLを指定してください")?;
+                send(&sink, json!({"appEvent": "browser-url", "payload": url}));
                 if workspaces.task(url)?.is_none() {
                     let error = page(url)
                         .and_then(|html| read_task_page(&workspaces, url, &html))
@@ -186,9 +187,25 @@ fn main() {
                 }
                 Ok(Value::Null)
             }
-            "browser_layout" | "browser_visible" | "browser_home" | "browser_close_tasks" => {
+            // There are no pages here: the shown URL changes as the real browser reports it.
+            "browser_home" => {
+                let url = args["url"].as_str().unwrap_or("https://atcoder.jp/");
+                send(&sink, json!({"appEvent": "browser-url", "payload": url}));
                 Ok(Value::Null)
             }
+            "browser_open" => {
+                let url = browser_target(args["url"].as_str().unwrap_or_default())?;
+                send(
+                    &sink,
+                    json!({"appEvent": "browser-url", "payload": url.as_str()}),
+                );
+                Ok(Value::Null)
+            }
+            "browser_layout"
+            | "browser_visible"
+            | "browser_close_tasks"
+            | "browser_history"
+            | "browser_reload" => Ok(Value::Null),
             "shutdown" => {
                 lsp.stop();
                 cleanup.stop_and_wait();

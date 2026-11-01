@@ -23,6 +23,10 @@ export const ide = {
   browserHome: url => invoke('browser_home', { url }),
   browserTask: url => invoke('browser_task', { url }),
   browserCloseTasks: () => invoke('browser_close_tasks'),
+  browserOpen: url => invoke('browser_open', { url }),
+  browserHistory: forward => invoke('browser_history', { forward }),
+  browserReload: () => invoke('browser_reload'),
+  onBrowserUrl: handler => window.__TAURI__.event.listen('browser-url', event => handler(event.payload)),
   onTaskPage: handler => window.__TAURI__.event.listen('task-page', event => handler(event.payload)),
   rubyInfo: () => invoke('ruby_info'),
   run(code, stdin, expectedOutput = null, tolerance = null, problemTimeLimitMs = null, notify = () => {}) {

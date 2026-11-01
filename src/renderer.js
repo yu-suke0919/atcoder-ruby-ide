@@ -2,6 +2,7 @@ import { ide } from './bridge.mjs';
 import { createEditor } from './editor.mjs';
 import { createLspClient } from './lsp-completion.mjs';
 import { SampleCases, MAX_CASES } from './sample-cases.mjs';
+import { setupLayout } from './layout.mjs';
 
 const $ = (id) => document.getElementById(id);
 const input = $('stdin');
@@ -436,6 +437,34 @@ function layoutBrowser() {
 }
 new ResizeObserver(layoutBrowser).observe($('browser-host'));
 window.addEventListener('resize', layoutBrowser);
+// Pane sizes are a convenience of this screen, so storage that fails only loses them.
+setupLayout({
+  get: key => { try { return localStorage.getItem(key); } catch { return null; } },
+  set: (key, value) => { try { localStorage.setItem(key, value); } catch {} }
+}, 'atcoder-ide-layout');
+
+// The URL field shows the shown page unless the user is typing in it.
+let browserUrl = '';
+const browserMessage = text => { $('browser-message').textContent = text; };
+ide.onBrowserUrl(url => {
+  browserUrl = url;
+  if (document.activeElement !== $('browser-url')) $('browser-url').value = url;
+}).catch(error => message(String(error), true));
+$('browser-url').addEventListener('keydown', async event => {
+  if (event.isComposing) return;
+  if (event.key === 'Escape') { $('browser-url').blur(); return; }
+  if (event.key !== 'Enter') return;
+  try {
+    await ide.browserOpen($('browser-url').value);
+    browserMessage('');
+    $('browser-url').blur();
+  } catch (error) { browserMessage(error.message); }
+});
+// Leaving the field shows the page's URL again, as browsers do.
+$('browser-url').addEventListener('blur', () => { $('browser-url').value = browserUrl; });
+$('browser-back').addEventListener('click', () => ide.browserHistory(false).catch(error => browserMessage(error.message)));
+$('browser-forward').addEventListener('click', () => ide.browserHistory(true).catch(error => browserMessage(error.message)));
+$('browser-reload').addEventListener('click', () => ide.browserReload().catch(error => browserMessage(error.message)));
 
 const contestFor = url => contests.find(contest => contest.url === url) || null;
 function renderRail() {

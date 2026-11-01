@@ -262,6 +262,8 @@ fn main() {
         }
     }
     tauri::Builder::default()
+        // Restores the window size, position and maximized state of the last run.
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(AppState {
             runner: Runner::new(Duration::from_secs(5), 1048576),
             documents: Arc::new(Mutex::new(DocumentStore::default())),
@@ -291,7 +293,10 @@ fn main() {
             browser::browser_visible,
             browser::browser_home,
             browser::browser_task,
-            browser::browser_close_tasks
+            browser::browser_close_tasks,
+            browser::browser_open,
+            browser::browser_history,
+            browser::browser_reload
         ])
         .build(context)
         .expect("アプリを起動できませんでした")

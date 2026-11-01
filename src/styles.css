@@ -105,17 +105,22 @@ pre { margin: 0; padding: 0 16px 12px; white-space: pre-wrap; overflow-wrap: any
 .ruby-mark { width: 28px; height: 28px; font-size: 17px; border-radius: 8px; }
 h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 .brand-caption { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.app { flex: 1; min-height: 0; display: grid; grid-template-columns: 56px 190px minmax(520px, 1fr) minmax(360px, 1fr); }
-.rail { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 0; border-right: 1px solid var(--border); background: #121720; overflow-y: auto; }
+.app { --rail-width: 56px; flex: 1; min-height: 0; display: grid; grid-template-columns: 56px 5px 190px 5px minmax(480px, 55fr) 5px minmax(360px, 45fr); }
+.splitter { cursor: col-resize; touch-action: none; user-select: none; }
+.splitter[aria-orientation="horizontal"] { height: 5px; flex-shrink: 0; cursor: row-resize; }
+.app > .splitter { background: linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat; }
+.splitter:hover, .splitter.dragging { background: var(--accent); }
+.rail { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 0; background: #121720; overflow-y: auto; min-width: 0; }
 .rail-icons { display: flex; flex-direction: column; gap: 8px; }
-.rail-icon, .rail-add { width: 40px; height: 40px; padding: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); font-size: 11px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; }
+/* Icons follow the rail's width. */
+.rail-icon, .rail-add { --icon: calc(var(--rail-width) - 16px); width: var(--icon); height: var(--icon); flex-shrink: 0; padding: 0; border: 1px solid var(--border); border-radius: calc(var(--icon) / 4); background: var(--panel); color: var(--text); font-size: calc(var(--icon) * .28); font-weight: 650; overflow: hidden; text-overflow: ellipsis; }
 .rail-icon[aria-pressed="true"] { background: #493760; border-color: #a78bfa; color: white; }
-.rail-add { font-size: 18px; color: var(--muted); }
+.rail-add { font-size: calc(var(--icon) * .45); color: var(--muted); }
 .rail-menu { position: fixed; z-index: 10; min-width: 220px; max-height: 60vh; overflow: auto; padding: 4px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); box-shadow: 0 8px 24px #0008; }
 .rail-menu[hidden] { display: none; }
 .rail-menu button { display: block; width: 100%; text-align: left; }
 .rail-menu p { margin: 6px 10px; color: var(--muted); font-size: 11px; }
-.task-panel { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); background: #141922; }
+.task-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: #141922; }
 .task-panel h2 { margin: 0; padding: 12px 12px 8px; font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
 .task-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 6px; }
 .task-item { display: flex; gap: 6px; width: 100%; text-align: left; padding: 6px 8px; margin-bottom: 2px; white-space: normal; }
@@ -123,16 +128,24 @@ h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 .task-item[aria-current="true"] { background: #2d2540; color: white; }
 .task-message { margin: 0; padding: 8px 12px; color: var(--muted); font-size: 11px; line-height: 1.6; }
 .task-message[data-error="true"] { color: #f5a3b2; }
-.workspace { display: flex; flex-direction: column; gap: 8px; padding: 8px; min-width: 0; min-height: 0; }
-.editor-panel { flex: 1.1; display: flex; flex-direction: column; }
-.io-row { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; min-height: 0; }
+.workspace { display: flex; flex-direction: column; gap: 3px; padding: 8px; min-width: 0; min-height: 0; }
+.workspace > .run-toolbar { margin-top: 5px; }
+.editor-panel { flex: 52 1 0; min-height: 120px; display: flex; flex-direction: column; }
+.io-row { flex: 48 1 0; display: grid; grid-template-columns: minmax(200px, 50fr) 5px minmax(200px, 50fr); gap: 0 3px; min-height: 180px; }
 .io-row .panel-heading { height: 34px; padding: 0 10px; }
 .input-panel .panel-heading { gap: 8px; }
+.io-row .panel-label { flex-shrink: 0; white-space: nowrap; }
 #problem-limits { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .run-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; }
 .run-toolbar .stop-button { padding: 7px 12px; }
 .run-toolbar .run-button { padding: 8px 20px; }
-.browser-host { min-width: 0; min-height: 0; border-left: 1px solid var(--border); background: #0c1016; display: grid; place-items: center; color: var(--muted); font-size: 11px; padding: 16px; text-align: center; }
+.browser-column { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.browser-toolbar { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--border); background: #151a24; flex-shrink: 0; }
+.browser-toolbar button { padding: 4px 8px; font-size: 13px; }
+#browser-url { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font: 12px Consolas, monospace; }
+.browser-message { margin: 0; padding: 4px 10px; color: #f5a3b2; font-size: 11px; flex-shrink: 0; }
+.browser-message:empty { display: none; }
+.browser-host { flex: 1; min-width: 0; min-height: 0; background: #0c1016; display: grid; place-items: center; color: var(--muted); font-size: 11px; padding: 16px; text-align: center; }
 .statusbar { display: flex; justify-content: space-between; padding: 6px 16px; border-top: 1px solid var(--border); color: #75849b; font-size: 10px; flex-shrink: 0; background: #121720; }
 #contest-dialog, #save-failed-dialog { width: min(560px, calc(100vw - 36px)); padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); }
 #contest-dialog::backdrop, #save-failed-dialog::backdrop { background: #000a; }

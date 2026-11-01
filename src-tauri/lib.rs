@@ -4,6 +4,7 @@ mod contests;
 mod document;
 mod files;
 mod lsp;
+mod navigation;
 mod process;
 mod runner;
 mod samples;
@@ -17,6 +18,7 @@ pub use contests::{
 };
 pub use document::{DocumentResult, DocumentStore};
 pub use lsp::{LspInfo, RubyLsp};
+pub use navigation::{browser_target, is_allowed, ALLOWED_ORIGINS};
 pub use runner::{Output, PreparedRun, RunRequest, RunResult, Runner};
 pub use samples::{load_samples, save_samples, ProblemSample, SampleCase};
 pub use task::{is_task_page, parse_task, read_task_page, Task, TaskWorkspace, Workspaces};

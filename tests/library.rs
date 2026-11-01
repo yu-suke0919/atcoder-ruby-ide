@@ -1,6 +1,6 @@
 use atcoder_ruby_ide::{
-    fetch_page, http_client, parse_task, parse_task_list, Contest, ContestKey, Contests,
-    DocumentStore, SampleCase, Task, Workspaces,
+    browser_target, fetch_page, http_client, parse_task, parse_task_list, Contest, ContestKey,
+    Contests, DocumentStore, SampleCase, Task, Workspaces,
 };
 use std::path::Path;
 
@@ -69,6 +69,35 @@ fn copy_buttons_added_by_the_loaded_page_are_not_part_of_sample_headings() {
     assert_eq!(task.samples.len(), 1);
     assert_eq!(task.samples[0].stdin, "10 20 30 40\n");
     assert_eq!(task.samples[0].expected_output, "No\n");
+}
+
+#[test]
+fn the_url_field_opens_only_allowed_origins() {
+    for (input, expected) in [
+        (
+            "https://atcoder.jp/contests/abc430/tasks/abc430_a",
+            "https://atcoder.jp/contests/abc430/tasks/abc430_a",
+        ),
+        (
+            "  atcoder.jp/contests/abc430  ",
+            "https://atcoder.jp/contests/abc430",
+        ),
+        ("https://atcoder.jp", "https://atcoder.jp/"),
+    ] {
+        assert_eq!(browser_target(input).unwrap().as_str(), expected, "{input}");
+    }
+    for input in [
+        "https://example.com/",
+        "http://atcoder.jp/",
+        "https://atcoder.jp.example.com/",
+        "https://img.atcoder.jp/x.png",
+        "javascript:alert(1)",
+        "file:///C:/Windows",
+        "",
+    ] {
+        let error = browser_target(input).unwrap_err();
+        assert!(error.contains("https://atcoder.jp"), "{input}: {error}");
+    }
 }
 
 #[test]
