@@ -25,6 +25,8 @@ fn main() {
             "spike_fetch",
             "spike_navigate",
             "spike_loads",
+            "spike_read_dom",
+            "spike_set_visible",
         ]),
     ))
     .expect("failed to run tauri-build");

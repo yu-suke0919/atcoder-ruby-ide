@@ -453,7 +453,9 @@ fn main() {
             collection_open_task,
             spike::spike_fetch,
             spike::spike_navigate,
-            spike::spike_loads
+            spike::spike_loads,
+            spike::spike_read_dom,
+            spike::spike_set_visible
         ])
         .build(context)
         .expect("アプリを起動できませんでした")

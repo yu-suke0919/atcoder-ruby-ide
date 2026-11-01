@@ -39,6 +39,7 @@ async function denied(page, label) {
     if (window.__TAURI_INTERNALS__) {
       result.ruby_info = await attempt('ruby_info');
       result.spike_fetch = await attempt('spike_fetch', { url: 'https://atcoder.jp/' });
+      result.spike_read_dom = await attempt('spike_read_dom', { script: '1' });
       result.notify = await attempt('plugin:notification|notify', { options: { title: 'x', body: 'x' } });
       result.set_title = await attempt('plugin:window|set_title', { label: 'main', value: 'pwned' });
     }
@@ -126,6 +127,25 @@ async function denied(page, label) {
     const appFrame = atcoder.frames().find(frame => frame.url().includes('tauri.localhost'));
     report.iframe = appFrame ? await denied(appFrame, 'iframe') : { loaded: false, frames: atcoder.frames().map(f => f.url()) };
     assert.notEqual(report.iframe.ruby_info?.ok, true, 'App-origin iframe in AtCoder must not run app commands');
+
+    assert.notEqual(report.fromAtCoder.spike_read_dom?.ok, true, 'AtCoder page must not read the DOM through the app');
+
+    // Read the loaded page from Rust instead of fetching it again.
+    await invoke('spike_navigate', { url: 'https://atcoder.jp/contests/abc400/tasks/abc400_a' });
+    await pause(5000);
+    const html = JSON.parse(await invoke('spike_read_dom', { script: 'document.documentElement.outerHTML' }));
+    report.dom = { length: html.length, samples: (html.match(/<h3>入力例/g) || []).length, userScreenName: html.match(/userScreenName = "([^"]*)"/)?.[1] };
+    assert.ok(report.dom.samples > 0, 'DOM read must contain samples');
+    const loadsBefore = (await invoke('spike_loads')).length;
+
+    // Do timers keep running while the child webview is hidden?
+    await invoke('spike_read_dom', { script: 'window.__u0Count = 0; window.__u0Timer = setInterval(() => window.__u0Count++, 1000); 0' });
+    await invoke('spike_set_visible', { visible: false });
+    await pause(15000);
+    report.hidden = JSON.parse(await invoke('spike_read_dom', { script: 'JSON.stringify({ count: window.__u0Count, visibility: document.visibilityState, hidden: document.hidden })' }));
+    report.hidden = JSON.parse(report.hidden);
+    await invoke('spike_set_visible', { visible: true });
+    report.loadsDuringRead = (await invoke('spike_loads')).length - loadsBefore;
 
     await main.bringToFront();
     report.clipboardWrite = await main.evaluate(() => navigator.clipboard.writeText('u0-clipboard-check').then(() => 'ok', e => `error: ${e}`));

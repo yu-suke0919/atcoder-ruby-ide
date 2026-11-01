@@ -133,3 +133,31 @@ pub fn spike_navigate(app: tauri::AppHandle, url: String) -> Result<(), String> 
 pub fn spike_loads(state: tauri::State<'_, SpikeState>) -> Vec<String> {
     state.loads.lock().unwrap().clone()
 }
+
+#[tauri::command]
+pub async fn spike_read_dom(app: tauri::AppHandle, script: String) -> Result<String, String> {
+    let webview = app.get_webview(LABEL).ok_or("no atcoder webview")?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    webview
+        .eval_with_callback(script, move |result| {
+            let _ = tx.send(result);
+        })
+        .map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        rx.recv_timeout(std::time::Duration::from_secs(10))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn spike_set_visible(app: tauri::AppHandle, visible: bool) -> Result<(), String> {
+    let webview = app.get_webview(LABEL).ok_or("no atcoder webview")?;
+    if visible {
+        webview.show()
+    } else {
+        webview.hide()
+    }
+    .map_err(|e| e.to_string())
+}

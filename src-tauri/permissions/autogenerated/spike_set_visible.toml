@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-spike-set-visible"
+description = "Enables the spike_set_visible command without any pre-configured scope."
+commands.allow = ["spike_set_visible"]
+
+[[permission]]
+identifier = "deny-spike-set-visible"
+description = "Denies the spike_set_visible command without any pre-configured scope."
+commands.deny = ["spike_set_visible"]

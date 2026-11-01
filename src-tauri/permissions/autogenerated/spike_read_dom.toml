@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-spike-read-dom"
+description = "Enables the spike_read_dom command without any pre-configured scope."
+commands.allow = ["spike_read_dom"]
+
+[[permission]]
+identifier = "deny-spike-read-dom"
+description = "Denies the spike_read_dom command without any pre-configured scope."
+commands.deny = ["spike_read_dom"]
