@@ -23,12 +23,18 @@ let collectionViews = [];
 let selectedCollection = null;
 let collectionDownloading = false;
 let cancelCollection = false;
-const sample = 'a = gets.to_i\nb, c = gets.split.map(&:to_i)\ns = gets.chomp\n\nputs "#{a + b + c} #{s}"\n';
-const cases = new SampleCases([{ stdin: '1\n2 3\ntest\n', expectedOutput: '6 test\n', compare: false }]);
+const saveFailedDialog = $('save-failed-dialog');
+const cases = new SampleCases([{ stdin: '', expectedOutput: '', compare: false }]);
+// Edits are written to the opened problem's workspace after a short pause; Ctrl+S writes immediately.
+const SAVE_DELAY_MS = 800;
+let saveTimer = null;
+let saving = null;
+let saveError = null;
+let resolveSaveFailed = null;
 let canceled = false;
 const comparisonLabels = { none: '比較なし', pending: '未比較', running: '比較中…', matched: '一致', mismatched: '不一致', unavailable: '判定なし' };
 const statusLabel = (status, exitCode, executionLimitMs) => ({ completed: '正常終了', failed: `エラー終了${exitCode == null ? '' : ` (${exitCode})`}`, stopped: '停止しました', timeout: `時間制限で停止（${executionLimitMs / 1000} 秒）`, 'output-limit': '出力上限で停止（1 MiB）', 'memory-limit': 'ローカルのメモリ上限で停止（1 GiB）', running: '実行中…', canceled: '未実行（中止）', error: '実行できませんでした' })[status] || '実行する準備ができています';
-let savedCode = sample;
+let savedCode = '';
 let filePath = null;
 let running = false;
 let fileBusy = true;
@@ -46,7 +52,7 @@ const completionClient = createLspClient(ide, ({ status, error }) => {
   $('completion-retry').hidden = status !== 'failed';
   $('completion-retry').disabled = fileBusy || closing || status === 'starting';
 });
-const editor = createEditor($('editor-host'), sample, () => { resetComparison(true); updateEditor(); }, updateCursor, completionClient);
+const editor = createEditor($('editor-host'), '', () => { resetComparison(true); updateEditor(); scheduleSave(); }, updateCursor, completionClient);
 $('completion-retry').addEventListener('click', async () => {
   if (fileBusy || closing || completionStatus === 'starting') return;
   try { await completionClient.retry(); if (!fileBusy && !closing) editor.complete(); }
@@ -56,8 +62,70 @@ $('editor-search').addEventListener('click', () => editor.search());
 $('editor-complete').addEventListener('click', () => editor.complete());
 $('error-location').addEventListener('click', () => { if (!fileBusy && !closing) editor.jumpToError(); });
 
-async function confirmDiscard(includeCases = false) {
-  return (editor.value === savedCode && (!includeCases || !cases.dirty)) || await ide.confirmDiscard();
+const needsSave = () => activeProblem !== null && (editor.value !== savedCode || cases.dirty);
+
+function showSaveState() {
+  const state = !activeProblem ? 'none' : saving ? 'saving' : saveError ? 'failed' : needsSave() ? 'pending' : 'saved';
+  $('save-state').dataset.state = state;
+  $('save-state').textContent = { none: '問題を開いてください', saved: '保存済み', pending: '● 未保存の変更', saving: '保存中…', failed: '保存に失敗しました' }[state];
+  $('save-state').title = saveError || '';
+  $('save-retry').hidden = state !== 'failed';
+}
+
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = needsSave() ? setTimeout(() => { saveTimer = null; saveNow(); }, SAVE_DELAY_MS) : null;
+  showSaveState();
+}
+
+// Returns whether everything edited so far is on disk.
+async function saveNow() {
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  while (saving) await saving;
+  if (!needsSave()) { showSaveState(); return saveError === null; }
+  const problem = activeProblem;
+  const code = editor.value;
+  const data = cases.data();
+  const codeChanged = code !== savedCode;
+  const casesChanged = cases.dirty;
+  saving = (async () => {
+    try {
+      if (codeChanged) { await ide.saveCode(code); if (problem.url === activeProblem?.url) savedCode = code; }
+      if (casesChanged) { await ide.saveProblemCases(problem.url, data); if (problem.url === activeProblem?.url) cases.markSaved(data); }
+      saveError = null;
+    } catch (error) {
+      saveError = error.message;
+    }
+  })();
+  showSaveState();
+  await saving;
+  saving = null;
+  updateEditor();
+  if (saveError === null && needsSave()) scheduleSave();
+  else showSaveState();
+  return saveError === null;
+}
+
+function confirmSaveFailed() {
+  $('save-failed-message').textContent = `${saveError}\n保存できなかった変更を破棄して続けますか？`;
+  saveFailedDialog.showModal();
+  return new Promise(resolve => { resolveSaveFailed = resolve; });
+}
+function finishSaveFailed(discard) {
+  const resolve = resolveSaveFailed;
+  resolveSaveFailed = null;
+  saveFailedDialog.close();
+  resolve?.(discard);
+}
+$('save-failed-cancel').addEventListener('click', () => finishSaveFailed(false));
+$('save-failed-discard').addEventListener('click', () => finishSaveFailed(true));
+saveFailedDialog.addEventListener('close', () => finishSaveFailed(false));
+$('save-retry').addEventListener('click', () => saveNow());
+
+// Saves pending edits before the problem changes; only a failed save asks the user.
+async function leaveProblem() {
+  return await saveNow() || await confirmSaveFailed();
 }
 
 function showComparison(state) {
@@ -117,7 +185,7 @@ function updateCaseList() {
     return option;
   }));
   $('case-select').value = String(cases.selected);
-  $('case-count').textContent = `${cases.items.length} ケース${cases.dirty ? ' · 未保存' : ''}`;
+  $('case-count').textContent = `${cases.items.length} ケース`;
   const done = cases.items.filter(item => item.status && !['running', 'canceled'].includes(item.status)).length;
   const count = state => cases.items.filter(item => item.comparison === state).length;
   const errors = cases.items.filter(item => ['failed', 'timeout', 'output-limit', 'memory-limit', 'error'].includes(item.status)).length;
@@ -197,12 +265,11 @@ function collectionMessage(text, error = false) {
 }
 
 function updateEditor() {
-  const dirty = editor.value !== savedCode;
-  const name = filePath ? filePath.split(/[\\/]/).at(-1) : '無題.rb';
-  ide.setTitle(`${activeProblem ? activeProblem.title + ' · ' : ''}${dirty ? '● ' : ''}${name} — AtCoder Ruby IDE`).catch(() => {});
-  $('save-state').textContent = dirty ? '● 未保存の変更' : filePath ? '保存済み' : '未保存のファイル';
-  $('file-path').textContent = filePath || '無題.rb';
-  $('file-path').title = filePath || '未保存のファイル';
+  const name = filePath ? filePath.split(/[\\/]/).at(-1) : '';
+  ide.setTitle(activeProblem ? `${activeProblem.title} · ${name} — AtCoder Ruby IDE` : 'AtCoder Ruby IDE').catch(() => {});
+  showSaveState();
+  $('file-path').textContent = filePath || '問題を開いてください';
+  $('file-path').title = filePath || '問題を開いてください';
   updateCursor();
 }
 
@@ -212,6 +279,7 @@ function updateCursor() {
 }
 
 function updateButtons() {
+  const locked = fileBusy || closing || !activeProblem;
   $('problem-toggle').disabled = !activeProblem || fileBusy || closing;
   for (const id of ['collection-repair-cancel', 'collection-repair-confirm']) $(id).disabled = fileBusy || closing || running;
   $('collections').disabled = fileBusy || closing;
@@ -226,24 +294,21 @@ function updateButtons() {
   $('problem-refresh').title = activeCollectionUrl ? '問題集は初回取得した内容を固定保存しています。' : '';
   $('problem-close').disabled = fileBusy;
   $('ruby-recheck').disabled = rubyChecking || running || fileBusy || closing;
-  for (const id of ['run', 'run-all']) $(id).disabled = running || !rubyAvailable || fileBusy || closing;
-  $('case-add').disabled = running || fileBusy || closing || cases.items.length >= MAX_CASES;
-  $('case-remove').disabled = running || fileBusy || closing || cases.items.length === 1;
-  $('case-select').disabled = fileBusy || closing;
+  for (const id of ['run', 'run-all']) $(id).disabled = running || !rubyAvailable || locked;
+  $('case-add').disabled = running || locked || cases.items.length >= MAX_CASES;
+  $('case-remove').disabled = running || locked || cases.items.length === 1;
+  $('case-select').disabled = locked;
   $('stop').disabled = !running;
-  $('clear-output').disabled = running || fileBusy || closing;
-  for (const id of ['new', 'open', 'save-as']) $(id).disabled = running || fileBusy || closing;
-  $('save').disabled = fileBusy || closing || (running && !filePath);
-  editor.readOnly = fileBusy || closing;
-  $('editor-search').disabled = fileBusy || closing;
-  $('editor-complete').disabled = fileBusy || closing;
-  $('completion-retry').disabled = fileBusy || closing || completionStatus === 'starting';
-  $('error-location').disabled = fileBusy || closing;
-  input.readOnly = expectedOutput.readOnly = fileBusy || closing;
-  compareOutput.disabled = fileBusy || closing;
-  tolerantCompare.disabled = fileBusy || closing || !cases.current.compare;
-  toleranceInput.disabled = fileBusy || closing || !cases.current.compare || cases.current.tolerance === null;
-  for (const id of ['cases-open', 'cases-save']) $(id).disabled = running || fileBusy || closing;
+  $('clear-output').disabled = running || locked;
+  editor.readOnly = locked;
+  $('editor-search').disabled = locked;
+  $('editor-complete').disabled = locked;
+  $('completion-retry').disabled = locked || completionStatus === 'starting';
+  $('error-location').disabled = locked;
+  input.readOnly = expectedOutput.readOnly = locked;
+  compareOutput.disabled = locked;
+  tolerantCompare.disabled = locked || !cases.current.compare;
+  toleranceInput.disabled = locked || !cases.current.compare || cases.current.tolerance === null;
 }
 
 async function fileAction(action, report = message) {
@@ -251,42 +316,12 @@ async function fileAction(action, report = message) {
   fileBusy = true;
   updateButtons();
   try { await action(); }
-  catch (error) { report(`ファイル操作に失敗しました：${error.message}`, true); }
+  catch (error) { report(`操作に失敗しました：${error.message}`, true); }
   finally { fileBusy = false; updateButtons(); }
 }
 
-function openFile() {
-  if (running) return;
-  return fileAction(async () => {
-    if (!await confirmDiscard()) return;
-    const result = await ide.openFile();
-    if (result.canceled) return;
-    detachProblem();
-    editor.value = result.code;
-    savedCode = editor.value;
-    filePath = result.filePath;
-    resetComparison(true);
-    updateEditor();
-    message('ファイルを開きました。');
-  });
-}
-
-function saveFile(saveAs = false) {
-  if (running && (saveAs || !filePath)) return;
-  return fileAction(async () => {
-    const code = editor.value;
-    const result = await ide.saveFile(code, saveAs || !filePath);
-    if (result.canceled) return;
-    if (filePath !== result.filePath) { detachProblem(); resetComparison(true); }
-    savedCode = code;
-    filePath = result.filePath;
-    updateEditor();
-    message('ファイルを保存しました。');
-  });
-}
-
 async function run(all = false) {
-  if (running || fileBusy || closing || !rubyAvailable) return;
+  if (running || fileBusy || closing || !rubyAvailable || !activeProblem) return;
   const code = editor.value;
   cases.clear(all);
   const queue = cases.snapshot(all, activeProblem?.timeLimitMs ?? null);
@@ -344,43 +379,13 @@ $('case-select').addEventListener('change', () => { cases.selected = Number($('c
 $('case-add').addEventListener('click', () => {
   cases.add();
   showCase();
+  scheduleSave();
 });
 $('case-remove').addEventListener('click', () => {
   cases.remove();
   showCase();
+  scheduleSave();
 });
-$('cases-open').addEventListener('click', () => fileAction(async () => {
-  if (running || (cases.dirty && !await ide.confirmDiscard())) return;
-  const result = await ide.openCases();
-  if (result.canceled) return;
-  cases.replace(result.cases, { saved: !activeProblem });
-  showCase();
-  message('サンプルを読み込みました。');
-}));
-$('cases-save').addEventListener('click', () => fileAction(async () => {
-  if (running) return;
-  const data = cases.data();
-  const result = activeProblem ? await ide.saveProblemCases(activeProblem.url, data) : await ide.saveCases(data);
-  if (result.canceled) return;
-  cases.markSaved(data);
-  updateCaseList();
-  message('サンプルを保存しました。');
-}));
-$('open').addEventListener('click', openFile);
-$('save').addEventListener('click', () => saveFile());
-$('save-as').addEventListener('click', () => saveFile(true));
-$('new').addEventListener('click', () => fileAction(async () => {
-  if (running) return;
-  if (!await confirmDiscard()) return;
-  await ide.newFile();
-  detachProblem();
-  editor.value = '';
-  savedCode = '';
-  filePath = null;
-  resetComparison(true);
-  updateEditor();
-  message('新しいファイルを作成しました。');
-}));
 $('clear-output').addEventListener('click', () => {
   cases.clear();
   showResult();
@@ -388,6 +393,7 @@ $('clear-output').addEventListener('click', () => {
 function editCase(field, value) {
   cases.current[field] = value;
   resetComparison();
+  scheduleSave();
 }
 input.addEventListener('input', () => editCase('stdin', input.value));
 expectedOutput.addEventListener('input', () => editCase('expectedOutput', expectedOutput.value));
@@ -408,9 +414,8 @@ document.addEventListener('keydown', (event) => {
   if (!event.ctrlKey && !event.metaKey) return;
   const key = event.key.toLowerCase();
   if (['s', 'o', 'enter'].includes(key)) event.preventDefault();
-  if (differenceDialog.open || problemDialog.open || collectionDialog.open || collectionRepairDialog.open || imageDialog.open) return;
-  if (key === 's') saveFile(event.shiftKey);
-  if (key === 'o') openFile();
+  if (differenceDialog.open || problemDialog.open || collectionDialog.open || collectionRepairDialog.open || imageDialog.open || saveFailedDialog.open) return;
+  if (key === 's' && activeProblem && !closing) saveNow();
   if (key === 'enter') run();
 });
 
@@ -436,14 +441,11 @@ function setProblemVisible(visible) {
 $('problem-toggle').addEventListener('click', () => {
   if (activeProblem && !fileBusy && !closing) setProblemVisible($('problem-panel').hidden);
 });
-function detachProblem() {
-  activeProblem = null;
-  activeCollectionUrl = null;
-  showProblem();
-  setProblemVisible(false);
-}
 function applyWorkspace(result, collectionUrl = null) {
   const changedProblem = activeProblem?.url !== result.problem.url;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  saveError = null;
   activeProblem = result.problem;
   activeCollectionUrl = collectionUrl;
   editor.value = result.document.code;
@@ -460,7 +462,7 @@ problemDialog.addEventListener('cancel', event => { if (fileBusy) event.preventD
 $('problem-open').addEventListener('click', () => {
   if (running) return;
   fileAction(async () => {
-    if (!await confirmDiscard(true)) return;
+    if (!await leaveProblem()) return;
     message('問題を読み込んでいます。');
     const result = await ide.openProblem($('problem-url').value);
     applyWorkspace(result);
@@ -512,7 +514,7 @@ function renderCollection() {
     const collectionUrl = selectedCollection.collection.url;
     const collectionTitle = selectedCollection.collection.title;
     button.addEventListener('click', () => fileAction(async () => {
-      if (running || !await confirmDiscard(true)) return;
+      if (running || !await leaveProblem()) return;
       const result = await ide.openCollectionTask(collectionUrl, task.url);
       applyWorkspace(result, collectionUrl);
       collectionDialog.close();
@@ -611,7 +613,7 @@ $('collection-repair-confirm').addEventListener('click', () => {
 });
 
 window.addEventListener('beforeunload', event => {
-  if (closing || (!fileBusy && !running && editor.value === savedCode && !cases.dirty)) return;
+  if (closing || (!fileBusy && !running && !saving && saveError === null && !needsSave())) return;
   event.preventDefault();
   event.returnValue = '';
 });
@@ -626,7 +628,7 @@ ide.onCloseRequested(async event => {
   let destroyed = false;
   updateButtons();
   try {
-    if (!await confirmDiscard(true)) return;
+    if (!await leaveProblem()) return;
     await stop();
     await currentRun?.catch(() => {});
     await ide.destroy();
@@ -660,7 +662,7 @@ async function checkRuby() {
 $('ruby-recheck').addEventListener('click', checkRuby);
 async function initialize() {
   try {
-    await ide.newFile();
+    await ide.resetSession();
     fileBusy = false;
     updateButtons();
     await checkRuby();

@@ -238,21 +238,18 @@ fn optional_tolerance_preserves_old_cases_and_rejects_invalid_saved_values() {
     let file = root.path().join("cases.json");
     let original = include_bytes!("fixtures/cases-without-tolerance.json");
     std::fs::write(&file, original).unwrap();
-    let mut cases = load_samples(Some(file.clone())).unwrap().cases.unwrap();
+    let mut cases = load_samples(&file).unwrap();
     assert_eq!(cases[0].tolerance, None);
     assert_eq!(cases[0].stdin, "保存済み\r\n");
     assert_eq!(std::fs::read(&file).unwrap(), original);
     cases[0].tolerance = Some(1e-6);
     cases[1].tolerance = Some(1e-9);
-    save_samples(cases.clone(), Some(file.clone())).unwrap();
-    assert_eq!(
-        load_samples(Some(file.clone())).unwrap().cases.unwrap(),
-        cases
-    );
+    save_samples(cases.clone(), &file).unwrap();
+    assert_eq!(load_samples(&file).unwrap(), cases);
     let saved = std::fs::read(&file).unwrap();
     for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY] {
         cases[0].tolerance = Some(invalid);
-        assert!(save_samples(cases.clone(), Some(file.clone())).is_err());
+        assert!(save_samples(cases.clone(), &file).is_err());
         assert_eq!(std::fs::read(&file).unwrap(), saved);
     }
     for invalid in [
@@ -264,15 +261,15 @@ fn optional_tolerance_preserves_old_cases_and_rejects_invalid_saved_values() {
         let mut data: serde_json::Value = serde_json::from_slice(original).unwrap();
         data["cases"][0]["tolerance"] = invalid;
         std::fs::write(&file, serde_json::to_vec(&data).unwrap()).unwrap();
-        assert!(load_samples(Some(file.clone())).is_err());
+        assert!(load_samples(&file).is_err());
     }
 }
 
 #[test]
-fn m14_sample_json_roundtrip_cancel_and_failed_writes_preserve_files() {
+fn m14_workspace_cases_roundtrip_and_failed_writes_preserve_files() {
     use atcoder_ruby_ide::{load_samples, save_samples, SampleCase};
     let root = tempfile::tempdir().unwrap();
-    let file = root.path().join("サンプル 空白.json");
+    let file = root.path().join("cases.json");
     let cases = || {
         vec![
             SampleCase {
@@ -289,27 +286,22 @@ fn m14_sample_json_roundtrip_cancel_and_failed_writes_preserve_files() {
             },
         ]
     };
-    assert!(load_samples(None).unwrap().canceled);
-    assert!(save_samples(cases(), None).unwrap().canceled);
-    save_samples(cases(), Some(file.clone())).unwrap();
-    assert_eq!(
-        load_samples(Some(file.clone())).unwrap().cases.unwrap(),
-        cases()
-    );
+    save_samples(cases(), &file).unwrap();
+    assert_eq!(load_samples(&file).unwrap(), cases());
     let original = std::fs::read(&file).unwrap();
-    assert!(save_samples(vec![], Some(file.clone())).is_err());
+    assert!(save_samples(vec![], &file).is_err());
     assert_eq!(std::fs::read(&file).unwrap(), original);
     let protected = root.path().join("directory.json");
     std::fs::create_dir(&protected).unwrap();
     std::fs::write(protected.join("keep"), "preserved").unwrap();
-    assert!(save_samples(cases(), Some(protected.clone())).is_err());
+    assert!(save_samples(cases(), &protected).is_err());
     assert_eq!(
         std::fs::read_to_string(protected.join("keep")).unwrap(),
         "preserved"
     );
     assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
-    save_samples(cases(), Some(file.clone())).unwrap();
-    assert_eq!(load_samples(Some(file)).unwrap().cases.unwrap(), cases());
+    save_samples(cases(), &file).unwrap();
+    assert_eq!(load_samples(&file).unwrap(), cases());
 }
 
 #[test]
@@ -327,14 +319,14 @@ fn m14_sample_json_rejects_invalid_types_counts_and_utf8_byte_limits() {
         " ".repeat(16 * 1024 * 1024 + 1),
     ] {
         std::fs::write(&file, invalid).unwrap();
-        assert!(load_samples(Some(file.clone())).is_err());
+        assert!(load_samples(&file).is_err());
     }
     std::fs::write(
         &file,
         "\u{feff}{\"cases\":[{\"stdin\":\"\",\"expectedOutput\":\"\",\"compare\":true}]}",
     )
     .unwrap();
-    assert_eq!(load_samples(Some(file)).unwrap().cases.unwrap().len(), 1);
+    assert_eq!(load_samples(&file).unwrap().len(), 1);
 }
 
 fn ruby() -> PathBuf {
@@ -455,40 +447,47 @@ fn execute(code: &str, stdin: &str) -> atcoder_ruby_ide::RunResult {
 }
 
 #[test]
-fn m02_m03_document_utf8_bom_japanese_paths_and_overwrite() {
+fn m03_document_saves_only_to_the_opened_workspace_file() {
     let root = tempfile::tempdir().unwrap();
     let first = root.path().join("解答 空白.rb");
     std::fs::write(&first, "\u{feff}puts 'こんにちは'\r\n").unwrap();
     let mut store = DocumentStore::default();
-    let opened = store.open(Some(first.clone())).unwrap();
-    assert_eq!(opened.code.as_deref(), Some("puts 'こんにちは'\r\n"));
+    let opened = store.open(first.clone()).unwrap();
+    assert_eq!(opened.code, "puts 'こんにちは'\r\n");
     assert_eq!(store.path(), Some(first.as_path()));
-    store.save("puts 2\n", Some(first.clone())).unwrap();
+    store.save("puts 2\n").unwrap();
     assert_eq!(std::fs::read_to_string(&first).unwrap(), "puts 2\n");
-    let second = root.path().join("別名.rb");
-    store.save("puts 3", Some(second.clone())).unwrap();
-    assert_eq!(store.path(), Some(second.as_path()));
+    let second = root.path().join("別の問題.rb");
+    std::fs::write(&second, "").unwrap();
+    store.open(second.clone()).unwrap();
+    store.save("puts 3").unwrap();
+    assert_eq!(std::fs::read_to_string(&second).unwrap(), "puts 3");
     assert_eq!(std::fs::read_to_string(first).unwrap(), "puts 2\n");
 }
-
 #[test]
-fn m02_m03_cancel_and_io_errors_keep_current_document() {
+fn m03_save_requires_an_open_problem_and_io_errors_keep_the_document() {
     let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("valid.rb");
+    let path = root.path().join("solution.rb");
     let mut store = DocumentStore::default();
-    store.save("original", Some(path.clone())).unwrap();
-    assert!(store.open(None).unwrap().canceled);
-    assert!(store.save("changed", None).unwrap().canceled);
-    assert!(store.open(Some(root.path().join("missing.rb"))).is_err());
-    assert!(store
-        .save("changed", Some(root.path().join("missing/bad.rb")))
-        .is_err());
+    assert!(store.save("orphan").is_err());
+    std::fs::write(&path, "original").unwrap();
+    store.open(path.clone()).unwrap();
+    assert!(store.open(root.path().join("missing.rb")).is_err());
     assert_eq!(store.path(), Some(path.as_path()));
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), "original");
+    std::fs::remove_file(&path).unwrap();
+    std::fs::create_dir(&path).unwrap();
+    std::fs::write(path.join("keep"), "keep").unwrap();
+    assert!(store.save("changed").is_err());
+    assert_eq!(std::fs::read_to_string(path.join("keep")).unwrap(), "keep");
+    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
+    std::fs::remove_dir_all(&path).unwrap();
+    store.save("recovered").unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "recovered");
     store.reset();
     assert!(store.path().is_none());
+    assert!(store.save("after reset").is_err());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "recovered");
 }
-
 #[test]
 fn m11_comparison_newlines_empty_and_significant_whitespace() {
     for (actual, expected) in [
@@ -689,22 +688,14 @@ fn m06_timeout_and_output_cap() {
 }
 
 #[test]
-fn m07_saved_file_cwd_and_current_buffer() {
-    let root = tempfile::tempdir().unwrap();
-    std::fs::write(root.path().join("input.txt"), "作業ディレクトリ").unwrap();
-    let mut req = request("puts File.read('input.txt', encoding: 'UTF-8')", "");
-    req.cwd = Some(root.path().to_owned());
-    assert_eq!(
-        Runner::new(Duration::from_secs(5), 1048576)
-            .prepare(req)
-            .unwrap()
-            .execute(&ruby(), |_| {})
-            .unwrap()
-            .stdout,
-        "作業ディレクトリ\n"
-    );
+fn m07_each_run_uses_a_fresh_temporary_directory() {
+    let first = execute("puts Dir.pwd; File.write('marker.txt', 'x')", "");
+    let directory = PathBuf::from(first.stdout.trim());
+    assert_ne!(directory, std::env::current_dir().unwrap());
+    assert!(!directory.exists());
+    let second = execute("puts File.exist?('marker.txt')", "");
+    assert_eq!(second.stdout, "false\n");
 }
-
 #[test]
 fn m08_all_input_limits_are_utf8_bytes() {
     let runner = Runner::new(Duration::from_secs(5), 1048576);
@@ -882,28 +873,27 @@ fn m08_source_open_and_save_enforce_utf8_byte_limit_without_changing_current_doc
     let root = tempfile::tempdir().unwrap();
     let current = root.path().join("current.rb");
     let candidate = root.path().join("candidate.rb");
+    std::fs::write(&current, "original").unwrap();
     let mut store = DocumentStore::default();
-    store.save("original", Some(current.clone())).unwrap();
+    store.open(current.clone()).unwrap();
     let at_limit = "あ".repeat(349525) + "a";
     assert_eq!(at_limit.len(), 1048576);
-    std::fs::write(&candidate, &at_limit).unwrap();
-    assert_eq!(
-        store.open(Some(candidate.clone())).unwrap().code.as_deref(),
-        Some(at_limit.as_str())
-    );
-    store.save(&at_limit, Some(current.clone())).unwrap();
+    store.save(&at_limit).unwrap();
     assert_eq!(std::fs::read_to_string(&current).unwrap(), at_limit);
+    std::fs::write(&candidate, &at_limit).unwrap();
+    assert_eq!(store.open(candidate.clone()).unwrap().code, at_limit);
+    store.open(current.clone()).unwrap();
 
     // Count bytes on disk, including an optional UTF-8 BOM.
     std::fs::write(&candidate, format!("\u{feff}{at_limit}")).unwrap();
     assert!(store
-        .open(Some(candidate.clone()))
+        .open(candidate.clone())
         .err()
         .unwrap()
         .contains("1 MiB"));
     assert_eq!(store.path(), Some(current.as_path()));
     assert!(store
-        .save(&(at_limit.clone() + "a"), Some(current.clone()))
+        .save(&(at_limit.clone() + "a"))
         .err()
         .unwrap()
         .contains("1 MiB"));
@@ -911,29 +901,9 @@ fn m08_source_open_and_save_enforce_utf8_byte_limit_without_changing_current_doc
     assert_eq!(store.path(), Some(current.as_path()));
 
     std::fs::write(&candidate, [0xff]).unwrap();
-    assert!(store.open(Some(candidate)).is_err());
+    assert!(store.open(candidate).is_err());
     assert_eq!(store.path(), Some(current.as_path()));
 }
-
-#[test]
-fn m03_atomic_source_save_failure_preserves_target_and_removes_temporary_files() {
-    let root = tempfile::tempdir().unwrap();
-    let current = root.path().join("current.rb");
-    let target = root.path().join("occupied.rb");
-    std::fs::create_dir(&target).unwrap();
-    std::fs::write(target.join("keep"), "keep").unwrap();
-    let mut store = DocumentStore::default();
-    store.save("original", Some(current.clone())).unwrap();
-    assert!(store.save("replacement", Some(target.clone())).is_err());
-    assert_eq!(std::fs::read_to_string(&current).unwrap(), "original");
-    assert_eq!(
-        std::fs::read_to_string(target.join("keep")).unwrap(),
-        "keep"
-    );
-    assert_eq!(store.path(), Some(current.as_path()));
-    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
-}
-
 #[cfg(unix)]
 #[test]
 fn escaped_descendant_cannot_hold_runner_busy_after_timeout() {

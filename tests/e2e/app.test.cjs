@@ -5,7 +5,8 @@ const { mkdtemp, mkdir, readFile, writeFile, rm, access, realpath } = require('n
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 const { once } = require('node:events');
-const { launch, dialogs, discard, open, save, cancelSave, overwrite, close, requestClose, pause } = require('./support.cjs');
+const { launch, close, requestClose, pause } = require('./support.cjs');
+const { seedProblem: seedWorkspaceProblem, openProblem, waitInitialized } = require('./workspace.cjs');
 
 describe('Application', () => {
 let app;
@@ -18,17 +19,18 @@ before(async () => {
   page = app.page;
 });
 async function resetWorkspace() {
+  await page.waitForFunction(() => !['pending', 'saving'].includes(document.getElementById('save-state').dataset.state));
   if (await page.locator('#stop').isEnabled()) {
     await page.locator('#stop').click();
     await page.waitForFunction(() => document.getElementById('stop').disabled);
   }
-  if (app.steps) app.steps.length = 0;
   const acceptReload = dialog => dialog.accept();
   page.on('dialog', acceptReload);
   try { await page.reload(); }
   finally { page.off('dialog', acceptReload); }
   await page.setViewportSize({ width: 1280, height: 850 });
-  await page.waitForFunction(() => !document.getElementById('run').disabled);
+  await waitInitialized(page);
+  await openStarter();
 }
 beforeEach(resetWorkspace);
 
@@ -42,24 +44,29 @@ after(async () => {
   if (root) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
-async function fileOperation(trigger, steps) {
-  await dialogs(app, trigger, steps);
+let starterProblem;
+async function openStarter(options = {}) {
+  starterProblem = await seedWorkspaceProblem(app, libraryContest, options.task || 'starter', options);
+  await openProblem(page, starterProblem, options);
+  return starterProblem;
 }
-async function openDocument(file) {
-  const dirty = await page.evaluate(() => document.getElementById('save-state').textContent.includes('変更'));
-  await fileOperation(() => page.getByRole('button', { name: '開く', exact: true }).click(), [...(dirty ? [discard(true)] : []), open(file)]);
-  assert.equal(await page.locator('#file-path').textContent(), file);
+async function waitSaved() {
+  await page.waitForFunction(() => document.getElementById('save-state').dataset.state === 'saved');
 }
-async function saveAs(file, exists = false) {
-  await fileOperation(() => page.getByRole('button', { name: '名前を付けて保存', exact: true }).click(), [save(file), ...(exists ? [overwrite()] : [])]);
-  await page.locator('#message').filter({ hasText: 'ファイルを保存しました' }).waitFor();
-  assert.equal(await page.locator('#file-path').textContent(), file);
+async function waitSaveFailed() {
+  await page.waitForFunction(() => document.getElementById('save-state').dataset.state === 'failed');
 }
-async function newDocument() {
-  const dirty = await page.evaluate(() => document.getElementById('save-state').textContent.includes('変更'));
-  if (dirty) await fileOperation(() => page.getByRole('button', { name: '新規', exact: true }).click(), [discard(true)]);
-  else await page.getByRole('button', { name: '新規', exact: true }).click();
-  await page.waitForFunction(() => !document.getElementById('new').disabled && document.getElementById('code-editor').textContent === '');
+// Replacing a workspace file with a directory makes the atomic save fail on every OS.
+const blockedFiles = new Map();
+async function blockSaving(file) {
+  blockedFiles.set(file, await readFile(file));
+  await rm(file, { force: true });
+  await mkdir(file);
+}
+async function unblockSaving(file) {
+  await rm(file, { recursive: true, force: true });
+  await writeFile(file, blockedFiles.get(file));
+  blockedFiles.delete(file);
 }
 async function runAndWait(label = '正常終了') {
   await page.getByRole('button', { name: '実行', exact: true }).click();
@@ -102,75 +109,129 @@ async function confirmReload(accept) {
     const navigation = page.waitForEvent('load');
     await dialog.accept();
     await navigation;
-    await page.waitForFunction(() => !document.getElementById('run').disabled);
+    await waitInitialized(page);
   } else {
     await dialog.dismiss();
   }
 }
 
-test('R07: reloading a saved source makes Save choose a new path', async () => {
-  const original = path.join(root, 'reload-original.rb');
-  await writeFile(original, 'puts "original"');
-  await openDocument(original);
+test('M03: edits autosave to the problem workspace and a reload needs no confirmation', async () => {
+  await page.getByTestId('code-editor').fill('puts "自動保存"');
+  assert.equal(await page.getByTestId('save-state').getAttribute('data-state'), 'pending');
+  await page.getByTestId('stdin').fill('保存された入力\n');
+  await waitSaved();
+  assert.equal(await page.getByTestId('save-state').textContent(), '保存済み');
+  assert.equal(await readFile(starterProblem.solution, 'utf8'), 'puts "自動保存"');
+  assert.equal(JSON.parse(await readFile(starterProblem.cases, 'utf8')).cases[0].stdin, '保存された入力\n');
   await page.reload();
-  await page.waitForFunction(() => !document.getElementById('run').disabled);
-  assert.equal(await page.locator('#file-path').textContent(), '無題.rb');
-  await page.locator('#code-editor').fill('puts File.exist?("reload-original.rb")');
-  await runAndWait();
-  assert.equal(await page.locator('#stdout').textContent(), 'false\n');
-  // Model a pre-reload file operation completing late, after initialization.
-  await fileOperation(() => page.evaluate(() => window.__TAURI__.core.invoke('document_open')), [open(original)]);
-  await fileOperation(() => page.locator('#save').click(), [cancelSave()]);
-  assert.equal(await readFile(original, 'utf8'), 'puts "original"');
-  const saved = path.join(root, 'reload-new.rb');
-  await fileOperation(() => page.locator('#save').click(), [save(saved)]);
-  assert.equal(await readFile(saved, 'utf8'), await editorText(page));
-  assert.equal(await readFile(original, 'utf8'), 'puts "original"');
+  await waitInitialized(page);
+  await openProblem(page, starterProblem);
+  assert.equal(await editorText(page), 'puts "自動保存"');
+  assert.equal(await page.getByTestId('stdin').inputValue(), '保存された入力\n');
 });
 
-test('R07: reload protects source edits and accepted reload starts clean', async () => {
-  await page.locator('#code-editor').click();
-  await page.locator('#code-editor').fill('puts "unsaved source"');
-  await confirmReload(false);
-  assert.equal(await editorText(page), 'puts "unsaved source"');
-  await confirmReload(true);
+test('M03: Ctrl+S saves immediately without a dialog', async () => {
+  await page.getByTestId('code-editor').fill('puts "すぐ保存"');
+  await page.keyboard.press('Control+s');
+  await waitSaved();
+  assert.equal(await readFile(starterProblem.solution, 'utf8'), 'puts "すぐ保存"');
+  assert.equal(await page.locator('dialog[open]').count(), 0);
+});
+
+test('M03/M09: a failed save keeps edits, can be retried and is confirmed before leaving', async () => {
+  const other = await seedWorkspaceProblem(app, libraryContest, 'other');
+  await blockSaving(starterProblem.solution);
+  try {
+    await page.getByTestId('code-editor').fill('puts "失敗しても残る"');
+    await waitSaveFailed();
+    assert.match(await page.getByTestId('save-state').textContent(), /保存に失敗しました/);
+    assert.equal(await page.locator('#save-retry').isVisible(), true);
+    await page.locator('#problem-library').click();
+    await page.locator('#problem-url').fill(other.url);
+    await page.locator('#problem-open').click();
+    await page.locator('#save-failed-dialog').waitFor();
+    await page.locator('#save-failed-cancel').click();
+    await page.locator('#problem-close').click();
+    assert.equal(await page.locator('#problem-title').textContent(), starterProblem.title);
+    assert.equal(await editorText(page), 'puts "失敗しても残る"');
+    await requestClose(app);
+    await page.locator('#save-failed-dialog').waitFor();
+    await page.locator('#save-failed-cancel').click();
+    assert.equal(await editorText(page), 'puts "失敗しても残る"');
+  } finally {
+    await unblockSaving(starterProblem.solution);
+  }
+  await page.locator('#save-retry').click();
+  await waitSaved();
+  assert.equal(await readFile(starterProblem.solution, 'utf8'), 'puts "失敗しても残る"');
+  await blockSaving(starterProblem.solution);
+  try {
+    await page.getByTestId('code-editor').fill('puts "破棄する"');
+    await waitSaveFailed();
+    await page.locator('#problem-library').click();
+    await page.locator('#problem-url').fill(other.url);
+    await page.locator('#problem-open').click();
+    await page.locator('#save-failed-dialog').waitFor();
+    await page.locator('#save-failed-discard').click();
+    await page.locator('#problem-title').filter({ hasText: other.title }).waitFor();
+  } finally {
+    await unblockSaving(starterProblem.solution);
+  }
+  await openProblem(page, starterProblem);
+  assert.equal(await editorText(page), 'puts "失敗しても残る"');
+});
+
+test('R07: reload protects a failed source save and an accepted reload starts without a problem', async () => {
+  await blockSaving(starterProblem.solution);
+  try {
+    await page.locator('#code-editor').fill('puts "unsaved source"');
+    await waitSaveFailed();
+    await confirmReload(false);
+    assert.equal(await editorText(page), 'puts "unsaved source"');
+    await confirmReload(true);
+  } finally {
+    await unblockSaving(starterProblem.solution);
+  }
+  assert.equal(await page.locator('#code-editor').isEditable(), false);
+  assert.equal(await page.locator('#run').isDisabled(), true);
+  await openStarter();
   await runAndWait();
   assert.equal(await page.locator('#stdout').textContent(), '6 test\n');
 });
 
-test('R07: reload protects case-only edits', async () => {
-  await page.locator('#stdin').click();
-  await page.locator('#stdin').fill('unsaved case');
-  await confirmReload(false);
-  assert.equal(await page.locator('#stdin').inputValue(), 'unsaved case');
-  assert.equal(await editorText(page).then(code => code.includes('gets.to_i')), true);
+test('R07: reload protects a failed case save', async () => {
+  await blockSaving(starterProblem.cases);
+  try {
+    await page.locator('#stdin').fill('unsaved case');
+    await waitSaveFailed();
+    await confirmReload(false);
+    assert.equal(await page.locator('#stdin').inputValue(), 'unsaved case');
+    assert.equal(await editorText(page).then(code => code.includes('gets.to_i')), true);
+  } finally {
+    await unblockSaving(starterProblem.cases);
+  }
 });
 
 test('R07: accepting reload stops an active run before enabling a new run', async () => {
   await page.locator('#code-editor').fill('puts "ready"; loop { puts "streaming"; sleep 0.01 }');
-  await saveAs(path.join(root, 'reload-running.rb'));
   await page.locator('#run').click();
   await page.locator('#stdout').filter({ hasText: 'ready' }).waitFor();
   await confirmReload(true);
-  assert.equal(await page.locator('#file-path').textContent(), '無題.rb');
+  await openStarter();
   await runAndWait();
   assert.equal(await page.locator('#stdout').textContent(), '6 test\n');
 });
 
 test('R08: editing one case field preserves raw newlines in the other fields', async () => {
-  await page.locator('#code-editor').fill("puts STDIN.read.bytes.join(',')");
   for (const [name, newline] of [['crlf', '\r\n'], ['cr', '\r']]) {
     const input = `A${newline}B${newline}`;
     const bytes = [...Buffer.from(input)].join(',');
     const expected = bytes + newline;
-    const source = path.join(root, `raw-${name}.json`);
-    await writeFile(source, JSON.stringify({ cases: [{ stdin: input, expectedOutput: expected, compare: true }] }));
     for (const field of ['expected-output', 'stdin', 'compare-output']) {
-      await loadCases(source);
+      await openStarter({ task: `raw_${name}`, code: "puts STDIN.read.bytes.join(',')", cases: [{ stdin: input, expectedOutput: expected, compare: true }] });
       if (field === 'compare-output') {
         await page.locator('#compare-output').uncheck();
         await page.locator('#compare-output').check();
-        assert.equal(await casesDirty(), false);
       } else {
         await page.locator(`#${field}`).fill('edited');
       }
@@ -178,16 +239,15 @@ test('R08: editing one case field preserves raw newlines in the other fields', a
         await runAndWait();
         assert.equal(await page.locator('#stdout').textContent(), bytes + '\n');
       }
-      const saved = path.join(root, `raw-${name}-${field}.json`);
-      await saveCases(saved);
-      const [item] = JSON.parse(await readFile(saved, 'utf8')).cases;
+      await page.keyboard.press('Control+s');
+      await waitSaved();
+      const [item] = JSON.parse(await readFile(starterProblem.cases, 'utf8')).cases;
       assert.equal(item.stdin, field === 'stdin' ? 'edited' : input);
       assert.equal(item.expectedOutput, field === 'expected-output' ? 'edited' : expected);
       assert.equal(item.compare, true);
     }
   }
 });
-
 test('M12: Ruby detection can fail and recover without losing edits', async () => {
   await page.getByTestId('code-editor').fill('puts "recovered"');
   await page.getByTestId('stdin').fill('keep input');
@@ -210,13 +270,13 @@ test('M12: Ruby detection can fail and recover without losing edits', async () =
   await page.evaluate(() => window.rejectRubyProbe());
   await page.locator('#message').filter({ hasText: 'Ruby probe failed' }).waitFor();
   assert.equal(await page.locator('#run').isDisabled(), true);
-  assert.equal(await page.locator('#save').isEnabled(), true);
+  await waitSaved();
   await retry.click();
   await page.locator('#message').filter({ hasText: 'Ruby unavailable' }).waitFor();
   assert.equal(await page.locator('#ruby-version').textContent(), 'Ruby を起動できません');
   assert.equal(await page.locator('#run').isDisabled(), true);
   await retry.click();
-  await page.waitForFunction(() => !document.getElementById('run').disabled);
+  await waitInitialized(page);
   assert.equal(await editorText(page), 'puts "recovered"');
   assert.equal(await page.getByTestId('stdin').inputValue(), 'keep input');
   await runAndWait();
@@ -464,151 +524,89 @@ test('M06/M08: show timeout and output-limit reasons in the UI', async () => {
 });
 
 
-test('M02/M03/M09: open/save preserve Japanese paths and canceled edits', async () => {
-  const file = path.join(root, '解答.rb');
-  await writeFile(file, '\uFEFFputs "ファイル"\n', 'utf8');
-  await openDocument(file);
-  assert.equal(await editorText(page), 'puts "ファイル"\n');
-  await page.getByTestId('code-editor').fill('puts "変更済み"\n');
-  await fileOperation(() => page.getByRole('button', { name: '開く', exact: true }).click(), [discard(false)]);
-  assert.equal(await editorText(page), 'puts "変更済み"\n');
-  await page.keyboard.press('Control+s');
-  await page.getByTestId('save-state').filter({ hasText: '保存済み' }).waitFor();
-  assert.equal(await readFile(file, 'utf8'), 'puts "変更済み"\n');
-  await page.getByTestId('code-editor').fill('puts "未保存"');
-  await fileOperation(() => page.keyboard.press('Control+Shift+s'), [cancelSave()]);
-  assert.equal(await editorText(page), 'puts "未保存"');
-  assert.match(await page.getByTestId('save-state').textContent(), /未保存/);
-  assert.equal(await readFile(file, 'utf8'), 'puts "変更済み"\n');
+test('M02: editing and running require an open problem and no external file operations exist', async () => {
+  await page.reload();
+  await waitInitialized(page);
+  assert.equal(await page.locator('#code-editor').isEditable(), false);
+  assert.equal(await page.getByTestId('stdin').isEditable(), false);
+  for (const id of ['run', 'run-all', 'case-add']) assert.equal(await page.locator(`#${id}`).isDisabled(), true, id);
+  for (const id of ['new', 'open', 'save', 'save-as', 'cases-open', 'cases-save']) assert.equal(await page.locator(`#${id}`).count(), 0, id);
+  await page.locator('#code-editor').press('Control+o');
+  assert.equal(await page.locator('dialog[open]').count(), 0);
+  await openProblem(page, starterProblem);
+  assert.equal(await page.locator('#code-editor').isEditable(), true);
+  await runAndWait();
+  assert.equal(await page.locator('#stdout').textContent(), '6 test\n');
 });
 
-test('M08: opening an oversized source preserves the current code, path and comparison', async () => {
+test('M08: an oversized solution fails to open and preserves the current problem and comparison', async () => {
   await page.getByTestId('code-editor').fill('puts "keep"');
-  await saveAs(path.join(root, '保持するソース.rb'));
   await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
   await page.getByTestId('expected-output').fill('keep');
   await runAndWait();
   await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
-  const currentPath = await page.locator('#file-path').textContent();
-  const large = path.join(root, 'large.rb');
-  await writeFile(large, 'a'.repeat(1048577));
-  await fileOperation(() => page.locator('#open').click(), [open(large)]);
-  await page.locator('#message').filter({ hasText: '1 MiB' }).waitFor();
+  const large = await seedWorkspaceProblem(app, libraryContest, 'large', { code: 'a'.repeat(1048577) });
+  await page.locator('#problem-library').click();
+  await page.locator('#problem-url').fill(large.url);
+  await page.locator('#problem-open').click();
+  await page.locator('#problem-message').filter({ hasText: '1 MiB' }).waitFor();
+  await page.locator('#problem-close').click();
+  assert.equal(await page.locator('#problem-title').textContent(), starterProblem.title);
   assert.equal(await editorText(page), 'puts "keep"');
-  assert.equal(await page.locator('#file-path').textContent(), currentPath);
   assert.equal(await page.getByTestId('comparison-status').textContent(), '一致');
   await runAndWait();
   assert.equal(await page.getByTestId('stdout').textContent(), 'keep\n');
 });
 
-test('M09: cancel close/new confirmation, then create and save a document', async () => {
-  await page.getByTestId('code-editor').fill('puts "保持"');
-  await fileOperation(() => page.getByRole('button', { name: '新規', exact: true }).click(), [discard(false)]);
-  await fileOperation(() => requestClose(app), [discard(false)]);
-  assert.equal(await editorText(page), 'puts "保持"');
-  await newDocument();
-  await page.getByTestId('code-editor').fill('puts "新規保存"');
-  const file = path.join(root, '新しい解答.rb');
-  await fileOperation(() => page.getByRole('button', { name: '保存', exact: true }).click(), [save(file)]);
-  assert.equal(await page.locator('#file-path').textContent(), file);
-  assert.equal(await readFile(file, 'utf8'), 'puts "新規保存"');
-});
-
-test('R01: a CRLF document opens clean and remains unchanged on disk', async () => {
-  const file = path.join(root, 'Windows 改行.rb');
-  await writeFile(file, 'puts 1\r\nputs 2\r\n', 'utf8');
-  await openDocument(file);
+test('R01: a CRLF solution opens clean and remains unchanged on disk', async () => {
+  const problem = await openStarter({ task: 'crlf', code: 'puts 1\r\nputs 2\r\n' });
   assert.equal(await editorText(page), 'puts 1\nputs 2\n');
-  assert.equal(await page.getByTestId('save-state').textContent(), '保存済み');
-  assert.equal(await readFile(file, 'utf8'), 'puts 1\r\nputs 2\r\n');
+  assert.equal(await page.getByTestId('save-state').getAttribute('data-state'), 'saved');
+  await pause(1500);
+  assert.equal(await readFile(problem.solution, 'utf8'), 'puts 1\r\nputs 2\r\n');
 });
 
-test('M11: open/new reset the previous comparison', async () => {
+test('M11: switching problems resets the previous comparison', async () => {
   await page.getByTestId('code-editor').fill('puts 1; puts 2');
   await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
   await page.getByTestId('expected-output').fill('1\n2\n');
   await runAndWait();
   await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
-  const file = path.join(root, '別の解答.rb');
-  await writeFile(file, 'puts 1\nputs 2\n');
-  await openDocument(file);
+  await openStarter({ task: 'compare_other', code: 'puts 1\nputs 2\n', cases: [{ stdin: '', expectedOutput: '1\n2\n', compare: true }] });
   assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
   await runAndWait();
   await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
-  await newDocument();
-  assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
-  await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
 });
 
-test('R06: overwrite and same-path Save As preserve comparison results', async () => {
-  const file = path.join(root, '上書き保存.rb');
+test('R06: saving keeps comparison results, including a save during execution', async () => {
+  const gate = path.join(root, 'continue.txt');
   await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
   await page.getByTestId('code-editor').fill('puts "same"');
-  await saveAs(file);
   for (const [expected, label] of [['same', '一致'], ['different', '不一致']]) {
     await page.getByTestId('expected-output').fill(expected);
     await runAndWait();
     await page.getByTestId('comparison-status').filter({ hasText: new RegExp(`^${label}$`) }).waitFor();
     await page.keyboard.press('Control+s');
-    await page.waitForFunction(() => !document.getElementById('save').disabled);
-    assert.equal(await readFile(file, 'utf8'), 'puts "same"');
+    await waitSaved();
+    assert.equal(await readFile(starterProblem.solution, 'utf8'), 'puts "same"');
     assert.equal(await page.getByTestId('comparison-status').textContent(), label);
   }
-  await saveAs(file, true);
-  assert.equal(await page.getByTestId('comparison-status').textContent(), '不一致');
-  await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
-});
-
-test('R06: initial/path-changing saves reset comparisons; cancel and write failure preserve them', async () => {
-  await newDocument();
-  await page.getByTestId('code-editor').fill('puts "same"');
-  await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
-  await page.getByTestId('expected-output').fill('same');
-  await runAndWait();
-  await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
-  const directory = path.join(root, '削除されるディレクトリ');
-  await mkdir(directory);
-  const first = path.join(directory, '初回保存.rb');
-  await fileOperation(() => page.keyboard.press('Control+s'), [save(first)]);
-  assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
-  await runAndWait();
-  await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
-  await fileOperation(() => page.getByRole('button', { name: '名前を付けて保存', exact: true }).click(), [cancelSave()]);
-  assert.equal(await page.getByTestId('comparison-status').textContent(), '一致');
-  await rm(directory, { recursive: true });
-  await page.keyboard.press('Control+s');
-  await page.locator('#message').filter({ hasText: 'ファイル操作に失敗しました' }).waitFor();
-  assert.equal(await page.getByTestId('comparison-status').textContent(), '一致');
-  assert.equal(await page.locator('#file-path').textContent(), first);
-  const second = path.join(root, '別名保存.rb');
-  await saveAs(second);
-  assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
-  assert.equal(await readFile(second, 'utf8'), 'puts "same"');
-  await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
-});
-
-test('R06: overwrite during execution preserves the eventual comparison', async () => {
-  const file = path.join(root, '実行中の保存.rb');
-  const gate = path.join(root, 'continue.txt');
   await page.getByTestId('code-editor').fill(`puts "ready"; sleep 0.01 until File.exist?(${JSON.stringify(gate.replaceAll('\\', '/'))})`);
-  await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
   await page.getByTestId('expected-output').fill('ready');
-  await saveAs(file);
   try {
     await page.getByRole('button', { name: '実行', exact: true }).click();
     await page.getByTestId('stdout').filter({ hasText: 'ready' }).waitFor();
     await page.keyboard.press('Control+s');
-    await page.waitForFunction(() => !document.getElementById('save').disabled);
+    await waitSaved();
     assert.equal(await page.getByTestId('comparison-status').textContent(), '比較中…');
     await writeFile(gate, 'continue');
     await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
   } finally {
     await writeFile(gate, 'continue');
-    await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
   }
 });
 
-test('M19: AtCoder gems run from unsaved and Japanese-path sources', async () => {
+test('M19: AtCoder gems run from a problem workspace with Japanese input', async () => {
   const code = await readFile(path.join(__dirname, '../fixtures/runtime-gems.rb'), 'utf8');
   const expected = await readFile(path.join(__dirname, '../fixtures/runtime-gems.txt'), 'utf8');
   await page.getByTestId('code-editor').fill(code);
@@ -618,18 +616,16 @@ test('M19: AtCoder gems run from unsaved and Japanese-path sources', async () =>
   await runAndWait();
   assert.equal(await page.getByTestId('stdout').textContent(), expected);
   assert.equal(await page.locator('#comparison-status').textContent(), '一致');
-  await saveAs(path.join(root, '追加gem 解答.rb'));
-  await runAndWait();
-  assert.equal(await page.getByTestId('stdout').textContent(), expected);
-  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
 });
 
-test('M07/M12: JSON and saved-directory files work with the configured Ruby runtime', async () => {
-  await saveAs(path.join(root, 'JSON 解答.rb'));
-  await writeFile(path.join(root, '入力.json'), '{"message":"日本語"}', 'utf8');
-  await page.getByTestId('code-editor').fill('require "json"; puts JSON.parse(File.read("入力.json"))["message"]');
+test('M07/M12: each run uses a fresh temporary directory with the configured Ruby runtime', async () => {
+  await page.getByTestId('code-editor').fill('require "json"; File.write("入力.json", {message: "日本語"}.to_json); puts JSON.parse(File.read("入力.json"))["message"]');
   await runAndWait();
   assert.equal(await page.getByTestId('stdout').textContent(), '日本語\n');
+  await page.getByTestId('code-editor').fill('puts File.exist?("入力.json")');
+  await runAndWait();
+  assert.equal(await page.getByTestId('stdout').textContent(), 'false\n');
+  await assert.rejects(access(path.join(starterProblem.workspace, '入力.json')), { code: 'ENOENT' });
 });
 
 async function selectCase(number) {
@@ -713,7 +709,6 @@ test('M13: a batch uses starting code and inputs without restoring stale compari
     await page.getByRole('button', { name: '全件実行', exact: true }).click();
     await page.getByTestId('stdout').filter({ hasText: 'ready' }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'ケース追加', exact: true }).isDisabled(), true);
-    assert.equal(await page.getByRole('button', { name: '開く', exact: true }).isDisabled(), true);
     await selectCase(2);
     await page.getByTestId('stdin').fill('edited');
     await page.getByTestId('code-editor').fill('puts "changed code"');
@@ -748,72 +743,25 @@ test('M13: stopping a batch skips remaining cases and allows another run', async
   await resetCases();
 });
 
-const casesDirty = async () => (await page.locator('#case-count').textContent()).includes('未保存');
-async function saveCases(file) {
-  await fileOperation(() => page.getByRole('button', { name: 'ケース保存', exact: true }).click(), [{ title: 'サンプルを保存', path: file, buttonId: '1' }]);
-}
-async function loadCases(file) {
-  await fileOperation(() => page.getByRole('button', { name: 'ケース読込', exact: true }).click(), [...(await casesDirty() ? [discard(true)] : []), { title: 'サンプルを開く', path: file, buttonId: '1' }]);
-}
-
-test('M14: JSON roundtrip preserves case data and leaves the source and cwd unchanged', async () => {
+test('M14: sample edits autosave to the workspace and are restored when the problem opens again', async () => {
   await page.getByTestId('code-editor').fill('puts STDIN.read');
-  await saveAs(path.join(root, 'ケース往復.rb'));
   await page.getByTestId('stdin').fill('日本語\n');
   await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
   await page.getByTestId('expected-output').fill('');
   await addCase('two', 'ignored');
   await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
-  const source = await editorText(page);
-  const sourcePath = await page.locator('#file-path').textContent();
-  const file = path.join(root, 'サンプル 空白.json');
-  await saveCases(file);
-  const data = JSON.parse(await readFile(file, 'utf8'));
-  assert.deepEqual(data, { cases: [{ stdin: '日本語\n', expectedOutput: '', compare: true }, { stdin: 'two', expectedOutput: 'ignored', compare: false }] });
-  assert.equal(await casesDirty(), false);
   await selectCase(1);
   await runAndWait();
-  assert.equal(await casesDirty(), false);
-  await page.getByTestId('stdin').fill('edited');
-  await loadCases(file);
-  assert.equal(await editorText(page), source);
-  assert.equal(await page.locator('#file-path').textContent(), sourcePath);
+  await waitSaved();
+  assert.deepEqual(JSON.parse(await readFile(starterProblem.cases, 'utf8')), { cases: [{ stdin: '日本語\n', expectedOutput: '', compare: true }, { stdin: 'two', expectedOutput: 'ignored', compare: false }] });
+  await page.reload();
+  await waitInitialized(page);
+  await openProblem(page, starterProblem);
   assert.equal(await page.getByTestId('stdin').inputValue(), '日本語\n');
   assert.equal(await page.getByTestId('stdout').textContent(), '');
-  assert.equal(await page.getByTestId('comparison-status').textContent(), '未比較');
   await selectCase(2);
   assert.equal(await page.getByTestId('expected-output').inputValue(), 'ignored');
   assert.equal(await page.getByTestId('expected-output').isDisabled(), true);
-  assert.equal(await casesDirty(), false);
-});
-
-test('M14: canceling and invalid JSON preserve cases and unsaved edits', async () => {
-  await addCase('second');
-  await page.getByTestId('stdin').fill('keep this');
-  await fileOperation(() => page.getByRole('button', { name: 'ケース読込', exact: true }).click(), [discard(false)]);
-  await fileOperation(() => page.getByRole('button', { name: 'ケース読込', exact: true }).click(), [discard(true), { title: 'サンプルを開く', buttonId: '2' }]);
-  await fileOperation(() => page.getByRole('button', { name: 'ケース保存', exact: true }).click(), [{ title: 'サンプルを保存', buttonId: '2' }]);
-  assert.equal(await page.getByTestId('stdin').inputValue(), 'keep this');
-  assert.equal(await casesDirty(), true);
-  const bad = path.join(root, 'bad-cases.json');
-  await writeFile(bad, '{"cases":[]}');
-  await loadCases(bad);
-  await page.locator('#message').filter({ hasText: 'ファイル操作に失敗しました' }).waitFor();
-  assert.equal(await page.getByTestId('stdin').inputValue(), 'keep this');
-  assert.equal(await page.getByLabel('サンプルケース', { exact: true }).locator('option').count(), 2);
-  assert.equal(await casesDirty(), true);
-});
-
-test('M14: closing protects case-only edits and a new source keeps cases', async () => {
-  await page.getByTestId('stdin').fill('keep this');
-  await saveAs(path.join(root, '保存済みソース.rb'));
-  assert.equal(await page.getByTestId('save-state').textContent(), '保存済み');
-  await fileOperation(() => requestClose(app), [discard(false)]);
-  assert.equal(await page.getByTestId('stdin').inputValue(), 'keep this');
-  await newDocument();
-  assert.equal(await page.getByTestId('stdin').inputValue(), 'keep this');
-  assert.equal(await casesDirty(), true);
-  await resetCases();
 });
 
 test('M13: validation errors remain visible after a later case succeeds', async () => {
@@ -886,21 +834,16 @@ test('M15: whitespace, empty lines and missing lines have distinct labels', asyn
 
 test('M15: case details survive selection and saving, then invalidate independently', async () => {
   await page.getByTestId('code-editor').fill('print STDIN.read');
-  await saveAs(path.join(root, '不一致の詳細.rb'));
   await mismatch('one', 'ONE');
   await addCase('two', 'TWO');
   await runAndWait();
   await selectCase(1);
   await page.keyboard.press('Control+s');
-  await page.waitForFunction(() => !document.getElementById('save').disabled);
-  const caseFile = path.join(root, 'detail-cases.json');
-  await saveCases(caseFile);
-  assert.ok(JSON.parse(await readFile(caseFile, 'utf8')).cases.every(item => !('difference' in item)));
-  assert.equal(await casesDirty(), false);
+  await waitSaved();
+  assert.ok(JSON.parse(await readFile(starterProblem.cases, 'utf8')).cases.every(item => !('difference' in item)));
   await openDifference();
   assert.equal(await page.getByTestId('difference-actual').textContent(), 'one');
   await closeDifference();
-  assert.equal(await casesDirty(), false);
   await page.getByTestId('expected-output').fill('edited');
   assert.equal(await page.getByTestId('comparison-status').isDisabled(), true);
   await selectCase(2);
@@ -1005,17 +948,15 @@ test('P01: cached problem opens offline, runs samples and restores its saved wor
   assert.equal(normalizePath(await page.locator('#file-path').textContent()), normalizePath(sourcePath));
   await page.locator('#code-editor').fill('puts STDIN.read.split.map(&:to_i).sum');
   await page.keyboard.press('Control+s');
-  await page.waitForFunction(() => !document.getElementById('save').disabled);
+  await waitSaved();
   await page.locator('#run-all').click();
   await page.locator('#cases-summary').filter({ hasText: /完了 2 \/ 2.*一致 2/ }).waitFor();
   await selectCase(1);
   await page.locator('#stdin').fill('9 1\n');
   await page.locator('#expected-output').fill('10\n');
-  await page.locator('#cases-save').click();
-  await page.waitForFunction(() => !document.getElementById('cases-save').disabled);
-  assert.equal(await casesDirty(), false, await page.locator('#message').textContent());
+  await waitSaved();
   await page.reload();
-  await page.waitForFunction(() => !document.getElementById('run').disabled);
+  await waitInitialized(page);
   await openProblemDialog(problem.url);
   await page.locator('#problem-open').click();
   await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
@@ -1026,33 +967,29 @@ test('P01: cached problem opens offline, runs samples and restores its saved wor
   assert.equal(await page.locator('#comparison-status').textContent(), '一致');
 });
 
-test('P02: problem switching protects both unsaved code and cases', async () => {
+test('P02: problem switching saves pending code and cases without asking', async () => {
   const a = await seedProblem('guard_a'); const b = await seedProblem('guard_b');
   await openProblemDialog(a.url); await page.locator('#problem-open').click();
   await page.locator('#problem-title').filter({ hasText: a.title }).waitFor();
   assert.equal(await page.locator('#problem-dialog').isVisible(), false);
   await page.locator('#code-editor').fill('puts "keep code"');
   await page.locator('#stdin').fill('keep cases');
-  await page.locator('#problem-statement').evaluate(el => { el.scrollTop = 150; });
-  await page.locator('#problem-toggle').click();
-  const originalPath = await page.locator('#file-path').textContent();
   await openProblemDialog(b.url);
-  await fileOperation(() => page.locator('#problem-open').click(), [discard(false)]);
-  assert.equal(await page.locator('#problem-title').textContent(), a.title);
-  assert.equal(await page.locator('#file-path').textContent(), originalPath);
-  assert.equal(await editorText(page), 'puts "keep code"');
-  assert.equal(await page.locator('#stdin').inputValue(), 'keep cases');
-  assert.equal(await page.locator('#problem-dialog').isVisible(), true);
-  assert.equal(await page.locator('#problem-panel').isVisible(), false);
-  await fileOperation(() => page.locator('#problem-open').click(), [discard(true)]);
+  await page.locator('#problem-open').click();
   await page.locator('#problem-title').filter({ hasText: b.title }).waitFor();
-  assert.equal(await page.locator('#problem-dialog').isVisible(), false);
+  assert.equal(await page.locator('dialog[open]').count(), 0);
   assert.equal(await editorText(page), '');
   assert.equal(await page.locator('#stdin').inputValue(), '1 2\n');
   assert.equal(await page.locator('#problem-panel').isVisible(), true);
   assert.equal(await page.locator('#problem-statement').evaluate(el => el.scrollTop), 0);
+  const workspace = path.join(app.dataDir, 'workspaces', libraryContest, 'guard_a');
+  assert.equal(await readFile(path.join(workspace, 'solution.rb'), 'utf8'), 'puts "keep code"');
+  assert.equal(JSON.parse(await readFile(path.join(workspace, 'cases.json'), 'utf8')).cases[0].stdin, 'keep cases');
+  await openProblemDialog(a.url); await page.locator('#problem-open').click();
+  await page.locator('#problem-title').filter({ hasText: a.title }).waitFor();
+  assert.equal(await editorText(page), 'puts "keep code"');
+  assert.equal(await page.locator('#stdin').inputValue(), 'keep cases');
 });
-
 test('P03: invalid cache preserves the current problem and workspace', async () => {
   const a = await seedProblem('failure_a'); const b = await seedProblem('failure_b');
   await openProblemDialog(a.url); await page.locator('#problem-open').click();
@@ -1087,11 +1024,10 @@ test('P04: refresh keeps edited code and cases and retains the previous statemen
   await page.locator('#problem-title').filter({ hasText: 'Updated problem' }).waitFor();
   assert.equal(await editorText(page), 'puts "my edits"');
   assert.equal(await page.locator('#stdin').inputValue(), 'my cases');
-  assert.equal(await casesDirty(), true);
-  assert.match(await page.locator('#save-state').textContent(), /変更/);
+  await waitSaved();
   const workspace = path.join(app.dataDir, 'workspaces', libraryContest, 'refresh');
-  assert.equal(await readFile(path.join(workspace, 'solution.rb'), 'utf8'), '');
-  assert.deepEqual(JSON.parse(await readFile(path.join(workspace, 'cases.json'), 'utf8')).cases, problem.samples);
+  assert.equal(await readFile(path.join(workspace, 'solution.rb'), 'utf8'), 'puts "my edits"');
+  assert.equal(JSON.parse(await readFile(path.join(workspace, 'cases.json'), 'utf8')).cases[0].stdin, 'my cases');
   assert.equal(await page.locator('#problem-statement').evaluate(el => el.scrollTop), originalScroll);
   await page.locator('#problem-close').click();
   await page.locator('#problem-toggle').click();
@@ -1112,32 +1048,9 @@ test('P04: refresh keeps edited code and cases and retains the previous statemen
   await page.locator('#problem-close').click();
 });
 
-test('P05: imported case JSON is unsaved for the workspace and New returns to normal file operations', async () => {
-  const problem = await seedProblem('import');
-  await openProblemDialog(problem.url); await page.locator('#problem-open').click();
-  await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
-  assert.equal(await page.locator('#problem-dialog').isVisible(), false);
-  const imported = [{ stdin: 'imported\n', expectedOutput: '', compare: false }];
-  const file = path.join(root, 'problem-import.json');
-  await writeFile(file, JSON.stringify({ cases: imported }));
-  await loadCases(file);
-  assert.equal(await casesDirty(), true);
-  await page.locator('#cases-save').click();
-  await page.waitForFunction(() => !document.getElementById('cases-save').disabled);
-  assert.equal(await casesDirty(), false);
-  const saved = path.join(app.dataDir, 'workspaces', libraryContest, 'import', 'cases.json');
-  assert.deepEqual(JSON.parse(await readFile(saved, 'utf8')).cases, imported);
-  await newDocument();
-  assert.equal(await page.locator('#problem-panel').isVisible(), false);
-  assert.equal(await page.locator('#problem-toggle').isDisabled(), true);
-  await page.locator('#problem-library').click();
-  assert.equal(await page.locator('#problem-refresh').isEnabled(), true);
-  assert.equal(await page.locator('#problem-title').textContent(), '問題を選んでください');
-  await page.locator('#problem-close').click();
-  await fileOperation(() => page.locator('#cases-save').click(), [{ title: 'サンプルを保存', buttonId: '2' }]);
-});
-
 test('P06: refresh can repair a cache before any problem is selected', async () => {
+  await page.reload();
+  await waitInitialized(page);
   const problem = await seedProblem('repair');
   const cache = path.join(app.dataDir, 'library/problems', libraryContest, 'repair', 'problem.json');
   await writeFile(cache, '{}');
@@ -1171,7 +1084,7 @@ test('P07: reading panel allows editing and shortcuts, and toggling preserves ed
   assert.equal(await page.locator('#problem-toggle').getAttribute('aria-expanded'), 'true');
   await page.locator('#code-editor').fill('puts STDIN.read.split.map(&:to_i).sum');
   await page.keyboard.press('Control+s');
-  await page.waitForFunction(() => !document.getElementById('save').disabled);
+  await waitSaved();
   const source = await page.locator('#file-path').textContent();
   assert.equal(await readFile(source, 'utf8'), 'puts STDIN.read.split.map(&:to_i).sum');
   await page.locator('#stdin').fill('9 1\n');
@@ -1179,7 +1092,8 @@ test('P07: reading panel allows editing and shortcuts, and toggling preserves ed
   await page.keyboard.press('Control+Enter');
   await page.locator('#comparison-status').filter({ hasText: '一致' }).waitFor();
   assert.equal(await page.locator('#stdout').textContent(), '10\n');
-  await page.locator('#code-editor').fill('puts "unsaved"');
+  await page.locator('#code-editor').fill('puts "edited"');
+  await waitSaved();
   await page.locator('#problem-statement').evaluate(el => { el.scrollTop = 150; });
   const scroll = await page.locator('#problem-statement').evaluate(el => el.scrollTop);
   assert.ok(scroll > 0);
@@ -1201,7 +1115,7 @@ test('P07: reading panel allows editing and shortcuts, and toggling preserves ed
   assert.equal(await page.locator('#problem-panel').isVisible(), true);
   assert.deepEqual(await capture(), before);
   assert.equal(await page.locator('#problem-statement').evaluate(el => el.scrollTop), scroll);
-  assert.equal(await readFile(source, 'utf8'), 'puts STDIN.read.split.map(&:to_i).sum');
+  assert.equal(await readFile(source, 'utf8'), 'puts "edited"');
 });
 
 test('P08: long reading panel, editor and results fit wide and minimum windows with large line boxes', async () => {
@@ -1297,17 +1211,11 @@ test('C01: fixed collection opens offline, protects edits and restores the saved
   assert.equal(await page.locator('#problem-refresh').isDisabled(), true);
   assert.equal(await page.locator('#collection-dialog').isVisible(), false);
   await page.locator('#code-editor').fill('puts STDIN.read.split.map(&:to_i).sum');
-  await page.locator('#save').click();
-  await page.waitForFunction(() => !document.getElementById('save').disabled);
   await page.locator('#stdin').fill('4 5\n');
   await page.locator('#expected-output').fill('9\n');
-  await page.locator('#cases-save').click();
-  await page.waitForFunction(() => !document.getElementById('cases-save').disabled);
-  await page.locator('#stdin').fill('unsaved');
   await showCollections();
-  await fileOperation(() => page.locator('#collection-tasks [data-action="open"]').nth(1).click(), [discard(false)]);
-  assert.equal(await page.locator('#stdin').inputValue(), 'unsaved');
-  await fileOperation(() => page.locator('#collection-tasks [data-action="open"]').nth(1).click(), [discard(true)]);
+  await page.locator('#collection-tasks [data-action="open"]').nth(1).click();
+  await page.locator('#problem-title').filter({ hasText: 'A02' }).waitFor();
   assert.equal(await page.locator('#collection-dialog').isVisible(), false);
   await showCollections();
   await page.locator('#collection-tasks [data-action="open"]').first().click();
@@ -1364,7 +1272,7 @@ test('C02: registration fetches sequentially, pauses and resumes only missing ta
   const beforeReload = calls.length;
   assert.ok(beforeReload < 3);
   await page.reload();
-  await page.waitForFunction(() => !document.getElementById('run').disabled);
+  await waitInitialized(page);
   await page.evaluate(async () => { const { ide } = await import('./bridge.mjs'); ide.fetchCollectionTask = (url, task) => window.__collectionFetch(url, task); });
   await showCollections();
   await page.locator('#collection-resume').click();
@@ -1409,7 +1317,7 @@ test('C06: running code can reopen collections and pause a pending download with
   assert.equal(await page.locator('#collection-pause').isDisabled(), true);
   await page.locator('#collection-close').click();
   await page.locator('#stop').click();
-  await page.waitForFunction(() => !document.getElementById('run').disabled);
+  await waitInitialized(page);
 });
 
 test('C03: tasks without inline samples open, and corrupt snapshots preserve the current document', async () => {
@@ -1426,7 +1334,7 @@ test('C03: tasks without inline samples open, and corrupt snapshots preserve the
   await page.locator('#code-editor').fill('puts 42');
   const currentPath = await page.locator('#file-path').textContent();
   await showCollections();
-  await fileOperation(() => page.locator('#collection-tasks [data-action="open"]').nth(1).click(), [discard(true)]);
+  await page.locator('#collection-tasks [data-action="open"]').nth(1).click();
   await page.locator('#collection-message').filter({ hasText: '不正' }).waitFor();
   assert.equal(await editorText(page), 'puts 42');
   assert.equal(await page.locator('#file-path').textContent(), currentPath);
@@ -1475,12 +1383,11 @@ test('C05: confirmed repair preserves current edits, other snapshots and the pre
   await page.locator('#problem-title').filter({ hasText: 'A01 - Problem 1' }).waitFor();
   assert.equal(await page.locator('#collection-dialog').isVisible(), false);
   await page.locator('#code-editor').fill('puts "my saved answer"');
-  await page.locator('#save').click();
-  await page.waitForFunction(() => !document.getElementById('save').disabled);
   await runAndWait();
   const outputBeforeRepair = await page.locator('#stdout').textContent();
-  await page.locator('#code-editor').fill('puts "my unsaved answer"');
-  await page.locator('#stdin').fill('my unsaved case');
+  await page.locator('#code-editor').fill('puts "my edited answer"');
+  await page.locator('#stdin').fill('my edited case');
+  await waitSaved();
   await page.locator('#problem-toggle').click();
   const sourcePath = await page.locator('#file-path').textContent();
   const savedCases = await readFile(path.join(path.dirname(sourcePath), 'cases.json'), 'utf8');
@@ -1510,14 +1417,12 @@ test('C05: confirmed repair preserves current edits, other snapshots and the pre
   assert.equal(await page.locator('#problem-title').textContent(), 'A01 - Repaired');
   assert.equal(await page.locator('#problem-statement').textContent(), '取り直した問題文');
   assert.equal(await page.locator('#problem-panel').isVisible(), false);
-  assert.equal(await editorText(page), 'puts "my unsaved answer"');
-  assert.equal(await page.locator('#stdin').inputValue(), 'my unsaved case');
+  assert.equal(await editorText(page), 'puts "my edited answer"');
+  assert.equal(await page.locator('#stdin').inputValue(), 'my edited case');
   assert.equal(await page.locator('#expected-output').inputValue(), '3\n');
   assert.equal(await page.locator('#stdout').textContent(), outputBeforeRepair);
-  assert.equal(await casesDirty(), true);
-  assert.match(await page.locator('#save-state').textContent(), /変更/);
   assert.equal(await page.locator('#file-path').textContent(), sourcePath);
-  assert.equal(await readFile(sourcePath, 'utf8'), 'puts "my saved answer"');
+  assert.equal(await readFile(sourcePath, 'utf8'), 'puts "my edited answer"');
   assert.equal(await readFile(path.join(path.dirname(sourcePath), 'cases.json'), 'utf8'), savedCases);
   assert.equal(await readFile(secondPath, 'utf8'), 'corrupt');
   await confirmRepair(1);
@@ -1583,10 +1488,8 @@ test('P10: formulas and saved images render offline and enlarge without changing
   assert.equal(await editorText(page), 'puts "keep edits"');
   assert.equal(await page.locator('#stdin').inputValue(), 'keep case');
   assert.equal(await page.locator('#file-path').textContent(), source);
-  assert.equal(await casesDirty(), true);
-  await page.locator('#save').click(); await page.waitForFunction(() => !document.getElementById('save').disabled);
-  await page.locator('#cases-save').click(); await page.waitForFunction(() => !document.getElementById('cases-save').disabled);
-  await page.reload(); await page.waitForFunction(() => !document.getElementById('run').disabled);
+  await waitSaved();
+  await page.reload(); await waitInitialized(page);
   await openProblemDialog(problem.url); await page.locator('#problem-open').click(); await waitProblem();
   await page.locator('#problem-statement img').evaluate(image => image.decode());
   assert.equal(await page.locator('#problem-statement .katex').count(), 1);
@@ -1633,7 +1536,7 @@ test('P11: SVG styles and internal references render with preformatted and legac
     await assertWorkspaceFits();
     await page.screenshot({ path: `test-results/problem-internal-svg-${width}.png` });
   }
-  await page.reload(); await page.waitForFunction(() => !document.getElementById('run').disabled);
+  await page.reload(); await waitInitialized(page);
   await verify();
 });
 
@@ -1675,9 +1578,6 @@ test('P12: optional problem limits and per-case time warnings work offline at bo
   await page.locator('#stdout').filter({ hasText: 'ready' }).waitFor();
   await page.locator('#stop').click();
   await page.locator('#run-status').filter({ hasText: '停止しました' }).waitFor();
-  assert.equal(await page.locator('#time-limit-warning').isVisible(), false);
-  await newDocument();
-  assert.equal(await page.locator('#problem-panel').isVisible(), false);
   assert.equal(await page.locator('#time-limit-warning').isVisible(), false);
 });
 
@@ -1760,8 +1660,6 @@ test('P14: long problem runs receive their budget before output and keep per-cas
   assert.equal(await page.locator('#execution-limit').textContent(), '実行時上限 9 秒');
   await selectCase(2); await page.locator('#clear-output').click();
   assert.equal(await page.locator('#execution-limit').textContent(), '実行上限 5〜30 秒');
-  await newDocument();
-  assert.equal(await page.locator('#execution-limit').textContent(), '既定上限 5 秒');
 });
 
 test('T01: tolerant comparison keeps exact whitespace, separate columns and saved per-case settings', async () => {
@@ -1790,8 +1688,7 @@ test('T01: tolerant comparison keeps exact whitespace, separate columns and save
   await runAndWait('実行できませんでした');
   assert.match(await page.locator('#stderr').textContent(), /許容誤差/);
   await page.locator('#tolerance').fill('1e-9');
-  await page.locator('#cases-save').click();
-  await page.waitForFunction(() => !document.getElementById('cases-save').disabled);
+  await waitSaved();
   const saved = JSON.parse(await readFile(path.join(app.dataDir, 'workspaces', libraryContest, 'tolerance', 'cases.json'), 'utf8'));
   assert.equal(saved.cases[0].tolerance, 1e-9);
   assert.equal(saved.cases[1].tolerance, undefined);
@@ -1813,15 +1710,12 @@ test('T01: tolerant comparison keeps exact whitespace, separate columns and save
   assert.equal(await page.locator('#comparison-status').textContent(), '未比較');
 });
 
-test('T02: mixed strict and tolerant cases roundtrip and invalid input cannot be saved as strict', async () => {
-  const source = path.join(root, '誤差 ケース.json');
+test('T02: mixed strict and tolerant cases are restored and invalid input is never saved as strict', async () => {
   const data = { cases: [
     { stdin: '1.0000001', expectedOutput: '1', compare: true, tolerance: 1e-6 },
     { stdin: '1.0000001', expectedOutput: '1', compare: true },
   ] };
-  await writeFile(source, JSON.stringify(data));
-  await loadCases(source);
-  await page.locator('#code-editor').fill('print STDIN.read');
+  await openStarter({ task: 'tolerance_mixed', code: 'print STDIN.read', cases: data.cases });
   await page.locator('#run-all').click();
   await page.locator('#cases-summary').filter({ hasText: /完了 2 \/ 2.*一致 1.*不一致 1/ }).waitFor();
   assert.equal(await page.locator('#comparison-status').textContent(), '一致');
@@ -1830,22 +1724,17 @@ test('T02: mixed strict and tolerant cases roundtrip and invalid input cannot be
   assert.equal(await page.locator('#tolerant-compare').isChecked(), false);
   await selectCase(1);
   await page.locator('#tolerance').fill('');
-  assert.equal(await casesDirty(), true);
-  await page.locator('#cases-save').click();
-  await page.locator('#message').filter({ hasText: '許容誤差' }).waitFor();
-  assert.deepEqual(JSON.parse(await readFile(source, 'utf8')), data);
+  await waitSaveFailed();
+  assert.match(await page.locator('#save-state').getAttribute('title'), /許容誤差/);
+  assert.deepEqual(JSON.parse(await readFile(starterProblem.cases, 'utf8')), data);
   assert.equal(await page.locator('#tolerant-compare').isChecked(), true);
   assert.equal(await page.locator('#tolerance').inputValue(), '');
   await page.locator('#tolerance').fill('1e-6');
-  assert.equal(await casesDirty(), false);
   await page.locator('#compare-output').uncheck();
   assert.equal(await page.locator('#tolerance').isDisabled(), true);
-  const destination = path.join(root, '誤差 保存.json');
-  await saveCases(destination);
-  await page.waitForFunction(() => !document.getElementById('cases-save').disabled);
-  assert.equal(JSON.parse(await readFile(destination, 'utf8')).cases[0].tolerance, 1e-6);
-  await loadCases(destination);
-  await page.waitForFunction(() => !document.getElementById('cases-open').disabled);
+  await waitSaved();
+  assert.equal(JSON.parse(await readFile(starterProblem.cases, 'utf8')).cases[0].tolerance, 1e-6);
+  await openProblem(page, starterProblem);
   assert.equal(await page.locator('#tolerant-compare').isChecked(), true);
   assert.equal(await page.locator('#tolerance').isDisabled(), true);
   await page.locator('#compare-output').check();
@@ -1853,14 +1742,13 @@ test('T02: mixed strict and tolerant cases roundtrip and invalid input cannot be
   await runAndWait();
   assert.equal(await page.locator('#comparison-status').textContent(), '一致');
 });
-
 test('M06/M09: accepting close stops Ruby descendants and exits', async () => {
   const marker = path.join(root, 'orphan.txt').replaceAll('\\', '/');
   await page.getByTestId('code-editor').fill(`require 'rbconfig'; spawn(RbConfig.ruby, '-e', 'sleep 2; File.write(${JSON.stringify(marker)}, "survived")'); puts 'ready'; sleep 30`);
   await page.getByRole('button', { name: '実行', exact: true }).click();
   await page.getByTestId('stdout').filter({ hasText: 'ready' }).waitFor();
   const exited = once(app.child, 'exit', { signal: AbortSignal.timeout(30000) });
-  await Promise.all([exited, dialogs(app, () => requestClose(app), [discard(true)], true)]);
+  await Promise.all([exited, requestClose(app)]);
   await pause(2200);
   await assert.rejects(access(marker), { code: 'ENOENT' });
 });

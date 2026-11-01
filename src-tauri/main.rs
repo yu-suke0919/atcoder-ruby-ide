@@ -1,16 +1,14 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 use atcoder_ruby_ide::{
-    document_save_path, load_samples, prepare_document_run, save_samples, CollectionLibrary,
-    CollectionView, DocumentResult, DocumentStore, LspInfo, Problem, ProblemLibrary,
+    CollectionLibrary, CollectionView, DocumentStore, LspInfo, Problem, ProblemLibrary,
     ProblemWorkspace, RegisteredCollection, RepairedCollectionTask, RubyInfo, RubyLsp, RunEvent,
-    Runner, SampleCase, SampleResult,
+    RunRequest, Runner, SampleCase,
 };
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{ipc::Channel, Manager};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 struct AppState {
     runner: Arc<Runner>,
@@ -102,15 +100,13 @@ fn run_ruby(
     problem_time_limit_ms: Option<u32>,
     on_event: Channel<RunEvent>,
 ) -> Result<(), String> {
-    let prepared = prepare_document_run(
-        &state.runner,
-        &state.documents.lock().unwrap(),
+    let prepared = state.runner.prepare(RunRequest {
         code,
         stdin,
         expected_output,
         tolerance,
         problem_time_limit_ms,
-    )?;
+    })?;
     let ruby = ruby_path(&app)?;
     std::thread::Builder::new()
         .name("ruby-runner".into())
@@ -141,69 +137,15 @@ fn stop_ruby(state: tauri::State<'_, AppState>) -> bool {
 }
 
 #[tauri::command]
-async fn document_open(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, AppState>,
-) -> Result<DocumentResult, String> {
+async fn document_save(state: tauri::State<'_, AppState>, code: String) -> Result<(), String> {
     let documents = Arc::clone(&state.documents);
-    tauri::async_runtime::spawn_blocking(move || {
-        let chosen = window
-            .app_handle()
-            .dialog()
-            .file()
-            .set_parent(&window)
-            .set_title("Ruby ファイルを開く")
-            .add_filter("Ruby", &["rb"])
-            .blocking_pick_file();
-        let path = chosen
-            .map(|file| file.into_path().map_err(|e| e.to_string()))
-            .transpose()?;
-        documents.lock().unwrap().open(path)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || documents.lock().unwrap().save(&code))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-async fn document_save(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, AppState>,
-    code: String,
-    save_as: bool,
-) -> Result<DocumentResult, String> {
-    let documents = Arc::clone(&state.documents);
-    tauri::async_runtime::spawn_blocking(move || {
-        let current = documents.lock().unwrap().path().map(|path| path.to_owned());
-        let chosen = document_save_path(current, save_as, |current| {
-            let mut dialog = window
-                .app_handle()
-                .dialog()
-                .file()
-                .set_parent(&window)
-                .set_title("Ruby ファイルを保存")
-                .add_filter("Ruby", &["rb"]);
-            if let Some(current) = current.as_ref() {
-                if let Some(parent) = current.parent() {
-                    dialog = dialog.set_directory(parent);
-                }
-                dialog =
-                    dialog.set_file_name(current.file_name().unwrap_or_default().to_string_lossy());
-            } else {
-                dialog = dialog.set_file_name("solution.rb");
-            }
-            dialog
-                .blocking_save_file()
-                .map(|file| file.into_path().map_err(|e| e.to_string()))
-                .transpose()
-        })?;
-        documents.lock().unwrap().save(&code, chosen)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn document_new(state: tauri::State<'_, AppState>) -> Result<(), String> {
+async fn session_reset(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let runner = Arc::clone(&state.runner);
     let documents = Arc::clone(&state.documents);
     tauri::async_runtime::spawn_blocking(move || {
@@ -213,48 +155,6 @@ async fn document_new(state: tauri::State<'_, AppState>) -> Result<(), String> {
     })
     .await
     .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn samples_open(window: tauri::WebviewWindow) -> Result<SampleResult, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let selected = window
-            .app_handle()
-            .dialog()
-            .file()
-            .set_parent(&window)
-            .set_title("サンプルを開く")
-            .add_filter("JSON", &["json"])
-            .blocking_pick_file()
-            .map(|file| file.into_path().map_err(|e| e.to_string()))
-            .transpose()?;
-        load_samples(selected)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn samples_save(
-    window: tauri::WebviewWindow,
-    cases: Vec<SampleCase>,
-) -> Result<SampleResult, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let selected = window
-            .app_handle()
-            .dialog()
-            .file()
-            .set_parent(&window)
-            .set_title("サンプルを保存")
-            .add_filter("JSON", &["json"])
-            .set_file_name("samples.cases.json")
-            .blocking_save_file()
-            .map(|file| file.into_path().map_err(|e| e.to_string()))
-            .transpose()?;
-        save_samples(cases, selected)
-    })
-    .await
-    .map_err(|e| e.to_string())?
 }
 
 fn problem_library(app: &tauri::AppHandle) -> Result<ProblemLibrary, String> {
@@ -373,31 +273,11 @@ async fn problem_save_cases(
     app: tauri::AppHandle,
     url: String,
     cases: Vec<SampleCase>,
-) -> Result<SampleResult, String> {
+) -> Result<(), String> {
     let library = problem_library(&app)?;
     tauri::async_runtime::spawn_blocking(move || library.save_cases(&url, cases))
         .await
         .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn confirm_discard(window: tauri::WebviewWindow) -> Result<bool, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        window
-            .app_handle()
-            .dialog()
-            .message("保存していない変更を破棄しますか？")
-            .title("未保存の変更")
-            .parent(&window)
-            .kind(MessageDialogKind::Warning)
-            .buttons(MessageDialogButtons::OkCancelCustom(
-                "破棄して続ける".into(),
-                "キャンセル".into(),
-            ))
-            .blocking_show()
-    })
-    .await
-    .map_err(|e| e.to_string())
 }
 
 fn main() {
@@ -412,7 +292,6 @@ fn main() {
         }
     }
     tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             runner: Runner::new(Duration::from_secs(5), 1048576),
             documents: Arc::new(Mutex::new(DocumentStore::default())),
@@ -426,12 +305,8 @@ fn main() {
             lsp_stop,
             run_ruby,
             stop_ruby,
-            document_open,
             document_save,
-            document_new,
-            samples_open,
-            samples_save,
-            confirm_discard,
+            session_reset,
             problem_open,
             problem_refresh,
             problem_save_cases,

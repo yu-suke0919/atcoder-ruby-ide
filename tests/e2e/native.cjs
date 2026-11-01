@@ -66,7 +66,7 @@ async function launch(root, { hostEnv = {} } = {}) {
     const canonical = value => path.toNamespacedPath(path.resolve(value)).toLowerCase();
     assert.equal(canonical(await realpath(rubyExecutable)), canonical(await realpath(path.join(path.dirname(executable), 'ruby', 'bin', 'ruby.exe'))));
     console.log(JSON.stringify({ executable, ruby, rubyExecutable, systemRubyAvailable: false }));
-    return { child, browser, page, root, dataDir: path.join(process.env.LOCALAPPDATA, require('../../src-tauri/tauri.conf.json').identifier), dialogSequence: 0 };
+    return { child, browser, page, root, dataDir: path.join(process.env.LOCALAPPDATA, require('../../src-tauri/tauri.conf.json').identifier) };
   } catch (error) {
     if (page) {
       await mkdir('test-results', { recursive: true });
@@ -79,28 +79,6 @@ async function launch(root, { hostEnv = {} } = {}) {
   }
 }
 
-async function dialogs(app, trigger, steps, closesApp = false) {
-  const request = path.join(app.root, `dialog-${++app.dialogSequence}.json`);
-  await writeFile(request, JSON.stringify({ processId: app.child.pid, steps }), 'utf8');
-  const automation = execute(system('WindowsPowerShell/v1.0/powershell.exe'), [
-    '-NoProfile', '-STA', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'native-dialog.ps1'), '-RequestFile', request
-  ], { timeout: 60000, maxBuffer: 1024 * 1024 });
-  try {
-    await Promise.all([automation, trigger()]);
-    if (!closesApp) await app.page.waitForFunction(() => !document.getElementById('open').disabled);
-  } catch (error) {
-    await mkdir('test-results', { recursive: true });
-    await app.page.screenshot({ path: `test-results/dialog-failure-${app.dialogSequence}.png` }).catch(() => {});
-    throw error;
-  }
-}
-
-const discard = accept => ({ title: '未保存の変更', buttonName: accept ? '破棄して続ける' : 'キャンセル' });
-const open = file => ({ title: 'Ruby ファイルを開く', path: file, buttonId: '1' });
-const save = file => ({ title: 'Ruby ファイルを保存', path: file, buttonId: '1' });
-const cancelSave = () => ({ title: 'Ruby ファイルを保存', buttonId: '2' });
-const overwrite = () => ({ title: 'Confirm Save As', keys: '%y' });
-
 async function close(app) {
   if (app.child.exitCode === null) await execute(system('taskkill.exe'), ['/PID', String(app.child.pid), '/T', '/F']).catch(() => {});
   await app.browser.close().catch(() => {});
@@ -112,4 +90,4 @@ async function requestClose(app) {
   ]);
 }
 
-module.exports = { requestClose, launch, dialogs, discard, open, save, cancelSave, overwrite, close, pause };
+module.exports = { requestClose, launch, close, pause };

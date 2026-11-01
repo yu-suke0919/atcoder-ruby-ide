@@ -41,15 +41,8 @@ export const ide = {
     });
   },
   stop: () => invoke('stop_ruby'),
-  openFile: () => invoke('document_open'),
-  saveFile: (code, saveAs) => invoke('document_save', { code, saveAs }),
-  newFile: () => invoke('document_new'),
-  openCases: () => invoke('samples_open'),
-  saveCases: cases => {
-    cases.forEach(item => validateTolerance(item.tolerance ?? null));
-    return invoke('samples_save', { cases });
-  },
-  confirmDiscard: () => invoke('confirm_discard'),
+  saveCode: code => invoke('document_save', { code }),
+  resetSession: () => invoke('session_reset'),
   setTitle: title => appWindow.setTitle(title),
   onCloseRequested: handler => appWindow.onCloseRequested(handler),
   destroy: () => appWindow.destroy()

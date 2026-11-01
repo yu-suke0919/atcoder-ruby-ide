@@ -1,12 +1,14 @@
 const { test, describe, before, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtemp, rm, writeFile, readFile, mkdir } = require('node:fs/promises');
+const { mkdtemp, rm, readFile, mkdir } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
-const { launch, close, dialogs, open, save, discard } = require('./support.cjs');
+const { launch, close } = require('./support.cjs');
+const { seedProblem, openProblem, waitInitialized } = require('./workspace.cjs');
 const { editorText } = require('./editor.cjs');
 describe('Ruby editor', () => {
-let app, page, root;
+let app, page, root, starter;
+const contest = `editor-e2e-${Date.now()}`;
 before(async () => {
   root = await mkdtemp(path.join(tmpdir(), 'Ruby editor 日本語 '));
   app = await launch(root); page = app.page;
@@ -16,9 +18,20 @@ beforeEach(async () => {
   page.on('dialog', accept);
   try { await page.reload(); } finally { page.off('dialog', accept); }
   await page.setViewportSize({ width: 1280, height: 850 });
-  await page.waitForFunction(() => !document.getElementById('run').disabled);
+  await waitInitialized(page);
+  starter = await openWith('editor');
 });
-after(async () => { if (app) await close(app); if (root) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); });
+after(async () => {
+  if (app) await close(app);
+  if (app) for (const kind of ['library/problems', 'workspaces']) await rm(path.join(app.dataDir, kind, contest), { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  if (root) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+});
+async function openWith(task, code) {
+  const problem = await seedProblem(app, contest, task, code === undefined ? {} : { code });
+  await openProblem(page, problem);
+  return problem;
+}
+const waitSaved = () => page.waitForFunction(() => document.getElementById('save-state').dataset.state === 'saved');
 const code = () => page.getByRole('textbox', { name: 'Ruby コード', exact: true });
 
 test('E01: Ruby highlighting, line numbers and search fit the minimum viewport', async () => {
@@ -80,11 +93,12 @@ test('E03: bracket and quote pairing, matching and composition preserve Japanese
 });
 
 test('E04: search preserves saved state and replacements invalidate comparisons with undo', async () => {
-  const file = path.join(root, 'search.rb');
+  const file = starter.solution;
   await code().fill('puts "cat cat"');
-  await dialogs(app, () => page.locator('#save').click(), [save(file)]);
+  await code().press('Control+s'); await waitSaved();
   await page.locator('#compare-output').check(); await page.locator('#expected-output').fill('cat cat\n');
   await page.locator('#run').click(); await page.locator('#comparison-status').filter({ hasText: '一致' }).waitFor();
+  await waitSaved();
   await code().press('Control+f');
   await page.getByRole('textbox', { name: '検索', exact: true }).fill('cat');
   await page.getByRole('button', { name: '次へ', exact: true }).click();
@@ -96,9 +110,12 @@ test('E04: search preserves saved state and replacements invalidate comparisons 
   assert.equal(await editorText(page), 'puts "dog dog"');
   assert.match(await page.locator('#save-state').textContent(), /未保存の変更/);
   assert.equal(await page.locator('#comparison-status').textContent(), '未比較');
+  await waitSaved();
+  assert.equal(await readFile(file, 'utf8'), 'puts "dog dog"');
   await page.keyboard.press('Escape'); await code().press('Control+z');
   assert.equal(await editorText(page), 'puts "cat cat"');
-  assert.equal(await page.locator('#save-state').textContent(), '保存済み');
+  await waitSaved();
+  assert.equal(await readFile(file, 'utf8'), 'puts "cat cat"');
   await code().press('Control+Home');
   await code().press('Control+h'); await page.getByRole('textbox', { name: '検索', exact: true }).waitFor();
   await page.getByRole('textbox', { name: '置換', exact: true }).fill('fox');
@@ -110,53 +127,45 @@ test('E04: search preserves saved state and replacements invalidate comparisons 
   assert.equal(await readFile(file, 'utf8'), 'puts "fox cat"');
   await code().press('Control+z'); assert.equal(await editorText(page), 'puts "cat cat"');
   assert.match(await page.locator('#save-state').textContent(), /未保存の変更/);
+  await waitSaved();
   await code().press('Control+y'); assert.equal(await editorText(page), 'puts "fox cat"');
-  assert.equal(await page.locator('#save-state').textContent(), '保存済み');
+  await waitSaved();
+  assert.equal(await readFile(file, 'utf8'), 'puts "fox cat"');
   await code().press('Control+Enter');
   await page.locator('#stdout').filter({ hasText: 'fox cat' }).waitFor();
   assert.equal(await editorText(page), 'puts "fox cat"');
 });
 
-test('E05: opening a different document clears undo and a 1 MiB file roundtrips', async () => {
+test('E05: opening a different problem clears undo and a 1 MiB solution roundtrips', async () => {
   await code().fill('puts "previous secret"');
-  const file = path.join(root, 'large.rb');
   const contents = '# 日本語\n' + '#'.repeat(1024 * 1024 - Buffer.byteLength('# 日本語\n'));
-  await writeFile(file, contents);
-  await dialogs(app, () => code().press('Control+o'), [discard(true), open(file)]);
+  const large = await openWith('large', contents);
   assert.equal(await editorText(page), contents);
   await code().press('Control+z'); assert.equal(await editorText(page), contents);
   await code().press('Control+s');
-  await page.waitForFunction(() => !document.getElementById('save').disabled);
-  assert.equal(await readFile(file, 'utf8'), contents);
-  await page.locator('#new').click();
-  await page.waitForFunction(() => !document.getElementById('new').disabled);
-  await code().press('Control+z'); assert.equal(await editorText(page), '');
+  await waitSaved();
+  assert.equal(await readFile(large.solution, 'utf8'), contents);
+  await openProblem(page, starter);
+  assert.equal(await editorText(page), 'puts "previous secret"');
+  await code().press('Control+z'); assert.equal(await editorText(page), 'puts "previous secret"');
 });
-
-test('E06: a pending file action blocks both typing and search replacements', async () => {
-  await code().fill('puts "locked"');
-  await code().press('Control+f');
-  await page.getByRole('textbox', { name: '検索', exact: true }).fill('locked');
-  await page.getByRole('textbox', { name: '置換', exact: true }).fill('changed');
+test('E06: a pending save never blocks typing and the latest edit is saved afterwards', async () => {
+  await code().fill('puts "first"');
   await page.evaluate(async () => {
     const { ide } = await import('./bridge.mjs');
-    ide.saveFile = () => new Promise(resolve => { window.finishEditorSave = () => resolve({ canceled: true }); });
+    const save = ide.saveCode;
+    ide.saveCode = code => new Promise((resolve, reject) => { window.finishEditorSave = () => { ide.saveCode = save; save(code).then(resolve, reject); }; });
   });
-  await page.locator('#save').click();
+  await code().press('Control+s');
+  await page.waitForFunction(() => document.getElementById('save-state').dataset.state === 'saving');
   try {
-    assert.equal(await code().isEditable(), false);
-    assert.equal(await page.locator('#editor-search').isDisabled(), true);
-    const replace = page.getByRole('button', { name: 'すべて置換', exact: true });
-    if (await replace.isEnabled()) await replace.click();
-    assert.equal(await editorText(page), 'puts "locked"');
-    await code().focus();
-    assert.equal(await code().evaluate(el => el === document.activeElement), true);
+    assert.equal(await code().isEditable(), true);
+    await code().press('Control+End'); await page.keyboard.insertText('\nputs "second"');
+    assert.equal(await page.locator('#editor-search').isDisabled(), false);
   } finally { await page.evaluate(() => window.finishEditorSave()); }
-  await page.waitForFunction(() => !document.getElementById('save').disabled);
-  assert.equal(await code().isEditable(), true);
-  assert.equal(await code().evaluate(el => el === document.activeElement), true);
+  await waitSaved();
+  assert.equal(await readFile(starter.solution, 'utf8'), 'puts "first"\nputs "second"');
 });
-
 async function completions() {
   await page.locator('.cm-tooltip-autocomplete').waitFor();
   // CodeMirror ignores acceptance keys during its initial interaction delay.
@@ -168,8 +177,8 @@ test('E07: explicit completion navigates, cancels, inserts and preserves Tab and
   await code().fill('pu');
   await page.waitForTimeout(150);
   assert.equal(await page.locator('.cm-tooltip-autocomplete').count(), 0);
-  const file = path.join(root, 'completion.rb');
-  await dialogs(app, () => page.locator('#save').click(), [save(file)]);
+  const file = starter.solution;
+  await code().press('Control+s'); await waitSaved();
   assert.equal(await page.locator('.cm-tooltip-autocomplete').count(), 0);
   await code().press('Control+Space'); await completions();
   await option('puts').waitFor();
@@ -236,12 +245,12 @@ test('E08: templates keep indentation, receivers, normal Tab and save-run shortc
   await code().press('Enter');
   await page.locator('#stdin').fill('1 2 3');
   await page.locator('#compare-output').check(); await page.locator('#expected-output').fill('6\n');
-  const file = path.join(root, 'snippet.rb');
-  await dialogs(app, () => code().press('Control+s'), [save(file)]);
+  const file = starter.solution;
+  await code().press('Control+s'); await waitSaved();
   await code().press('Control+Enter'); await page.locator('#comparison-status').filter({ hasText: '一致' }).waitFor();
   await code().press('Control+Space'); await completions();
   assert.equal(await page.locator('#comparison-status').textContent(), '一致');
-  await code().press('Control+s'); await page.waitForFunction(() => !document.getElementById('save').disabled);
+  await code().press('Control+s'); await waitSaved();
   await code().press('Control+Space'); await completions();
   await code().press('Control+Enter'); await page.waitForFunction(() => !document.getElementById('run').disabled);
   assert.equal(await readFile(file, 'utf8'), await editorText(page));
@@ -251,23 +260,11 @@ test('E08: templates keep indentation, receivers, normal Tab and save-run shortc
   assert.match(await page.locator('#save-state').textContent(), /未保存の変更/);
 });
 
-test('E09: completion is blocked during save and composition and resets with the document', async () => {
+test('E09: completion is blocked during composition and resets with the problem', async () => {
   await code().fill('previous_secret = 1\npre'); await code().press('Control+Space'); await completions();
   await option('previous_secret').waitFor();
-  await page.evaluate(async () => {
-    const { ide } = await import('./bridge.mjs');
-    ide.saveFile = () => new Promise(resolve => { window.finishCompletionSave = () => resolve({ canceled: true }); });
-  });
-  await code().press('Control+s');
-  try {
-    assert.equal(await code().isEditable(), false);
-    assert.equal(await page.locator('#editor-complete').isDisabled(), true);
-    assert.equal(await page.locator('.cm-tooltip-autocomplete').count(), 0);
-    await code().press('Control+Space');
-    assert.equal(await page.locator('.cm-tooltip-autocomplete').count(), 0);
-  } finally { await page.evaluate(() => window.finishCompletionSave()); }
-  await page.waitForFunction(() => !document.getElementById('save').disabled);
-  await dialogs(app, () => page.locator('#new').click(), [discard(true)]);
+  await code().press('Escape');
+  await openWith('completion_reset', '');
   await code().fill('p'); await code().press('Control+Space'); await completions();
   assert.equal(await option('previous_secret').count(), 0);
   await code().press('Escape'); await code().fill('');
@@ -282,12 +279,9 @@ test('E09: completion is blocked during save and composition and resets with the
     assert.equal(await editorText(page), '日本語');
   } finally { await cdp.detach(); }
 });
-
 test('E10: completion fits a small viewport and works near the end of a large document', async () => {
   await page.setViewportSize({ width: 900, height: 650 });
-  const file = path.join(root, 'completion-large.rb');
-  await writeFile(file, '# long document\n'.repeat(50000) + 'total_count = 1\ntot');
-  await dialogs(app, () => code().press('Control+o'), [open(file)]);
+  await openWith('completion_large', '# long document\n'.repeat(50000) + 'total_count = 1\ntot');
   await code().press('Control+End'); await code().press('Control+Space'); await completions();
   await option('total_count').waitFor();
   const bounds = await page.locator('.cm-tooltip-autocomplete').boundingBox();
@@ -300,8 +294,8 @@ test('E10: completion fits a small viewport and works near the end of a large do
 
 test('E15: literal method completion shows offline argument hints and preserves editing behavior', async () => {
   await code().fill('"abc".up');
-  const file = path.join(root, 'method-hints.rb');
-  await dialogs(app, () => code().press('Control+s'), [save(file)]);
+  const file = starter.solution;
+  await code().press('Control+s'); await waitSaved();
   await code().press('Control+Space'); await completions();
   await option('upcase').waitFor();
   const info = page.locator('.cm-completionInfo');
@@ -324,8 +318,8 @@ test('E15: literal method completion shows offline argument hints and preserves 
     await option(label).click(); assert.equal(await editorText(page), doc.replace(/\w+$/, label));
   }
   await code().fill('puts("abc".upcase)');
-  await code().press('Control+s'); await page.waitForFunction(() => !document.getElementById('save').disabled);
   await page.locator('#compare-output').check(); await page.locator('#expected-output').fill('ABC\n');
+  await code().press('Control+s'); await waitSaved();
   await code().press('Control+Enter'); await page.locator('#comparison-status').filter({ hasText: /^一致$/ }).waitFor();
   await code().press('End'); await code().press('ArrowLeft'); await code().press('Control+Space'); await completions();
   await info.filter({ hasText: 'String#upcase' }).waitFor();
@@ -349,8 +343,8 @@ test('E16: local variables select typed methods, refresh hints after assignment 
   const info = page.locator('.cm-completionInfo');
   const original = 'text = "abc"\ntext.up';
   await code().fill(original);
-  const file = path.join(root, 'local-methods.rb');
-  await dialogs(app, () => code().press('Control+s'), [save(file)]);
+  const file = starter.solution;
+  await code().press('Control+s'); await waitSaved();
   await code().press('Control+Space'); await completions();
   await info.filter({ hasText: 'String#upcase' }).waitFor();
   assert.equal(await option('each do … end').count(), 0);
@@ -380,8 +374,8 @@ test('E16: local variables select typed methods, refresh hints after assignment 
     assert.equal(await editorText(page), `text = "abc"\n${expression.replace(/up$/, 'upcase')}`);
   }
   await code().fill('text = "abc"\ntext = text.upcase\nputs(text)');
-  await code().press('Control+s'); await page.waitForFunction(() => !document.getElementById('save').disabled);
   await page.locator('#compare-output').check(); await page.locator('#expected-output').fill('ABC\n');
+  await code().press('Control+s'); await waitSaved();
   await code().press('Control+Enter'); await page.locator('#comparison-status').filter({ hasText: /^一致$/ }).waitFor();
   await code().press('Control+Home'); await code().press('ArrowDown'); await code().press('End'); await code().press('Control+Space'); await completions();
   await info.filter({ hasText: 'String#upcase' }).waitFor();
@@ -392,9 +386,9 @@ test('E16: local variables select typed methods, refresh hints after assignment 
 
 test('E17: real LSP completes unsaved declarations with UTF-16 edits offline and preserves save-run', async () => {
   const original = 'limit = 10\nclass EditorProbe; def unique_editor_method; 42; end; end\n"😀日本語"; puts EditorProbe.new.unique_ed';
-  const file = path.join(root, 'lsp 日本語.rb');
+  const file = starter.solution;
   await code().fill(original);
-  await dialogs(app, () => code().press('Control+s'), [save(file)]);
+  await code().press('Control+s'); await waitSaved();
   await page.context().setOffline(true);
   try {
     await code().press('Control+End'); await code().press('Control+Space'); await completions();
@@ -408,7 +402,7 @@ test('E17: real LSP completes unsaved declarations with UTF-16 edits offline and
     assert.equal(await editorText(page), expected);
     await code().press('Control+z'); assert.equal(await editorText(page), original);
     await code().press('Control+Shift+Z'); assert.equal(await editorText(page), expected);
-    await code().press('Control+s'); await page.waitForFunction(() => !document.getElementById('save').disabled);
+    await code().press('Control+s'); await waitSaved();
     assert.equal(await readFile(file, 'utf8'), expected);
     await code().press('Control+Enter'); await page.locator('#run-status').filter({ hasText: /^正常終了$/ }).waitFor();
     assert.equal(await page.locator('#stdout').textContent(), '42\n');
@@ -426,7 +420,7 @@ test('E17: real LSP completes unsaved declarations with UTF-16 edits offline and
   } finally { await page.context().setOffline(false); }
 });
 
-test('E18: pending LSP replies are discarded after edit, cursor move, Escape, save and document switch', async () => {
+test('E18: pending LSP replies are discarded after edit, cursor move, Escape and problem switch', async () => {
   await page.evaluate(async () => {
     const { ide } = await import('./bridge.mjs');
     ide.lspStart = async () => ({});
@@ -434,31 +428,19 @@ test('E18: pending LSP replies are discarded after edit, cursor move, Escape, sa
       ? new Promise(resolve => { window.finishLsp = () => resolve([{ label: 'stale_method', kind: 2, textEdit: { newText: 'stale_method', range: { start: { line: 0, character: 4 }, end: { line: 0, character: 7 } } } }]); window.lspPending = true; })
       : Promise.resolve([]);
   });
-  for (const action of ['edit', 'cursor', 'escape', 'save', 'document']) {
+  for (const action of ['edit', 'cursor', 'escape', 'problem']) {
     await code().fill('obj.old'); await code().press('Control+End');
     await page.evaluate(() => { window.lspPending = false; });
     await code().press('Control+Space'); await page.waitForFunction(() => window.lspPending);
     if (action === 'edit') await code().fill('fresh_text = 1');
     if (action === 'cursor') await code().press('Home');
     if (action === 'escape') await code().press('Escape');
-    if (action === 'save') {
-      await page.evaluate(async () => {
-        const { ide } = await import('./bridge.mjs');
-        ide.saveFile = () => new Promise(resolve => { window.finishLspSave = () => resolve({ canceled: true }); });
-      });
-      await code().press('Control+s');
-      assert.equal(await code().isEditable(), false);
-    }
-    if (action === 'document') await dialogs(app, () => page.locator('#new').click(), [discard(true)]);
+    if (action === 'problem') await openWith('lsp_switch', '');
     const current = await editorText(page);
     await page.evaluate(() => window.finishLsp());
     await page.waitForTimeout(200);
     assert.equal(await option('stale_method').count(), 0, action);
     assert.equal(await editorText(page), current, action);
-    if (action === 'save') {
-      await page.evaluate(() => window.finishLspSave());
-      await page.waitForFunction(() => !document.getElementById('save').disabled);
-    }
     await code().press('Escape');
   }
 });
@@ -497,8 +479,8 @@ test('E20: LSP startup keeps editing, saving and execution available and skips a
   await code().fill('obj.old'); await code().press('Control+Space');
   await page.locator('#completion-state[data-state="starting"]').waitFor();
   await code().fill('puts "startup edit"'); await code().press('Escape');
-  const file = path.join(root, 'startup.rb');
-  await dialogs(app, () => code().press('Control+s'), [save(file)]);
+  const file = starter.solution;
+  await code().press('Control+s'); await waitSaved();
   assert.equal(await readFile(file, 'utf8'), 'puts "startup edit"');
   await code().press('Control+Enter'); await page.locator('#run-status').filter({ hasText: /^正常終了$/ }).waitFor();
   assert.equal(await page.locator('#stdout').textContent(), 'startup edit\n');
@@ -524,10 +506,8 @@ test('E21: changing a fallback prefix re-queries LSP and finds an unsaved method
 
 test('E11: runtime and syntax errors navigate without changing code, saved state or history', async () => {
   assert.equal(await page.locator('#error-location').count(), 1);
-  const file = path.join(root, 'error 日本語.rb');
   const text = '# 日本語\n' + '# padding\n'.repeat(80) + "raise 'boom'\n";
-  await writeFile(file, text);
-  await dialogs(app, () => code().press('Control+o'), [open(file)]);
+  await openWith('error_jump', text);
   await page.locator('#run').click(); await page.waitForFunction(() => !document.getElementById('run').disabled);
   const jump = page.getByRole('button', { name: 'コードの82行目へ', exact: true });
   await jump.waitFor();
@@ -545,20 +525,10 @@ test('E11: runtime and syntax errors navigate without changing code, saved state
   assert.ok(rect.y >= editorRect.y && rect.y + rect.height <= editorRect.y + editorRect.height);
   await mkdir('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/run-error-900.png' });
-  await code().press('Control+s'); await page.waitForFunction(() => !document.getElementById('save').disabled);
+  await code().press('Control+s'); await waitSaved();
   assert.equal(await jump.isVisible(), true);
-  await page.evaluate(async () => {
-    const { ide } = await import('./bridge.mjs');
-    const save = ide.saveFile;
-    ide.saveFile = () => new Promise(resolve => { window.finishErrorSave = () => { ide.saveFile = save; resolve({ canceled: true }); }; });
-  });
-  await code().press('Control+s');
-  try {
-    assert.equal(await jump.isDisabled(), true);
-    assert.equal(await marked.count(), 1);
-  } finally { await page.evaluate(() => window.finishErrorSave()); }
-  await page.waitForFunction(() => !document.getElementById('save').disabled);
   assert.equal(await jump.isEnabled(), true);
+  assert.equal(await marked.count(), 1);
   await code().press('Control+z'); assert.equal(await editorText(page), text);
   await code().press('Home'); await page.keyboard.insertText('# changed\n');
   assert.equal(await page.locator('#error-location').isVisible(), false);
@@ -601,8 +571,7 @@ test('E13: library callers navigate, warnings and unrelated backtraces do not, a
   await page.locator('#run').click(); await page.waitForFunction(() => !document.getElementById('run').disabled);
   await page.getByRole('button', { name: 'コードの2行目へ', exact: true }).click();
   assert.equal(await page.locator('#cursor-position').textContent(), 'Ln 2, Col 1');
-  const file = path.join(root, 'different.rb'); await writeFile(file, 'puts 42');
-  await dialogs(app, () => code().press('Control+o'), [discard(true), open(file)]);
+  await openWith('different', 'puts 42');
   assert.equal(await page.locator('#error-location').isVisible(), false);
   assert.equal(await page.locator('.cm-run-error-line').count(), 0);
   for (const text of ["warn \"#{__FILE__}:1: warning\"", "e = RuntimeError.new('boom'); e.set_backtrace(['/other/solution.rb:1:in main']); raise e"]) {

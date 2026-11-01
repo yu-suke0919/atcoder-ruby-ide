@@ -14,14 +14,14 @@ pub use collections::{
     parse_collection, Collection, CollectionLibrary, CollectionTask, CollectionView,
     RegisteredCollection, RepairedCollectionTask,
 };
-pub use commands::{document_save_path, prepare_document_run, ruby_info, RubyInfo};
+pub use commands::{ruby_info, RubyInfo};
 pub use comparison::{decode_output, first_difference, OutputDifference};
 pub use document::{DocumentResult, DocumentStore};
 pub use library::{parse_problem, Problem, ProblemLibrary, ProblemWorkspace};
 pub use lsp::{LspInfo, RubyLsp};
 pub use presentation::StatementPart;
 pub use runner::{Output, PreparedRun, RunRequest, RunResult, Runner};
-pub use samples::{load_samples, save_samples, ProblemSample, SampleCase, SampleResult};
+pub use samples::{load_samples, save_samples, ProblemSample, SampleCase};
 
 use serde::Serialize;
 

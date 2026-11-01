@@ -312,13 +312,11 @@ fn cached_problem_opens_offline_and_restores_saved_workspace_without_overwriting
     let first = library
         .open_workspace(problem, documents.revision(), &mut documents)
         .unwrap();
-    assert_eq!(first.document.code.as_deref(), Some(""));
+    assert_eq!(first.document.code, "");
     assert_eq!(first.cases.len(), 2);
     let code_path = documents.path().unwrap().to_owned();
     assert!(code_path.starts_with(root.path().join("workspaces/abs/practice_1")));
-    documents
-        .save("puts 'saved'", Some(code_path.clone()))
-        .unwrap();
+    documents.save("puts 'saved'").unwrap();
     library
         .save_cases(
             URL,
@@ -339,7 +337,7 @@ fn cached_problem_opens_offline_and_restores_saved_workspace_without_overwriting
             &mut documents,
         )
         .unwrap();
-    assert_eq!(second.document.code.as_deref(), Some("puts 'saved'"));
+    assert_eq!(second.document.code, "puts 'saved'");
     assert_eq!(second.cases.len(), 1);
     assert_eq!(second.cases[0].stdin, "custom\r\n");
     assert!(!second.cases[0].compare);
@@ -351,8 +349,9 @@ fn corrupted_cache_and_workspace_fail_without_changing_the_active_document() {
     seed(root.path());
     let library = ProblemLibrary::new(root.path());
     let current = root.path().join("current.rb");
+    std::fs::write(&current, "keep").unwrap();
     let mut documents = DocumentStore::default();
-    documents.save("keep", Some(current.clone())).unwrap();
+    documents.open(current.clone()).unwrap();
     let workspace = root.path().join("workspaces/abs/practice_1");
     std::fs::create_dir_all(&workspace).unwrap();
     std::fs::write(workspace.join("cases.json"), r#"{"cases":[]}"#).unwrap();
@@ -388,7 +387,8 @@ fn corrupted_cache_and_workspace_fail_without_changing_the_active_document() {
 
 #[test]
 fn late_problem_download_cannot_replace_a_newer_document() {
-    for action in ["reset", "open", "save"] {
+    // Saving keeps the same document, so only reset and open invalidate a pending download.
+    for action in ["reset", "open"] {
         let root = tempfile::tempdir().unwrap();
         let library = ProblemLibrary::new(root.path());
         let mut documents = DocumentStore::default();
@@ -399,12 +399,7 @@ fn late_problem_download_cannot_replace_a_newer_document() {
         match action {
             "reset" => documents.reset(),
             "open" => {
-                documents.open(Some(current.clone())).unwrap();
-            }
-            "save" => {
-                documents
-                    .save("keep current", Some(current.clone()))
-                    .unwrap();
+                documents.open(current.clone()).unwrap();
             }
             _ => unreachable!(),
         }
@@ -419,8 +414,8 @@ fn late_problem_download_cannot_replace_a_newer_document() {
         assert_eq!(documents.path(), current_path.as_deref());
         assert!(!root.path().join("workspaces").exists());
         assert_eq!(std::fs::read_to_string(&current).unwrap(), "keep current");
-        if let Some(path) = current_path {
-            documents.save("new edit", Some(path)).unwrap();
+        if current_path.is_some() {
+            documents.save("new edit").unwrap();
             assert_eq!(std::fs::read_to_string(&current).unwrap(), "new edit");
         }
     }
@@ -484,9 +479,7 @@ fn live_atcoder_download_run_refresh_and_restore() {
             assert_eq!(result.status, "completed", "{url}: {}", result.stderr);
             assert_eq!(result.comparison, Some(true), "{url}: {}", result.stdout);
         }
-        documents
-            .save(code, documents.path().map(Path::to_owned))
-            .unwrap();
+        documents.save(code).unwrap();
         let edited = vec![SampleCase {
             tolerance: None,
             stdin: "custom input\n".into(),
@@ -501,7 +494,7 @@ fn live_atcoder_download_run_refresh_and_restore() {
         let reopened = library
             .open_workspace(cached, documents.revision(), &mut documents)
             .unwrap();
-        assert_eq!(reopened.document.code.as_deref(), Some(code));
+        assert_eq!(reopened.document.code, code);
         assert_eq!(reopened.cases, edited);
         println!(
             "{task}: fetched, {count} Ruby samples passed, refreshed, saved workspace restored"
@@ -560,13 +553,11 @@ fn live_atcoder_collection_import_and_fixed_workspace() {
         .open_task(url, task, documents.revision(), &mut documents)
         .unwrap();
     assert!(!opened.problem.samples.is_empty());
-    documents
-        .save("puts 'saved'", documents.path().map(Path::to_owned))
-        .unwrap();
+    documents.save("puts 'saved'").unwrap();
     let reopened = library
         .open_task(url, task, documents.revision(), &mut documents)
         .unwrap();
-    assert_eq!(reopened.document.code.as_deref(), Some("puts 'saved'"));
+    assert_eq!(reopened.document.code, "puts 'saved'");
     assert_eq!(reopened.problem.statement, opened.problem.statement);
     let snapshot = root
         .path()
@@ -581,7 +572,7 @@ fn live_atcoder_collection_import_and_fixed_workspace() {
     let reopened = library
         .open_task(url, task, documents.revision(), &mut documents)
         .unwrap();
-    assert_eq!(reopened.document.code.as_deref(), Some("puts 'saved'"));
+    assert_eq!(reopened.document.code, "puts 'saved'");
 }
 
 #[test]

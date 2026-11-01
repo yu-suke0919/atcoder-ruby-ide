@@ -6,6 +6,8 @@ const { tmpdir } = require('node:os');
 const assert = require('node:assert/strict');
 const { launch, close } = require('../tests/e2e/native.cjs');
 const { verifyLsp } = require('../tests/e2e/lsp.cjs');
+const { seedProblem, openProblem, waitInitialized } = require('../tests/e2e/workspace.cjs');
+const contest = `nsis-smoke-${Date.now()}`;
 const execute = promisify(execFile);
 
 async function main() {
@@ -26,6 +28,8 @@ async function main() {
     app = await launch(profile, { hostEnv: { HTTP_PROXY: 'http://127.0.0.1:1', HTTPS_PROXY: 'http://127.0.0.1:1' } }); // Removes Ruby from PATH and verifies the app's actual Ruby path.
     const page = app.page;
     await page.context().setOffline(true);
+    await waitInitialized(page);
+    await openProblem(page, await seedProblem(app, contest, 'smoke'));
     await verifyLsp(page);
     await page.getByRole('button', { name: '実行', exact: true }).click();
     await page.getByTestId('run-status').filter({ hasText: '正常終了' }).waitFor();
@@ -42,6 +46,7 @@ async function main() {
     console.log('NSIS smoke passed: installed exe, runtime files, offline LSP, sample, bundled extensions and AtCoder gems without system Ruby');
   } finally {
     if (app) await close(app);
+    if (app) for (const kind of ['library/problems', 'workspaces']) await rm(path.join(app.dataDir, kind, contest), { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 }

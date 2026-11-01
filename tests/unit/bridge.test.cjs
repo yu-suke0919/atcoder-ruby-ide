@@ -43,7 +43,6 @@ test('tolerance travels through IPC and invalid values cannot turn into strict m
   assert.equal(calls[0].args.tolerance, 1e-6);
   for (const value of [0, -1, NaN, Infinity, '', '1e-6']) {
     await assert.rejects(ide.run('', '', '', value), /許容誤差/);
-    assert.throws(() => ide.saveCases([{ tolerance: value }]), /許容誤差/);
     assert.throws(() => ide.saveProblemCases('url', [{ tolerance: value }]), /許容誤差/);
   }
   assert.equal(calls.length, 1);
@@ -61,4 +60,19 @@ test('run preserves the native rejection message exactly', async t => {
   } };
   const { ide } = await import(pathToFileURL(path.join(__dirname, '../../src/bridge.mjs')).href);
   await assert.rejects(ide.run('', ''), { message: '標準入力は 1 MiB 以下にしてください。' });
+});
+
+test('M03: the bridge only saves into the opened workspace and has no external file APIs', async t => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  t.after(() => { if (previous) Object.defineProperty(globalThis, 'window', previous); else delete globalThis.window; });
+  const calls = [];
+  globalThis.window = { __TAURI__: {
+    core: { invoke: async (command, args) => { calls.push({ command, args }); }, Channel: class {} },
+    window: { getCurrentWindow: () => ({}) },
+  } };
+  const { ide } = await import(`${pathToFileURL(path.join(__dirname, '../../src/bridge.mjs')).href}?workspace-only`);
+  await ide.saveCode('puts 1');
+  await ide.resetSession();
+  assert.deepEqual(calls, [{ command: 'document_save', args: { code: 'puts 1' } }, { command: 'session_reset', args: undefined }]);
+  for (const name of ['openFile', 'saveFile', 'newFile', 'openCases', 'saveCases', 'confirmDiscard']) assert.equal(ide[name], undefined, name);
 });
