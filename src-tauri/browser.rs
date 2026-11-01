@@ -212,8 +212,8 @@ pub async fn browser_home(
     Ok(())
 }
 
-/// Shows the page of a task, creating it on first use. An already open page is read again
-/// when its samples are still missing.
+/// Shows the page of a task, creating it on first use. An already open page whose samples are
+/// still missing is loaded again, since it may show a page from before the user logged in.
 #[tauri::command]
 pub async fn browser_task(
     app: tauri::AppHandle,
@@ -224,11 +224,10 @@ pub async fn browser_task(
     let label =
         match existing.and_then(|label| app.get_webview(&label).map(|webview| (label, webview))) {
             Some((label, webview)) => {
-                if webview
-                    .url()
-                    .is_ok_and(|loaded| is_task_page(&url, &loaded))
-                {
-                    read_if_needed(&webview, url.clone());
+                if open_workspaces(&app)?.task(&url).ok().flatten().is_none() {
+                    webview
+                        .navigate(to_origin(&url)?)
+                        .map_err(|e| e.to_string())?;
                 }
                 label
             }
