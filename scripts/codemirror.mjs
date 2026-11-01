@@ -1,5 +1,5 @@
 export { EditorState, Compartment, StateEffect, StateField } from '@codemirror/state';
-export { EditorView, keymap, lineNumbers, drawSelection, Decoration } from '@codemirror/view';
+export { EditorView, keymap, lineNumbers, drawSelection, Decoration, WidgetType } from '@codemirror/view';
 export { StreamLanguage, indentUnit, indentOnInput, bracketMatching, syntaxHighlighting, HighlightStyle, ensureSyntaxTree } from '@codemirror/language';
 export { ruby } from '@codemirror/legacy-modes/mode/ruby';
 export { defaultKeymap, history, historyKeymap, indentMore, indentLess, redo } from '@codemirror/commands';

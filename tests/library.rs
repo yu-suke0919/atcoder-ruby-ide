@@ -1,6 +1,7 @@
 use atcoder_ruby_ide::{
-    browser_target, fetch_page, http_client, input_code, parse_task, parse_task_list, Contest,
-    ContestKey, Contests, DocumentStore, SampleCase, Samples, Task, Workspaces,
+    browser_target, fetch_page, http_client, input_code, parse_task, parse_task_list,
+    reading_forms, Contest, ContestKey, Contests, DocumentStore, SampleCase, Samples, Task,
+    Workspaces,
 };
 use std::path::Path;
 
@@ -120,49 +121,49 @@ const INPUT_FORMATS: &[(&str, &str, &str, &str)] = &[
     (
         "abc085_b",
         "$N$\n$d_1$\n$:$\n$d_N$",
-        "n = gets.to_i\nd = Array.new(n) { gets.to_i }\n",
+        "n = gets.to_i\nn.times do\n  d = gets.to_i\nend\n",
         "2\n10\n8\n",
     ),
     (
         "arc089_a",
         "$N$\n$t_1$ $x_1$ $y_1$\n$t_2$ $x_2$ $y_2$\n$:$\n$t_N$ $x_N$ $y_N$",
-        "n = gets.to_i\ntxy = Array.new(n) { gets.split.map(&:to_i) }\n",
+        "n = gets.to_i\nn.times do\n  t, x, y = gets.split.map(&:to_i)\nend\n",
         "2\n3 1 2\n6 1 1\n",
     ),
     (
         "abc376_b",
         "$N$ $Q$\n$H_1$ $T_1$\n$H_2$ $T_2$\n$\\vdots$\n$H_Q$ $T_Q$",
-        "n, q = gets.split.map(&:to_i)\nht = Array.new(q) { h, t = gets.split; [h, t.to_i] }\n",
+        "n, q = gets.split.map(&:to_i)\nq.times do\n  h, t = gets.split\n  t = t.to_i\nend\n",
         "6 2\nR 4\nL 5\n",
     ),
     (
         "abc075_b",
         "$H$ $W$\n$S_1$\n$:$\n$S_H$",
-        "h, w = gets.split.map(&:to_i)\ns = Array.new(h) { gets.chomp }\n",
+        "h, w = gets.split.map(&:to_i)\nh.times do\n  s = gets.chomp\nend\n",
         "2 3\n#.#\n..#\n",
     ),
     (
         "abc430_b",
         "$N$ $M$\n$S_{1,1}\\ldots S_{1,N}$\n$\\vdots$\n$S_{N,1}\\ldots S_{N,N}$",
-        "n, m = gets.split.map(&:to_i)\ns = Array.new(n) { gets.chomp }\n",
+        "n, m = gets.split.map(&:to_i)\nn.times do\n  s = gets.chomp\nend\n",
         "2 1\n.#\n#.\n",
     ),
     (
         "abc183_c",
         "$N$ $K$\n$T_{1,1}$ $\\ldots$ $T_{1,N}$\n$\\vdots$\n$T_{N,1}$ $\\ldots$ $T_{N,N}$",
-        "n, k = gets.split.map(&:to_i)\nt = Array.new(n) { gets.split.map(&:to_i) }\n",
+        "n, k = gets.split.map(&:to_i)\nn.times do\n  t = gets.split.map(&:to_i)\nend\n",
         "2 5\n0 3\n3 0\n",
     ),
     (
         "abc088_c",
         "$c_{1,1}$ $c_{1,2}$ $c_{1,3}$\n$c_{2,1}$ $c_{2,2}$ $c_{2,3}$\n$c_{3,1}$ $c_{3,2}$ $c_{3,3}$",
-        "c = Array.new(3) { gets.split.map(&:to_i) }\n",
+        "3.times do\n  c = gets.split.map(&:to_i)\nend\n",
         "1 0 1\n2 1 2\n1 0 1\n",
     ),
     (
         "abc278_d",
         "$N$\n$A_1$ $A_2$ $\\dots$ $A_N$\n$Q$\n$\\operatorname{query}_1$\n$\\operatorname{query}_2$\n$\\vdots$\n$\\operatorname{query}_Q$",
-        "n = gets.to_i\na = gets.split.map(&:to_i)\nq = gets.to_i\nqueries = Array.new(q) { gets.split.map(&:to_i) }\n",
+        "n = gets.to_i\na = gets.split.map(&:to_i)\nq = gets.to_i\nq.times do\n  query = gets.split.map(&:to_i)\nend\n",
         "2\n3 1\n2\n1 5\n3 2\n",
     ),
 ];
@@ -199,7 +200,7 @@ fn input_formats_are_read_from_the_loaded_page_and_become_reading_code() {
     );
     assert_eq!(
         input_code("$N$\n$A_1$\n$\\vdots$\n$A_{N-1}$", &[]).as_deref(),
-        Some("n = gets.to_i\na = Array.new(n - 1) { gets.to_i }\n")
+        Some("n = gets.to_i\n(n - 1).times do\n  a = gets.to_i\nend\n")
     );
     // Formats it cannot tell apart give no code at all.
     for format in [
@@ -210,6 +211,79 @@ fn input_formats_are_read_from_the_loaded_page_and_become_reading_code() {
     ] {
         assert_eq!(input_code(format, &[]), None, "{format}");
     }
+}
+
+#[test]
+fn rows_read_in_a_loop_can_be_switched_to_arrays_and_back() {
+    let forms = |format: &str, constraints: &[&str]| {
+        let constraints: Vec<String> = constraints.iter().map(|c| c.to_string()).collect();
+        reading_forms(format, &constraints)
+    };
+    // Each block of rows has the loop that the code starts with and the array to switch to.
+    assert_eq!(
+        forms("$N$\n$t_1$ $x_1$ $y_1$\n$:$\n$t_N$ $x_N$ $y_N$", &[]),
+        [[
+            "n.times do\n  t, x, y = gets.split.map(&:to_i)\nend".to_string(),
+            "txy = Array.new(n) { gets.split.map(&:to_i) }".to_string()
+        ]]
+    );
+    assert_eq!(
+        forms(
+            "$N$ $Q$\n$H_1$ $T_1$\n$\\vdots$\n$H_Q$ $T_Q$",
+            &["$H_i$ は L または R"]
+        ),
+        [[
+            "q.times do\n  h, t = gets.split\n  t = t.to_i\nend".to_string(),
+            "ht = Array.new(q) { h, t = gets.split; [h, t.to_i] }".to_string()
+        ]]
+    );
+    assert_eq!(
+        forms(
+            "$Q$\n$\\mathrm{query}_1$\n$\\vdots$\n$\\mathrm{query}_Q$",
+            &["入力はすべて整数"]
+        )[0][1],
+        "queries = Array.new(q) { gets.split.map(&:to_i) }"
+    );
+    // Lines read at once have nothing to switch.
+    assert!(forms("$N$\n$A_1$ $\\ldots$ $A_N$", &[]).is_empty());
+    assert!(forms("$N$\n$A_1 + B$", &[]).is_empty());
+    // Both forms read the same input.
+    for (task, format, _, input) in INPUT_FORMATS {
+        let html = std::fs::read_to_string(format!("../tests/fixtures/input-formats/{task}.html"))
+            .unwrap();
+        let read = parse_task(URL, &html).unwrap();
+        let mut code = input_code(format, &read.constraints).unwrap();
+        for [loop_form, array] in reading_forms(format, &read.constraints) {
+            code = code.replace(&loop_form, &array);
+        }
+        run_reading(task, &code, input);
+    }
+}
+
+fn run_reading(task: &str, code: &str, input: &str) {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new(ruby())
+        .arg("-e")
+        .arg(format!(
+            "{code}raise 'unread input' unless STDIN.read.strip.empty?"
+        ))
+        .stdin(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{task}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]

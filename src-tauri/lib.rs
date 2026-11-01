@@ -19,7 +19,7 @@ pub use contests::{
     RegisteredContest,
 };
 pub use document::{DocumentResult, DocumentStore};
-pub use input_code::input_code;
+pub use input_code::{input_code, reading_forms};
 pub use lsp::{LspInfo, RubyLsp};
 pub use navigation::{browser_target, is_allowed, ALLOWED_ORIGINS};
 pub use runner::{Output, PreparedRun, RunRequest, RunResult, Runner};

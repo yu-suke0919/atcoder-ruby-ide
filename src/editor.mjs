@@ -1,5 +1,5 @@
 import {
-  EditorState, Compartment, StateEffect, StateField, EditorView, Decoration, keymap, lineNumbers, drawSelection,
+  EditorState, Compartment, StateEffect, StateField, EditorView, Decoration, WidgetType, keymap, lineNumbers, drawSelection,
   StreamLanguage, ruby, indentUnit, indentOnInput, bracketMatching,
   syntaxHighlighting, HighlightStyle, tags, history, historyKeymap, defaultKeymap,
   indentMore, indentLess, redo, closeBrackets, closeBracketsKeymap,
@@ -17,6 +17,54 @@ const errorPosition = StateField.define({
     return position;
   },
   provide: field => EditorView.decorations.from(field, position => position === null ? Decoration.none : Decoration.set([Decoration.line({ class: 'cm-run-error-line' }).range(position)])),
+});
+
+// Reading code for rows has two forms, a loop and an array. A button at the right edge of the
+// first line of either form, while it is still as generated, puts the other form in its place.
+const setReadingForms = StateEffect.define();
+class ReadingToggle extends WidgetType {
+  constructor(from, to, other, label) { super(); Object.assign(this, { from, to, other, label }); }
+  eq(widget) { return widget.from === this.from && widget.to === this.to && widget.other === this.other; }
+  toDOM(view) {
+    const button = document.createElement('button');
+    button.className = 'cm-reading-toggle';
+    button.textContent = '⇄';
+    button.title = button.ariaLabel = this.label;
+    button.addEventListener('mousedown', event => event.preventDefault());
+    button.addEventListener('click', () => {
+      if (view.state.readOnly) return;
+      view.dispatch({ changes: { from: this.from, to: this.to, insert: this.other }, userEvent: 'input.reading' });
+    });
+    return button;
+  }
+  ignoreEvent() { return true; }
+}
+function readingToggles(state, forms) {
+  // Most files have no reading forms; large ones must not be copied on every key.
+  if (!forms.length) return Decoration.none;
+  const text = state.doc.toString();
+  const toggles = [];
+  for (const pair of forms) {
+    pair.forEach((form, index) => {
+      for (let from = text.indexOf(form); from >= 0; from = text.indexOf(form, from + 1)) {
+        const to = from + form.length;
+        if ((from > 0 && text[from - 1] !== '\n') || (to < text.length && text[to] !== '\n')) continue;
+        const label = index === 0 ? '配列に入れる形にする' : 'ループで読む形にする';
+        toggles.push(Decoration.widget({ widget: new ReadingToggle(from, to, pair[1 - index], label), side: 1 }).range(state.doc.lineAt(from).to));
+      }
+    });
+  }
+  return Decoration.set(toggles, true);
+}
+const readingField = forms => StateField.define({
+  create: state => ({ forms, decorations: readingToggles(state, forms) }),
+  update(value, transaction) {
+    const set = transaction.effects.find(effect => effect.is(setReadingForms));
+    if (!set && !transaction.docChanged) return value;
+    const next = set ? set.value : value.forms;
+    return { forms: next, decorations: readingToggles(transaction.state, next) };
+  },
+  provide: field => EditorView.decorations.from(field, value => value.decorations),
 });
 
 const colors = HighlightStyle.define([
@@ -61,11 +109,12 @@ export function createEditor(parent, initial, onChange, onCursor, completionClie
   const writable = new Compartment();
   let readOnly = false;
   let revision = 0;
+  let readingForms = [];
   const editable = () => [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)];
   const state = (doc, currentRevision = revision) => EditorState.create({ doc, extensions: [
     writable.of(editable()), EditorState.tabSize.of(2), indentUnit.of('  '),
     EditorView.contentAttributes.of({ id: 'code-editor', 'data-testid': 'code-editor', 'aria-label': 'Ruby コード', tabindex: '0', spellcheck: 'false', autocapitalize: 'off' }),
-    lineNumbers(), drawSelection(), history(), errorPosition, StreamLanguage.define(ruby), indentOnInput(),
+    lineNumbers(), drawSelection(), history(), errorPosition, readingField(readingForms), StreamLanguage.define(ruby), indentOnInput(),
     bracketMatching(), closeBrackets(), syntaxHighlighting(colors), theme,
     autocompletion({ override: [lspCompletions(completionClient, () => revision === currentRevision)], activateOnTyping: false, defaultKeymap: false, filterStrict: true }),
     EditorView.domEventHandlers({ compositionstart: (_event, view) => { closeCompletion(view); return false; } }),
@@ -100,6 +149,8 @@ export function createEditor(parent, initial, onChange, onCursor, completionClie
   return {
     get value() { return view.state.doc.toString(); },
     set value(value) { revision++; view.setState(state(value)); },
+    // The [loop, array] forms of the open problem's reading code; kept for its other files.
+    set readingForms(forms) { readingForms = forms; view.dispatch({ effects: setReadingForms.of(forms) }); },
     set errorLine(line) {
       const position = Number.isInteger(line) && line > 0 && line <= view.state.doc.lines ? view.state.doc.line(line).from : null;
       if (view.state.field(errorPosition) !== position) view.dispatch({ effects: setErrorPosition.of(position) });
