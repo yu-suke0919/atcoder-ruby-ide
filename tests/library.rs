@@ -397,7 +397,12 @@ fn per_sample_tolerances_become_the_problem_tolerance_once_and_cases_json_stays(
 #[test]
 fn unreadable_old_samples_are_left_as_they_were_and_named_on_open() {
     let root = tempfile::tempdir().unwrap();
-    let directory = root.path().join("workspaces/abs/practice_1");
+    // Joined part by part so the message's path matches on Windows too.
+    let directory = root
+        .path()
+        .join("workspaces")
+        .join("abs")
+        .join("practice_1");
     std::fs::create_dir_all(&directory).unwrap();
     std::fs::write(directory.join("cases.json"), "not json").unwrap();
     let workspaces = Workspaces::new(root.path());
