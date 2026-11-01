@@ -20,6 +20,6 @@ Shopify Ruby LSPをローカルの別プロセスとして利用し、CodeMirror
 - 候補の挿入範囲・挿入文字列はLSPのTextEditを使い、Undo／Redoできる通常の編集として適用する。編集範囲はカーソルのある行内に限定し、前後の行にまたがる範囲を拒否する。対応しないコマンド・追加編集・LSPスニペットは適用しない。候補の説明はプレーンテキストで表示し、既存カタログに同じ標準メソッドがあれば日本語の概要も使う。Enumerable由来の候補にはArray／Hashとして収録した説明も使い、自作クラスの同名メソッドには付けない。
 - LSPと基本補完のどちらを表示している場合も、文書またはカーソル位置が変われば候補を再評価する。候補なし・応答不正・接続失敗から基本補完へ戻った場合も同じキャッシュ判定を使い、その後の入力でLSPへ再照会できるようにする。
 - 公開APIとCodeMirrorの位置はUTF-16。Prism由来の補完範囲に合わせ、Ruby LSPとの通信ではUTF-8位置を選択し、Rustで入出力の位置を変換する。日本語・絵文字の前後で異なる文字を置換しない。
-- Enter・Esc・Tab、IME、未保存保護、保存・実行、最小画面を既存と同じ操作で検証する。LSPの実応答に加え、遅延・失敗を制御した画面テストで古い応答の破棄と復旧を確認する。
+- Enter・Esc・Tab、IME、自動保存、保存・実行、最小画面を既存と同じ操作で検証する。LSPの実応答に加え、遅延・失敗を制御した画面テストで古い応答の破棄と復旧を確認する。
 
 参照：[Shopify Ruby LSPのエディタ接続](https://shopify.github.io/ruby-lsp/editors.html)、[composed bundle](https://shopify.github.io/ruby-lsp/composed-bundle.html)、[固定版の起動処理](https://github.com/Shopify/ruby-lsp/blob/v0.26.11/exe/ruby-lsp)。
