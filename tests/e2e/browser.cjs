@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { spawn, execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { readFile, access, mkdir } = require('node:fs/promises');
+const { readFile } = require('node:fs/promises');
 const { existsSync } = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
@@ -31,7 +31,7 @@ async function launch(root, { hostEnv = {} } = {}) {
   let stderr = '';
   child.stderr.on('data', data => { stderr += data; });
   child.stdin.on('error', () => {});
-  const app = { child, root, dataDir: path.join(root, 'user-data'), steps: [], browser: null, page: null, server: null, delivery: Promise.resolve() };
+  const app = { child, root, dataDir: path.join(root, 'user-data'), browser: null, page: null, server: null, delivery: Promise.resolve() };
   app.request = (command, args = {}) => new Promise((resolve, reject) => {
     const id = ++sequence;
     pending.set(id, { resolve, reject });
@@ -66,11 +66,6 @@ async function launch(root, { hostEnv = {} } = {}) {
       else request.resolve(message.value);
     }
   });
-  function take(title) {
-    const step = app.steps.shift();
-    assert.equal(step?.title, title, `Unexpected test dialog: ${title}`);
-    return step;
-  }
   try {
     const assets = new Map([['/', 'index.html'], ...['index.html', 'renderer.js', 'bridge.mjs', 'sample-cases.mjs', 'presentation.mjs', 'editor.mjs', 'ruby-completion.mjs', 'lsp-completion.mjs', 'ruby-methods.mjs', 'ruby-receivers.mjs', 'vendor/editor/codemirror.mjs', 'styles.css'].map(name => [`/${name}`, name])]);
     for (const name of ['katex.mjs', 'katex.min.css', 'LICENSE', ...require('node:fs').readdirSync(path.join(repo, 'src/vendor/katex/fonts')).filter(n => n.endsWith('.woff2')).map(n => `fonts/${n}`)]) {
@@ -89,21 +84,7 @@ async function launch(root, { hostEnv = {} } = {}) {
     app.page = await app.browser.newPage({ viewport: { width: 1280, height: 850 } });
     app.page.setDefaultTimeout(15000);
     app.page.on('pageerror', error => console.error('Browser UI error:', error));
-    await app.page.exposeBinding('__testInvoke', async (_, command, args) => {
-      if (command === 'confirm_discard') return take('未保存の変更').buttonName === '破棄して続ける';
-      if (command === 'document_open') args.selected = take('Ruby ファイルを開く').path || null;
-      if (command === 'samples_open') args.selected = take('サンプルを開く').path || null;
-      if (command === 'samples_save') {
-        args.selected = take('サンプルを保存').path || null;
-        if (args.selected && await access(args.selected).then(() => true, () => false)) take('Confirm Save As');
-      }
-      if (command === 'document_save' && app.steps[0]?.title === 'Ruby ファイルを保存') {
-        const step = take('Ruby ファイルを保存');
-        args.selected = step.path || null;
-        if (args.selected && await access(args.selected).then(() => true, () => false)) take('Confirm Save As');
-      }
-      return app.request(command, args);
-    });
+    await app.page.exposeBinding('__testInvoke', async (_, command, args) => app.request(command, args));
     await app.page.exposeBinding('__testDestroy', async () => {
       await app.request('shutdown');
       setTimeout(() => app.page.close().catch(() => {}), 10);
@@ -148,19 +129,6 @@ async function launch(root, { hostEnv = {} } = {}) {
   }
 }
 
-async function dialogs(app, trigger, steps, closesApp = false) {
-  assert.equal(app.steps.length, 0);
-  app.steps.push(...steps);
-  try {
-    await trigger();
-    if (!closesApp) await app.page.waitForFunction(() => !document.getElementById('open').disabled);
-    assert.equal(app.steps.length, 0, 'All native dialog decisions must be consumed');
-  } catch (error) {
-    await mkdir('test-results', { recursive: true });
-    await app.page.screenshot({ path: 'test-results/browser-dialog-failure.png' }).catch(() => {});
-    throw error;
-  }
-}
 async function close(app) {
   if (app.child.exitCode === null) {
     const exited = once(app.child, 'close', { signal: AbortSignal.timeout(5000) });
@@ -173,4 +141,4 @@ async function close(app) {
 }
 const requestClose = app => app.page.evaluate(() => window.__TAURI__.window.getCurrentWindow().close());
 
-module.exports = { ...native, requestClose, ensureUiTestHostBinary, launch, dialogs, close };
+module.exports = { ...native, requestClose, ensureUiTestHostBinary, launch, close };

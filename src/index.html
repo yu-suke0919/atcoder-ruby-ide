@@ -23,19 +23,18 @@
         <div id="problem-statement" aria-label="問題文" tabindex="0"></div>
       </section>
       <section class="panel editor-panel" aria-labelledby="editor-heading">
-        <div class="panel-heading"><div class="panel-label"><span class="file-icon" aria-hidden="true">⌘</span><h3 id="editor-heading">コード</h3><span class="language-pill">Ruby</span></div><span id="save-state" data-testid="save-state" class="subtle">未保存のファイル</span></div>
+        <div class="panel-heading"><div class="panel-label"><span class="file-icon" aria-hidden="true">⌘</span><h3 id="editor-heading">コード</h3><span class="language-pill">Ruby</span></div><span class="save-status"><span id="save-state" data-testid="save-state" data-state="none" class="subtle" role="status">問題を開いてください</span><button id="save-retry" class="quiet-button" title="Ctrl+S" hidden>保存を再試行</button></span></div>
         <div class="editor-toolbar">
-          <div class="file-actions"><button id="new" title="新しいファイル">新規</button><button id="open" title="Ctrl+O">開く</button><button id="save" title="Ctrl+S">保存</button><button id="save-as" title="Ctrl+Shift+S">名前を付けて保存</button></div>
           <div class="library-actions"><button id="collections" class="quiet-button" disabled>問題集</button><button id="problem-library" class="quiet-button" disabled>AtCoder の問題</button><button id="problem-toggle" class="quiet-button" aria-controls="problem-panel" aria-expanded="false" disabled>問題文を表示する</button></div>
         </div>
         <div id="editor-host" class="editor-container"></div>
         <div class="completion-state"><span id="completion-state" data-state="idle" role="status" aria-live="polite">補完は初回利用時に準備します</span><button id="completion-retry" class="quiet-button" hidden>再試行</button></div>
-        <div class="editor-footer"><span id="file-path" title="未保存のファイル">無題.rb</span><button id="editor-complete" class="quiet-button" title="Ctrl+Space">補完</button><button id="editor-search" class="quiet-button" title="Ctrl+F / Ctrl+H">検索・置換</button><span id="cursor-position">Ln 1, Col 1</span></div>
+        <div class="editor-footer"><span id="file-path" title="問題を開いてください">問題を開いてください</span><button id="editor-complete" class="quiet-button" title="Ctrl+Space">補完</button><button id="editor-search" class="quiet-button" title="Ctrl+F / Ctrl+H">検索・置換</button><span id="cursor-position">Ln 1, Col 1</span></div>
       </section>
 
       <div class="right-column">
         <section class="panel input-panel" aria-labelledby="input-heading">
-          <div class="panel-heading"><div class="panel-label"><h3 id="input-heading">サンプル</h3><span id="case-count" class="subtle">1 ケース</span></div><div class="case-file-actions"><button id="cases-open" class="quiet-button">ケース読込</button><button id="cases-save" class="quiet-button">ケース保存</button></div></div>
+          <div class="panel-heading"><div class="panel-label"><h3 id="input-heading">サンプル</h3><span id="case-count" class="subtle">1 ケース</span></div></div>
           <div class="case-toolbar"><select id="case-select" aria-label="サンプルケース"></select><button id="case-add">ケース追加</button><button id="case-remove">ケース削除</button></div>
           <div class="sample-fields">
             <div class="sample-field">
@@ -98,6 +97,11 @@
   <dialog id="image-dialog" aria-labelledby="image-heading">
     <div class="difference-heading"><h2 id="image-heading">問題の図</h2><button id="image-close" autofocus>閉じる</button></div>
     <div class="image-scroll"><img id="image-preview" alt=""></div>
+  </dialog>
+  <dialog id="save-failed-dialog" aria-labelledby="save-failed-heading" aria-describedby="save-failed-message">
+    <h2 id="save-failed-heading">保存できなかった変更があります</h2>
+    <p id="save-failed-message"></p>
+    <div class="repair-actions"><button id="save-failed-cancel" autofocus>キャンセル</button><button id="save-failed-discard">破棄して続ける</button></div>
   </dialog>
   <dialog id="difference-dialog" aria-labelledby="difference-position" aria-describedby="difference-help">
     <div class="difference-heading"><h2 id="difference-position" data-testid="difference-position"></h2><button id="difference-close">閉じる</button></div>

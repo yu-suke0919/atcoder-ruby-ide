@@ -7,6 +7,8 @@ const { tmpdir } = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const { launch, close } = require('./browser.cjs');
+const { waitInitialized } = require('./workspace.cjs');
+const waitSaved = page => page.waitForFunction(() => document.getElementById('save-state').dataset.state === 'saved');
 
 test('AtCoder live: import legacy problem, run every sample, save, refresh and reopen', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'AtCoder live '));
@@ -28,15 +30,14 @@ test('AtCoder live: import legacy problem, run every sample, save, refresh and r
     assert.equal(await page.locator('#case-count').textContent(), '3 ケース');
     const code = 'puts gets.to_i - gets.to_i';
     await page.locator('#code-editor').fill(code);
-    await page.locator('#save').click();
-    await page.waitForFunction(() => !document.getElementById('save').disabled);
+    await page.keyboard.press('Control+s');
+    await waitSaved(page);
     await page.locator('#run-all').click();
     await page.locator('#cases-summary').filter({ hasText: /完了 3 \/ 3.*一致 3.*不一致 0.*エラー 0/ }).waitFor();
     await page.locator('#case-select').selectOption('0');
     await page.locator('#stdin').fill('30\n10\n');
     await page.locator('#expected-output').fill('20\n');
-    await page.locator('#cases-save').click();
-    await page.waitForFunction(() => !document.getElementById('cases-save').disabled);
+    await waitSaved(page);
     const workspace = path.join(app.dataDir, 'workspaces/abc001/abc001_1');
     assert.equal(await readFile(path.join(workspace, 'solution.rb'), 'utf8'), code);
     const savedCases = await readFile(path.join(workspace, 'cases.json'), 'utf8');
@@ -48,7 +49,7 @@ test('AtCoder live: import legacy problem, run every sample, save, refresh and r
     assert.equal(await readFile(path.join(workspace, 'cases.json'), 'utf8'), savedCases);
     assert.equal(await page.locator('#stdin').inputValue(), '30\n10\n');
     await page.reload();
-    await page.waitForFunction(() => !document.getElementById('run').disabled);
+    await waitInitialized(page);
     await openProblem();
     assert.equal(await editorText(page), code);
     assert.equal(await page.locator('#stdin').inputValue(), '30\n10\n');
@@ -128,11 +129,10 @@ test('AtCoder live: download real images, enlarge, refresh and reopen without ne
     }
     const code = 'puts "saved media workspace"';
     await page.locator('#code-editor').fill(code);
-    await page.locator('#save').click();
-    await page.waitForFunction(() => !document.getElementById('save').disabled);
+    await page.keyboard.press('Control+s');
+    await waitSaved(page);
     await page.locator('#stdin').fill('saved media case\n');
-    await page.locator('#cases-save').click();
-    await page.waitForFunction(() => !document.getElementById('cases-save').disabled);
+    await waitSaved(page);
     const workspace = path.join(app.dataDir, 'workspaces/abc243/abc243_c');
     const savedCases = await readFile(path.join(workspace, 'cases.json'), 'utf8');
     await page.locator('#problem-library').click();

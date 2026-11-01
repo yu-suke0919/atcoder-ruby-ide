@@ -2,7 +2,7 @@ use crate::files::MAX_TEXT_BYTES;
 use crate::{decode_output, first_difference, process::ProcessTree, OutputDifference};
 use serde::Serialize;
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -20,7 +20,6 @@ pub struct RunRequest {
     pub expected_output: Option<String>,
     pub tolerance: Option<f64>,
     pub problem_time_limit_ms: Option<u32>,
-    pub cwd: Option<PathBuf>,
 }
 
 #[derive(Clone, Serialize)]
@@ -189,7 +188,7 @@ impl PreparedRun {
             .arg("-r")
             .arg(&bootstrap)
             .arg(&source)
-            .current_dir(self.request.cwd.as_deref().unwrap_or(directory.path()))
+            .current_dir(directory.path())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -430,7 +429,9 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn memory_notification_stops_the_job_and_releases_the_runner() {
-        let ruby = PathBuf::from(std::env::var_os("RUBY_PATH").unwrap_or_else(|| "ruby".into()));
+        let ruby = std::path::PathBuf::from(
+            std::env::var_os("RUBY_PATH").unwrap_or_else(|| "ruby".into()),
+        );
         let runner = Runner::new(Duration::from_secs(5), MAX_TEXT_BYTES);
         let notified = Arc::clone(&runner);
         let result = runner

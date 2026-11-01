@@ -396,9 +396,7 @@ mod tests {
             .unwrap();
         assert_eq!(first.problem.time_limit_ms, None);
         assert_eq!(first.problem.memory_limit_mib, None);
-        documents
-            .save("puts 'saved'", Some(documents.path().unwrap().to_owned()))
-            .unwrap();
+        documents.save("puts 'saved'").unwrap();
         ProblemLibrary::new(root.path())
             .save_cases(
                 task,
@@ -413,7 +411,7 @@ mod tests {
         let reopened = library
             .open_task(URL, task, documents.revision(), &mut documents)
             .unwrap();
-        assert_eq!(reopened.document.code.as_deref(), Some("puts 'saved'"));
+        assert_eq!(reopened.document.code, "puts 'saved'");
         assert_eq!(reopened.cases[0].stdin, "edited input");
         assert_eq!(reopened.cases[0].expected_output, "edited output");
         assert!(!reopened.cases[0].compare);
@@ -614,8 +612,7 @@ mod tests {
         let opened = restarted
             .open_task(URL, a, documents.revision(), &mut documents)
             .unwrap();
-        let source = documents.path().unwrap().to_owned();
-        documents.save("puts 'mine'", Some(source)).unwrap();
+        documents.save("puts 'mine'").unwrap();
         let cases = vec![SampleCase {
             tolerance: None,
             stdin: "custom".into(),
@@ -643,7 +640,7 @@ mod tests {
             .open_task(URL, a, documents.revision(), &mut documents)
             .unwrap();
         assert_eq!(reopened.problem.statement, opened.problem.statement);
-        assert_eq!(reopened.document.code.as_deref(), Some("puts 'mine'"));
+        assert_eq!(reopened.document.code, "puts 'mine'");
         assert_eq!(reopened.cases, cases);
         assert!(restarted
             .fetch_with(
@@ -683,9 +680,7 @@ mod tests {
             .open_task(URL, a, documents.revision(), &mut documents)
             .unwrap();
         let source = documents.path().unwrap().to_owned();
-        documents
-            .save("puts 'my answer'", Some(source.clone()))
-            .unwrap();
+        documents.save("puts 'my answer'").unwrap();
         let cases = vec![SampleCase {
             tolerance: None,
             stdin: "mine".into(),

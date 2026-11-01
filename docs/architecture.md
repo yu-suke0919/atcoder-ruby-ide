@@ -107,7 +107,7 @@ AtCoderのページからアプリの機能を呼べないよう、次の3つを
 
 1. capabilityは`webviews: ["main"]`で画面のWebViewだけに与え、`windows`は書かない。`windows`で指定すると、同じウィンドウの子のWebViewにも同じ権限が付く。`remote`も書かない。Tauriはリモートのオリジン（`https://atcoder.jp`）からの呼び出しを、`remote`を指定した権限がない限り拒否する。
 2. アプリのコマンドを`build.rs`の`tauri_build::AppManifest::commands`で宣言し、`allow-<コマンド>`を画面のWebViewのcapabilityにだけ付ける。宣言がないと、ローカルのオリジン（`tauri.localhost`）からのアプリのコマンドは権限を確かめずに実行される。試作では、AtCoderのページに`http://tauri.localhost/`のiframeを差し込むとアプリのページが読み込まれ、宣言があることで`ruby_info`などが拒否された。
-3. AtCoder用のWebViewは`on_navigation`で`https://atcoder.jp`以外への移動を止める。ページ全体の移動は止まるが、iframeの読み込みは止まらないため、2を省略しない。外部サイトへのリンクの扱いはU2で決める。
+3. AtCoder用のWebViewは`on_navigation`で`https://atcoder.jp`以外への移動を止める。ページ全体の移動は止まるが、iframeの読み込みは止まらないため、2を省略しない。外部サイトへのリンクの扱いはU2bで決める。
 
 試作のWindows CIでは、AtCoderのページから`ruby_info`・試作のコマンド・通知・ウィンドウのタイトル変更がすべて「not allowed by ACL」で拒否され、IPCのURLへ直接送った要求も500で拒否された。画面のWebViewからは同じコマンドを実行できた。
 

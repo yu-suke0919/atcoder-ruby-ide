@@ -1,6 +1,6 @@
 use crate::files::{read_limited, write_atomic, MAX_TEXT_BYTES};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::Path;
 
 const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -37,14 +37,6 @@ impl From<&ProblemSample> for SampleCase {
 #[serde(deny_unknown_fields)]
 struct SampleFile {
     cases: Vec<SampleCase>,
-}
-
-#[derive(Default, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SampleResult {
-    pub canceled: bool,
-    pub file_path: Option<String>,
-    pub cases: Option<Vec<SampleCase>>,
 }
 
 pub(crate) fn validate(cases: &[SampleCase]) -> Result<(), String> {
@@ -88,44 +80,21 @@ fn validate_texts<'a>(
     Ok(())
 }
 
-pub fn load_samples(selected: Option<PathBuf>) -> Result<SampleResult, String> {
-    let Some(path) = selected else {
-        return Ok(SampleResult {
-            canceled: true,
-            ..Default::default()
-        });
-    };
-    let data = read_limited(&path, MAX_FILE_BYTES)
+pub fn load_samples(path: &Path) -> Result<Vec<SampleCase>, String> {
+    let data = read_limited(path, MAX_FILE_BYTES)
         .map_err(|e| format!("サンプルを読み込めません（上限 16 MiB）: {e}"))?;
     let data = data.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(&data);
     let file: SampleFile =
         serde_json::from_slice(data).map_err(|e| format!("サンプル JSON が不正です: {e}"))?;
     validate(&file.cases)?;
-    Ok(SampleResult {
-        file_path: Some(path.to_string_lossy().into()),
-        cases: Some(file.cases),
-        ..Default::default()
-    })
+    Ok(file.cases)
 }
 
-pub fn save_samples(
-    cases: Vec<SampleCase>,
-    selected: Option<PathBuf>,
-) -> Result<SampleResult, String> {
-    let Some(path) = selected else {
-        return Ok(SampleResult {
-            canceled: true,
-            ..Default::default()
-        });
-    };
+pub fn save_samples(cases: Vec<SampleCase>, path: &Path) -> Result<(), String> {
     validate(&cases)?;
     let data = serde_json::to_vec_pretty(&SampleFile { cases }).map_err(|e| e.to_string())?;
     if data.len() > MAX_FILE_BYTES {
         return Err("JSON は 16 MiB 以下にしてください。".into());
     }
-    write_atomic(&path, &data).map_err(|e| format!("サンプルを保存できません: {e}"))?;
-    Ok(SampleResult {
-        file_path: Some(path.to_string_lossy().into()),
-        ..Default::default()
-    })
+    write_atomic(path, &data).map_err(|e| format!("サンプルを保存できません: {e}"))
 }

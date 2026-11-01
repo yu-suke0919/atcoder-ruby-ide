@@ -42,6 +42,7 @@ async function main() {
     console.log('NSIS smoke passed: installed exe, runtime files, offline LSP, sample, bundled extensions and AtCoder gems without system Ruby');
   } finally {
     if (app) await close(app);
+    if (app) for (const kind of ['library/problems', 'workspaces']) await rm(path.join(app.dataDir, kind, contest), { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 }

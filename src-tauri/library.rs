@@ -3,10 +3,7 @@ use crate::presentation::{
     download_image, fill_images, parse_statement, validate_statement, MAX_CACHE_BYTES,
 };
 use crate::StatementPart;
-use crate::{
-    load_samples, save_samples, DocumentResult, DocumentStore, ProblemSample, SampleCase,
-    SampleResult,
-};
+use crate::{load_samples, save_samples, DocumentResult, DocumentStore, ProblemSample, SampleCase};
 use reqwest::blocking::Client;
 use scraper::{ElementRef, Html, Node, Selector};
 use serde::{Deserialize, Serialize};
@@ -392,23 +389,23 @@ impl ProblemLibrary {
         let data = serde_json::to_vec_pretty(&serde_json::json!({"cases":initial_cases}))
             .map_err(|e| e.to_string())?;
         create_if_missing(&case_path, &data)?;
-        let cases = load_samples(Some(case_path))?.cases.unwrap();
+        let cases = load_samples(&case_path)?;
         let code_path = workspace.join("solution.rb");
         create_if_missing(&code_path, b"")?;
-        let document = documents.open(Some(code_path))?;
+        let document = documents.open(code_path)?;
         Ok(ProblemWorkspace {
             problem,
             document,
             cases,
         })
     }
-    pub fn save_cases(&self, url: &str, cases: Vec<SampleCase>) -> Result<SampleResult, String> {
+    pub fn save_cases(&self, url: &str, cases: Vec<SampleCase>) -> Result<(), String> {
         let key = ProblemKey::parse(url)?;
         let workspace = key.directory(&self.root, "workspaces");
         if !workspace.is_dir() {
             return Err("問題を開いてからケースを保存してください。".into());
         }
-        save_samples(cases, Some(workspace.join("cases.json")))
+        save_samples(cases, &workspace.join("cases.json"))
     }
 }
 pub(crate) fn create_if_missing(path: &Path, data: &[u8]) -> Result<(), String> {
@@ -491,9 +488,7 @@ mod tests {
             .open_workspace(first, documents.revision(), &mut documents)
             .unwrap();
         let code_path = documents.path().unwrap().to_owned();
-        documents
-            .save("puts 'my answer'", Some(code_path.clone()))
-            .unwrap();
+        documents.save("puts 'my answer'").unwrap();
         let cache = key
             .directory(root.path(), "library/problems")
             .join("problem.json");

@@ -1,7 +1,7 @@
 //! Test-only stdio transport. All execution and document behavior comes from the app library.
 use atcoder_ruby_ide::{
-    document_save_path, load_samples, prepare_document_run, ruby_info, save_samples,
-    CollectionLibrary, DocumentStore, ProblemLibrary, RubyLsp, RunEvent, Runner,
+    ruby_info, CollectionLibrary, DocumentStore, ProblemLibrary, RubyLsp, RunEvent, RunRequest,
+    Runner,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -98,15 +98,13 @@ fn main() {
             "ruby_info" => Ok(json!(ruby_info(&ruby)?)),
             "run_ruby" => {
                 let args: RunArgs = serde_json::from_value(args).map_err(|e| e.to_string())?;
-                let prepared = prepare_document_run(
-                    &runner,
-                    &documents.lock().unwrap(),
-                    args.code,
-                    args.stdin,
-                    args.expected_output,
-                    args.tolerance,
-                    args.problem_time_limit_ms,
-                )?;
+                let prepared = runner.prepare(RunRequest {
+                    code: args.code,
+                    stdin: args.stdin,
+                    expected_output: args.expected_output,
+                    tolerance: args.tolerance,
+                    problem_time_limit_ms: args.problem_time_limit_ms,
+                })?;
                 let ruby = ruby.clone();
                 let output = Arc::clone(&sink);
                 if let Some(worker) = cleanup.worker.take() {
@@ -131,34 +129,18 @@ fn main() {
                 Ok(Value::Null)
             }
             "stop_ruby" => Ok(json!(runner.stop())),
-            "document_open" => {
-                let path: Option<PathBuf> =
-                    serde_json::from_value(args["selected"].clone()).map_err(|e| e.to_string())?;
-                Ok(json!(documents.lock().unwrap().open(path)?))
-            }
             "document_save" => {
-                let path = document_save_path(
-                    documents.lock().unwrap().path().map(|p| p.to_owned()),
-                    args["saveAs"] == true,
-                    |_| serde_json::from_value(args["selected"].clone()).map_err(|e| e.to_string()),
-                )?;
-                Ok(json!(documents.lock().unwrap().save(
-                    args["code"].as_str().ok_or("コードを指定してください")?,
-                    path
-                )?))
+                documents
+                    .lock()
+                    .unwrap()
+                    .save(args["code"].as_str().ok_or("コードを指定してください")?)?;
+                Ok(Value::Null)
             }
-            "document_new" => {
+            "session_reset" => {
                 cleanup.stop_and_wait();
                 documents.lock().unwrap().reset();
                 Ok(Value::Null)
             }
-            "samples_open" => Ok(json!(load_samples(
-                serde_json::from_value(args["selected"].clone()).map_err(|e| e.to_string())?
-            )?)),
-            "samples_save" => Ok(json!(save_samples(
-                serde_json::from_value(args["cases"].clone()).map_err(|e| e.to_string())?,
-                serde_json::from_value(args["selected"].clone()).map_err(|e| e.to_string())?
-            )?)),
             "problem_open" => {
                 let document_revision = documents.lock().unwrap().revision();
                 Ok(json!(library.open_problem(
