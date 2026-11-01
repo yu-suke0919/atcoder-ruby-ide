@@ -56,8 +56,12 @@ async function launch(root, { hostEnv = {} } = {}) {
     browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
     const context = browser.contexts()[0];
     // Child webviews show AtCoder pages; the app is the page served from tauri.localhost.
-    const isApp = candidate => candidate.url().includes('tauri.localhost');
-    page = context.pages().find(isApp) || await context.waitForEvent('page', { predicate: isApp });
+    // A page can exist before it reaches its URL, so poll instead of waiting for a new page.
+    const appDeadline = Date.now() + 30000;
+    while (!(page = context.pages().find(candidate => candidate.url().includes('tauri.localhost')))) {
+      if (Date.now() > appDeadline) throw new Error(`App page not found: ${context.pages().map(candidate => candidate.url()).join(', ')}`);
+      await pause(200);
+    }
     page.setDefaultTimeout(15000);
     page.on('pageerror', error => console.error('WebView error:', error));
     await page.getByTestId('ruby-version').filter({ hasText: /ruby \d+\.\d+\.\d+\b/i }).waitFor();
