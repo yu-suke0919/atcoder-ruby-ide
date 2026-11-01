@@ -215,6 +215,40 @@ fn workspace_opens_only_after_the_page_was_read_and_keeps_user_data_on_rereads()
 }
 
 #[test]
+fn home_opens_without_a_task_and_keeps_its_code_and_samples_apart_from_problems() {
+    let root = tempfile::tempdir().unwrap();
+    let workspaces = Workspaces::new(root.path());
+    let mut documents = DocumentStore::default();
+    let home = workspaces
+        .open_home(documents.revision(), &mut documents)
+        .unwrap();
+    assert_eq!(home.document.code, "");
+    assert_eq!(
+        Path::new(&home.document.file_path),
+        root.path().join("home/solution.rb")
+    );
+    assert_eq!(home.cases.len(), 1);
+    assert!(!home.cases[0].compare && home.cases[0].stdin.is_empty());
+    documents.save("puts gets").unwrap();
+    let cases = vec![SampleCase {
+        stdin: "1\n".into(),
+        expected_output: "1\n".into(),
+        compare: true,
+        tolerance: None,
+    }];
+    workspaces.save_home_cases(cases.clone()).unwrap();
+    let reopened = workspaces
+        .open_home(documents.revision(), &mut documents)
+        .unwrap();
+    assert_eq!(reopened.document.code, "puts gets");
+    assert_eq!(reopened.cases, cases);
+    assert!(!root.path().join("workspaces").exists());
+    let stale = documents.revision();
+    documents.reset();
+    assert!(workspaces.open_home(stale, &mut documents).is_err());
+}
+
+#[test]
 fn unreadable_task_data_is_read_again_and_late_opens_do_not_replace_the_document() {
     let root = tempfile::tempdir().unwrap();
     let workspaces = Workspaces::new(root.path());

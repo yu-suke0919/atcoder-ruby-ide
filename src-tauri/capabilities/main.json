@@ -20,6 +20,8 @@
     "allow-contest-set-hidden",
     "allow-task-open",
     "allow-task-save-cases",
+    "allow-home-open",
+    "allow-home-save-cases",
     "allow-browser-layout",
     "allow-browser-visible",
     "allow-browser-home",

@@ -78,6 +78,44 @@ pub struct TaskWorkspace {
     pub cases: Vec<SampleCase>,
 }
 
+/// The home workspace: code and samples that belong to no task.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeWorkspace {
+    pub document: DocumentResult,
+    pub cases: Vec<SampleCase>,
+}
+
+fn empty_case() -> SampleCase {
+    SampleCase {
+        stdin: String::new(),
+        expected_output: String::new(),
+        compare: false,
+        tolerance: None,
+    }
+}
+
+/// Opens the solution and samples in a workspace directory, creating them on first use.
+fn open_files(
+    directory: &Path,
+    initial_cases: Vec<SampleCase>,
+    expected_document_revision: u64,
+    documents: &mut DocumentStore,
+) -> Result<(DocumentResult, Vec<SampleCase>), String> {
+    if documents.revision() != expected_document_revision {
+        return Err("読み込み中に編集中の問題が変わりました。問題を開き直してください。".into());
+    }
+    std::fs::create_dir_all(directory).map_err(|e| format!("作業領域を作成できません: {e}"))?;
+    let case_path = directory.join("cases.json");
+    let data = serde_json::to_vec_pretty(&serde_json::json!({ "cases": initial_cases }))
+        .map_err(|e| e.to_string())?;
+    create_if_missing(&case_path, &data)?;
+    let cases = load_samples(&case_path)?;
+    let code_path = directory.join("solution.rb");
+    create_if_missing(&code_path, b"")?;
+    Ok((documents.open(code_path)?, cases))
+}
+
 fn validate(task: &Task, key: &TaskKey) -> Result<(), String> {
     if task.url != key.url {
         return Err("問題データのURLが不正です。".into());
@@ -286,39 +324,47 @@ impl Workspaces {
         expected_document_revision: u64,
         documents: &mut DocumentStore,
     ) -> Result<TaskWorkspace, String> {
-        if documents.revision() != expected_document_revision {
-            return Err(
-                "読み込み中に編集中の問題が変わりました。問題を開き直してください。".into(),
-            );
-        }
         let key = TaskKey::parse(url)?;
         let task = self
             .task(url)?
             .ok_or("問題ページをまだ読み取っていません。ブラウザで問題ページを開いてください。")?;
-        let workspace = key.workspace(&self.root);
-        let case_path = workspace.join("cases.json");
         let initial_cases = if task.samples.is_empty() {
-            vec![SampleCase {
-                stdin: String::new(),
-                expected_output: String::new(),
-                compare: false,
-                tolerance: None,
-            }]
+            vec![empty_case()]
         } else {
             task.samples.iter().map(SampleCase::from).collect()
         };
-        let data = serde_json::to_vec_pretty(&serde_json::json!({"cases":initial_cases}))
-            .map_err(|e| e.to_string())?;
-        create_if_missing(&case_path, &data)?;
-        let cases = load_samples(&case_path)?;
-        let code_path = workspace.join("solution.rb");
-        create_if_missing(&code_path, b"")?;
-        let document = documents.open(code_path)?;
+        let (document, cases) = open_files(
+            &key.workspace(&self.root),
+            initial_cases,
+            expected_document_revision,
+            documents,
+        )?;
         Ok(TaskWorkspace {
             task,
             document,
             cases,
         })
+    }
+    /// Opens the home workspace, creating it with one empty, uncompared sample on first use.
+    pub fn open_home(
+        &self,
+        expected_document_revision: u64,
+        documents: &mut DocumentStore,
+    ) -> Result<HomeWorkspace, String> {
+        let (document, cases) = open_files(
+            &self.root.join("home"),
+            vec![empty_case()],
+            expected_document_revision,
+            documents,
+        )?;
+        Ok(HomeWorkspace { document, cases })
+    }
+    pub fn save_home_cases(&self, cases: Vec<SampleCase>) -> Result<(), String> {
+        let home = self.root.join("home");
+        if !home.is_dir() {
+            return Err("ホームを開いてからサンプルを保存してください。".into());
+        }
+        save_samples(cases, &home.join("cases.json"))
     }
     pub fn save_cases(&self, url: &str, cases: Vec<SampleCase>) -> Result<(), String> {
         let workspace = TaskKey::parse(url)?.workspace(&self.root);

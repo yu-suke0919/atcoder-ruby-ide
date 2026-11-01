@@ -7,7 +7,7 @@ const path = require('node:path');
 const { once } = require('node:events');
 const { runner, launch, close, requestClose, pause, memoryUse } = require('./support.cjs');
 const { taskPage } = require('./atcoder-fixture.cjs');
-const { seedProblem: seedWorkspaceProblem, openProblem, selectTask, removeContest, waitInitialized } = require('./workspace.cjs');
+const { sampleCode, seedProblem: seedWorkspaceProblem, openProblem, selectTask, removeContest, waitInitialized } = require('./workspace.cjs');
 
 describe('Application', () => {
 let app;
@@ -174,7 +174,7 @@ test('M03/M09: a failed save keeps edits, can be retried and is confirmed before
   assert.equal(await editorText(page), 'puts "失敗しても残る"');
 });
 
-test('R07: reload protects a failed source save and an accepted reload starts without a problem', async () => {
+test('R07: reload protects a failed source save and an accepted reload starts at home', async () => {
   await blockSaving(starterProblem.solution);
   try {
     await page.locator('#code-editor').fill('puts "unsaved source"');
@@ -185,8 +185,8 @@ test('R07: reload protects a failed source save and an accepted reload starts wi
   } finally {
     await unblockSaving(starterProblem.solution);
   }
-  assert.equal(await page.locator('#code-editor').isEditable(), false);
-  assert.equal(await page.locator('#run').isDisabled(), true);
+  await page.locator('#problem-title').filter({ hasText: /^ホーム$/ }).waitFor();
+  assert.notEqual(await editorText(page), 'puts "unsaved source"');
   await openStarter();
   await runAndWait();
   assert.equal(await page.locator('#stdout').textContent(), '6 test\n');
@@ -517,19 +517,46 @@ test('M06/M08: show timeout and output-limit reasons in the UI', async () => {
 });
 
 
-test('M02: editing and running require an open problem and no external file operations exist', async () => {
-  await page.reload();
-  await waitInitialized(page);
-  assert.equal(await page.locator('#code-editor').isEditable(), false);
-  assert.equal(await page.getByTestId('stdin').isEditable(), false);
-  for (const id of ['run', 'run-all', 'case-add']) assert.equal(await page.locator(`#${id}`).isDisabled(), true, id);
-  for (const id of ['new', 'open', 'save', 'save-as', 'cases-open', 'cases-save']) assert.equal(await page.locator(`#${id}`).count(), 0, id);
-  await page.locator('#code-editor').press('Control+o');
-  assert.equal(await page.locator('dialog[open]').count(), 0);
-  await openProblem(page, starterProblem);
-  assert.equal(await page.locator('#code-editor').isEditable(), true);
-  await runAndWait();
-  assert.equal(await page.locator('#stdout').textContent(), '6 test\n');
+test('M02/U2d: the app starts at home, runs Ruby without a problem and keeps home apart from problems', async () => {
+  // Home is shared with the user's own data on Windows, so its files are put back afterwards.
+  const home = path.join(app.dataDir, 'home');
+  const original = await Promise.all(['solution.rb', 'cases.json'].map(name => readFile(path.join(home, name)).catch(() => null)));
+  try {
+    await page.reload();
+    await waitInitialized(page);
+    assert.equal(await page.locator('#home-icon').getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.locator('#problem-title').textContent(), 'ホーム');
+    assert.equal(await page.locator('#contest-title').textContent(), 'ホーム');
+    assert.equal(await page.locator('.task-item').count(), 0);
+    await page.waitForFunction(() => document.getElementById('browser-url').value === 'https://atcoder.jp/');
+    for (const id of ['new', 'open', 'save', 'save-as', 'cases-open', 'cases-save']) assert.equal(await page.locator(`#${id}`).count(), 0, id);
+    await page.locator('#code-editor').press('Control+o');
+    assert.equal(await page.locator('dialog[open]').count(), 0);
+    await page.locator('#code-editor').fill('puts gets.to_i * 2');
+    await page.locator('#stdin').fill('21\n');
+    await runAndWait();
+    assert.equal(await page.locator('#stdout').textContent(), '42\n');
+    await waitSaved();
+    assert.equal(await readFile(path.join(home, 'solution.rb'), 'utf8'), 'puts gets.to_i * 2');
+    await openProblem(page, starterProblem);
+    assert.equal(await page.locator('#home-icon').getAttribute('aria-pressed'), 'false');
+    assert.equal(await editorText(page), sampleCode);
+    await page.locator('#home-icon').click();
+    await page.locator('#problem-title').filter({ hasText: /^ホーム$/ }).waitFor();
+    assert.equal(await editorText(page), 'puts gets.to_i * 2');
+    assert.equal(await page.locator('#stdin').inputValue(), '21\n');
+    await page.waitForFunction(() => document.getElementById('browser-url').value === 'https://atcoder.jp/');
+    // The contest's task pages stay open, so its tasks open again from the list.
+    await page.locator(`#contest-icons .rail-icon[aria-label="テスト ${testContest}"]`).click();
+    await selectTask(page, starterProblem);
+    await page.locator('#problem-title').filter({ hasText: starterProblem.title }).waitFor();
+  } finally {
+    await mkdir(home, { recursive: true });
+    for (const [index, name] of ['solution.rb', 'cases.json'].entries()) {
+      if (original[index] === null) await rm(path.join(home, name), { force: true });
+      else await writeFile(path.join(home, name), original[index]);
+    }
+  }
 });
 
 test('M08: an oversized solution fails to open and preserves the current problem and comparison', async () => {

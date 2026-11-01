@@ -21,7 +21,9 @@ pub use lsp::{LspInfo, RubyLsp};
 pub use navigation::{browser_target, is_allowed, ALLOWED_ORIGINS};
 pub use runner::{Output, PreparedRun, RunRequest, RunResult, Runner};
 pub use samples::{load_samples, save_samples, ProblemSample, SampleCase};
-pub use task::{is_task_page, parse_task, read_task_page, Task, TaskWorkspace, Workspaces};
+pub use task::{
+    is_task_page, parse_task, read_task_page, HomeWorkspace, Task, TaskWorkspace, Workspaces,
+};
 
 use serde::Serialize;
 

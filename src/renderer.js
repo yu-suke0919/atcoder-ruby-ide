@@ -15,6 +15,9 @@ const contestDialog = $('contest-dialog');
 const railMenu = $('rail-menu');
 // The opened task: the saved task data plus its label and title from the task list.
 let activeProblem = null;
+// Home is a workspace of its own that belongs to no task.
+const HOME = 'home';
+const homeProblem = { url: HOME, home: true, title: 'ホーム', timeLimitMs: null, memoryLimitMiB: null };
 let contests = [];
 let selectedContest = null;
 // The task whose page is being read; it opens when its task-page event arrives.
@@ -88,7 +91,10 @@ async function saveNow() {
   saving = (async () => {
     try {
       if (codeChanged) { await ide.saveCode(code); if (problem.url === activeProblem?.url) savedCode = code; }
-      if (casesChanged) { await ide.saveTaskCases(problem.url, data); if (problem.url === activeProblem?.url) cases.markSaved(data); }
+      if (casesChanged) {
+        await (problem.home ? ide.saveHomeCases(data) : ide.saveTaskCases(problem.url, data));
+        if (problem.url === activeProblem?.url) cases.markSaved(data);
+      }
       saveError = null;
     } catch (error) {
       saveError = error.message;
@@ -406,15 +412,15 @@ function showProblem() {
   showExecutionLimit();
   $('problem-title').textContent = activeProblem ? activeProblem.title : '問題を選んでください';
   $('problem-title').title = activeProblem?.title || '';
-  $('problem-limits').textContent = activeProblem
+  $('problem-limits').textContent = activeProblem && !activeProblem.home
     ? `実行時間制限 ${activeProblem.timeLimitMs == null ? '不明' : `${activeProblem.timeLimitMs / 1000} 秒`} / メモリ制限 ${activeProblem.memoryLimitMiB == null ? '不明' : `${activeProblem.memoryLimitMiB} MiB`}` : '';
   renderTasks();
 }
-function applyWorkspace(result, task) {
+function applyWorkspace(result, problem) {
   clearTimeout(saveTimer);
   saveTimer = null;
   saveError = null;
-  activeProblem = { ...result.task, title: `${task.label} - ${task.title}` };
+  activeProblem = problem;
   editor.value = result.document.code;
   savedCode = editor.value;
   filePath = result.document.filePath;
@@ -468,6 +474,7 @@ $('browser-reload').addEventListener('click', () => ide.browserReload().catch(er
 
 const contestFor = url => contests.find(contest => contest.url === url) || null;
 function renderRail() {
+  $('home-icon').setAttribute('aria-pressed', String(selectedContest === HOME));
   $('contest-icons').replaceChildren(...contests.filter(contest => !contest.hidden).map(contest => {
     const button = document.createElement('button');
     button.className = 'rail-icon';
@@ -485,6 +492,12 @@ function renderRail() {
   }));
 }
 function renderTasks() {
+  if (selectedContest === HOME) {
+    $('contest-title').textContent = 'ホーム';
+    $('task-list').replaceChildren(Object.assign(document.createElement('p'), { className: 'task-message', textContent: '問題に関係なく、Rubyを書いて実行できます。' }));
+    updateButtons();
+    return;
+  }
   const contest = contestFor(selectedContest);
   $('contest-title').textContent = contest ? contest.title : 'コンテストを選んでください';
   $('task-list').replaceChildren(...(contest?.tasks || []).map(task => {
@@ -532,18 +545,38 @@ async function setHidden(url, hidden) {
     renderRail();
   } catch (error) { taskMessage(error.message, true); }
 }
+// The contest whose task pages are open. Visiting home keeps them.
+let pagesContest = null;
 async function selectContest(url) {
   hideMenu();
   if (url !== selectedContest) {
     selectedContest = url;
     pendingTask = null;
     taskMessage('');
+  }
+  if (url !== pagesContest) {
+    pagesContest = url;
     await ide.browserCloseTasks().catch(() => {});
   }
   await ide.browserHome(url).catch(error => taskMessage(error.message, true));
   renderRail();
   renderTasks();
 }
+
+// Opens home: its own workspace in the editor and AtCoder's top page in the browser.
+async function selectHome() {
+  hideMenu();
+  if (running || fileBusy || closing) return;
+  if (!activeProblem?.home && !await leaveProblem()) return;
+  selectedContest = HOME;
+  pendingTask = null;
+  taskMessage('');
+  renderRail();
+  renderTasks();
+  await ide.browserHome(null).catch(error => taskMessage(error.message, true));
+  if (!activeProblem?.home) await fileAction(async () => applyWorkspace(await ide.openHome(), homeProblem), taskMessage);
+}
+$('home-icon').addEventListener('click', selectHome);
 
 // Shows the task page; its workspace opens once the page has been read.
 async function openTask(task) {
@@ -578,7 +611,7 @@ async function openPendingTaskNow() {
       return;
     }
     pendingTask = null;
-    applyWorkspace(result, task);
+    applyWorkspace(result, { ...result.task, title: `${task.label} - ${task.title}` });
     taskMessage('');
     message(`${task.label} を開きました。`);
     editor.focus();
@@ -673,7 +706,7 @@ async function initialize() {
     layoutBrowser();
     contests = await ide.listContests();
     renderRail();
-    renderTasks();
+    await selectHome();
     await checkRuby();
   } catch (error) {
     $('ruby-version').textContent = '初期化できません';

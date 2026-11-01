@@ -173,6 +173,17 @@ fn main() {
                 )?;
                 Ok(Value::Null)
             }
+            "home_open" => {
+                let mut documents = documents.lock().unwrap();
+                let revision = documents.revision();
+                Ok(json!(workspaces.open_home(revision, &mut documents)?))
+            }
+            "home_save_cases" => {
+                workspaces.save_home_cases(
+                    serde_json::from_value(args["cases"].clone()).map_err(|e| e.to_string())?,
+                )?;
+                Ok(Value::Null)
+            }
             "browser_task" => {
                 let url = args["url"].as_str().ok_or("URLを指定してください")?;
                 send(&sink, json!({"appEvent": "browser-url", "payload": url}));
