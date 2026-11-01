@@ -6,6 +6,8 @@ const { tmpdir } = require('node:os');
 const assert = require('node:assert/strict');
 const { launch, close } = require('../tests/e2e/native.cjs');
 const { verifyLsp } = require('../tests/e2e/lsp.cjs');
+const { seedProblem, openProblem, waitInitialized } = require('../tests/e2e/workspace.cjs');
+const contest = `nsis-smoke-${Date.now()}`;
 const execute = promisify(execFile);
 
 async function main() {
@@ -26,6 +28,8 @@ async function main() {
     app = await launch(profile, { hostEnv: { HTTP_PROXY: 'http://127.0.0.1:1', HTTPS_PROXY: 'http://127.0.0.1:1' } }); // Removes Ruby from PATH and verifies the app's actual Ruby path.
     const page = app.page;
     await page.context().setOffline(true);
+    await waitInitialized(page);
+    await openProblem(page, await seedProblem(app, contest, 'smoke'));
     await verifyLsp(page);
     await page.getByRole('button', { name: '実行', exact: true }).click();
     await page.getByTestId('run-status').filter({ hasText: '正常終了' }).waitFor();
