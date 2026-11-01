@@ -424,6 +424,8 @@ Windows CI の初回では、HTML固定データがCRLFでチェックアウト�
 - 試作（`spike/u0-embedded-browser` c70ff9d、マージしない）を[Windows CI run 41236250512](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/41236250512)のリリースビルドで動かし、CDPで画面とAtCoderの両方のWebViewを操作した。結果は[構成と検証方針](architecture.md#画面の作り直しの調査u0)のとおりで、報告のJSONとスクリーンショットは同じrunの`U0-spike` Artifactにある。
 - Linuxでは`libwebkit2gtk-4.1-dev`を入れてデスクトップ版をビルドし、Xvfbで起動しても子のWebViewの追加で異常終了しないことだけを確かめた。
 
+- 1問あたりの通信を1回にするため、試作（3df54bb、[run 41272264658](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/41272264658)）で、Rustの`eval_with_callback`がAtCoder用WebViewの読み込み済みHTML（約59 KB、サンプル3件）を返し、ページの読み込みを起こさないこと、AtCoderのページから読み取りのコマンドを呼べないことを確かめた。隠した子のWebViewでも1秒ごとのタイマーが15秒で15回動き、`document.visibilityState`は`visible`のままだった。数分以上隠したときの動作は確かめていないため、提出結果の読み取り（U5）で確かめる。
+
 ### 利用者による確認（2026-11-01）
 
 試作のexe（`spike/u0-embedded-browser` 391ea75、[run 41237515728](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/41237515728)の`U0-spike-exe`）と、手元のChromeで確かめた。
