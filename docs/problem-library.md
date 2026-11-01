@@ -21,7 +21,13 @@ Tauri の `app.path().app_local_data_dir()` を使う。Windows では通常 `%L
 - `cases.json`：初めて開いたときに`task.json`のサンプルから作り、以後は利用者の編集だけで変わる。読み取り直しで上書きしない。
 - 解答ファイルは問題ごとに複数持つ。初めて開いたときに2つ作る。
 
-以前の仕様の`library/problems`（単問キャッシュ）と`library/collections`（問題集の一覧と、問題文を含む固定原本）は読まない。残ったファイルは利用者が手動で削除してよい。現在の実装からこの形へは、[ロードマップ](roadmap.md)のU2b〜U5で順に移す。移すPRで、次の保存形式の方針に従う。
+以前の仕様の`library/problems`（単問キャッシュ）と`library/collections`（問題集の一覧と、問題文を含む固定原本）はU2bから読まない。残ったファイルは利用者が手動で削除してよい。以前に登録した問題集は、同じURLを「＋」で登録し直すと問題一覧を取り直し、`workspaces`の解答とサンプルをそのまま使える。`submissions`・`settings.json`と複数の解答ファイルは、[ロードマップ](roadmap.md)のU3・U5で加える。移すPRで、次の保存形式の方針に従う。
+
+U2bの時点の形式は次のとおり。どれも未知の項目を拒否する。
+
+- `contests/<contest-id>.json`：`url`（`https://atcoder.jp/contests/<id>`）、`title`、`hidden`（真偽値）、`tasks`（`label`・`title`・`url`の配列、1〜1,000件）。登録の経緯と開始・終了の時刻はU6で任意項目として加える。
+- `task.json`：`url`、`samples`（`stdin`・`expectedOutput`の配列、0〜100件）、任意の`timeLimitMs`・`memoryLimitMiB`。入力形式はU4で任意項目として加える。
+- `cases.json`と`solution.rb`：U2aまでと同じ形式。
 
 ## 保存形式を変えるときの方針
 

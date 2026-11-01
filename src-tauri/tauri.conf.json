@@ -7,7 +7,7 @@
   "build": { "frontendDist": "../src", "features": ["desktop"] },
   "app": {
     "withGlobalTauri": true,
-    "windows": [{ "label": "main", "title": "AtCoder Ruby IDE", "width": 1280, "height": 850, "minWidth": 900, "minHeight": 650, "backgroundColor": "#11151d", "devtools": false }],
+    "windows": [{ "label": "main", "title": "AtCoder Ruby IDE", "width": 1280, "height": 850, "minWidth": 1280, "minHeight": 720, "backgroundColor": "#11151d", "devtools": false }],
     "security": { "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'" }
   },
   "bundle": {

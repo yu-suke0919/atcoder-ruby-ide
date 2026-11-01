@@ -12,16 +12,15 @@
     "start": "tauri dev --features desktop",
     "test": "cargo test --locked --workspace && node --test --test-isolation=none tests/unit/*.test.cjs",
     "test:e2e": "node --test --test-isolation=none tests/e2e/*.test.cjs",
-    "test:atcoder-live": "cargo test --locked --test library live_atcoder -- --ignored --nocapture && node --test --test-isolation=none tests/e2e/atcoder-live.cjs",
+    "test:atcoder-live": "cargo test --locked --test library live_atcoder -- --ignored --nocapture",
     "prepare:ruby": "node --use-env-proxy scripts/prepare-ruby.cjs",
     "update:ruby": "node --use-env-proxy scripts/update-ruby.cjs",
     "prepare:gems": "node --use-env-proxy scripts/prepare-gems.cjs",
     "prepare:lsp": "node --use-env-proxy scripts/prepare-lsp.cjs",
     "build:win": "npm run prepare:ruby && npm run prepare:lsp && tauri build --features desktop",
     "package:win": "node scripts/package-windows.cjs",
-    "prepare:math": "node scripts/prepare-math.cjs",
     "prepare:editor": "node scripts/prepare-editor.cjs",
-    "postinstall": "npm run prepare:math && npm run prepare:editor"
+    "postinstall": "npm run prepare:editor"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "6.20.4",
@@ -35,7 +34,6 @@
     "@tauri-apps/cli": "2.12.4",
     "7zip-bin": "5.2.0",
     "esbuild": "0.28.2",
-    "katex": "0.19.1",
     "playwright": "1.64.1",
     "yaml": "2.9.1"
   }

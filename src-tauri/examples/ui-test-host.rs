@@ -1,7 +1,7 @@
 //! Test-only stdio transport. All execution and document behavior comes from the app library.
 use atcoder_ruby_ide::{
-    ruby_info, CollectionLibrary, DocumentStore, ProblemLibrary, RubyLsp, RunEvent, RunRequest,
-    Runner,
+    fetch_page, http_client, read_task_page, ruby_info, Contests, DocumentStore, RubyLsp, RunEvent,
+    RunRequest, Runner, Workspaces,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -78,8 +78,16 @@ fn main() {
         worker: None,
     };
     let documents = Mutex::new(DocumentStore::default());
-    let library = ProblemLibrary::new(std::env::current_dir().unwrap().join("user-data"));
-    let collections = CollectionLibrary::new(std::env::current_dir().unwrap().join("user-data"));
+    let data = std::env::current_dir().unwrap().join("user-data");
+    let workspaces = Workspaces::new(&data);
+    let contests = Contests::new(&data);
+    // Pages come from the test server; this host has no browser, so showing a task page
+    // fetches it and reads it the way the app reads a loaded page.
+    let origin = std::env::var("ATCODER_IDE_TEST_ORIGIN").unwrap_or_default();
+    let page = |url: &str| {
+        let client = http_client()?;
+        fetch_page(&client, &url.replacen("https://atcoder.jp", &origin, 1), "")
+    };
     let sink = Arc::new(Mutex::new(io::stdout()));
     for line in io::stdin().lock().lines() {
         let request: Request = serde_json::from_str(&line.unwrap()).unwrap();
@@ -141,42 +149,46 @@ fn main() {
                 documents.lock().unwrap().reset();
                 Ok(Value::Null)
             }
-            "problem_open" => {
-                let document_revision = documents.lock().unwrap().revision();
-                Ok(json!(library.open_problem(
-                    args["url"].as_str().ok_or("URLを指定してください")?,
-                    document_revision,
-                    || documents.lock().unwrap(),
-                )?))
-            }
-            "collection_list" => Ok(json!(collections.list()?)),
-            "collection_register" => Ok(json!(
-                collections.register(args["url"].as_str().ok_or("URLを指定してください")?)?
+            "contest_list" => Ok(json!(contests.list()?)),
+            "contest_register" => Ok(json!(
+                contests.register(args["url"].as_str().ok_or("URLを指定してください")?, page)?
             )),
-            "collection_fetch_task" => Ok(json!(collections.fetch_task(
+            "contest_set_hidden" => Ok(json!(contests.set_hidden(
                 args["url"].as_str().ok_or("URLを指定してください")?,
-                args["task"].as_str().ok_or("問題を指定してください")?
+                args["hidden"].as_bool().ok_or("hiddenを指定してください")?
             )?)),
-            "collection_open_task" => {
+            "task_open" => {
+                let url = args["url"].as_str().ok_or("URLを指定してください")?;
+                if workspaces.task(url)?.is_none() {
+                    return Ok(Value::Null);
+                }
                 let mut documents = documents.lock().unwrap();
-                Ok(json!(collections.open_task(
-                    args["url"].as_str().ok_or("URLを指定してください")?,
-                    args["task"].as_str().ok_or("問題を指定してください")?,
-                    documents.revision(),
-                    &mut documents
-                )?))
+                let revision = documents.revision();
+                Ok(json!(workspaces.open(url, revision, &mut documents)?))
             }
-            "collection_repair_task" => Ok(json!(collections.repair_task(
-                args["url"].as_str().ok_or("URLを指定してください")?,
-                args["task"].as_str().ok_or("問題を指定してください")?
-            )?)),
-            "problem_refresh" => Ok(json!(
-                library.problem(args["url"].as_str().ok_or("URLを指定してください")?, true)?
-            )),
-            "problem_save_cases" => Ok(json!(library.save_cases(
-                args["url"].as_str().ok_or("URLを指定してください")?,
-                serde_json::from_value(args["cases"].clone()).map_err(|e| e.to_string())?
-            )?)),
+            "task_save_cases" => {
+                workspaces.save_cases(
+                    args["url"].as_str().ok_or("URLを指定してください")?,
+                    serde_json::from_value(args["cases"].clone()).map_err(|e| e.to_string())?,
+                )?;
+                Ok(Value::Null)
+            }
+            "browser_task" => {
+                let url = args["url"].as_str().ok_or("URLを指定してください")?;
+                if workspaces.task(url)?.is_none() {
+                    let error = page(url)
+                        .and_then(|html| read_task_page(&workspaces, url, &html))
+                        .err();
+                    send(
+                        &sink,
+                        json!({"appEvent": "task-page", "payload": {"url": url, "error": error}}),
+                    );
+                }
+                Ok(Value::Null)
+            }
+            "browser_layout" | "browser_visible" | "browser_home" | "browser_close_tasks" => {
+                Ok(Value::Null)
+            }
             "shutdown" => {
                 lsp.stop();
                 cleanup.stop_and_wait();

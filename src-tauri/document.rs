@@ -9,7 +9,7 @@ pub struct DocumentStore {
     revision: u64,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentResult {
     pub file_path: String,

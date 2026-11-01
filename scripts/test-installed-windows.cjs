@@ -6,7 +6,7 @@ const { tmpdir } = require('node:os');
 const assert = require('node:assert/strict');
 const { launch, close } = require('../tests/e2e/native.cjs');
 const { verifyLsp } = require('../tests/e2e/lsp.cjs');
-const { seedProblem, openProblem, waitInitialized } = require('../tests/e2e/workspace.cjs');
+const { seedProblem, openProblem, removeContest, waitInitialized } = require('../tests/e2e/workspace.cjs');
 const contest = `nsis-smoke-${Date.now()}`;
 const execute = promisify(execFile);
 
@@ -46,7 +46,7 @@ async function main() {
     console.log('NSIS smoke passed: installed exe, runtime files, offline LSP, sample, bundled extensions and AtCoder gems without system Ruby');
   } finally {
     if (app) await close(app);
-    if (app) for (const kind of ['library/problems', 'workspaces']) await rm(path.join(app.dataDir, kind, contest), { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    if (app) await removeContest(app, contest);
     await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 }

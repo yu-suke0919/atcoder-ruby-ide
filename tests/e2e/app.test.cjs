@@ -5,14 +5,15 @@ const { mkdtemp, mkdir, readFile, writeFile, rm, access, realpath } = require('n
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 const { once } = require('node:events');
-const { launch, close, requestClose, pause } = require('./support.cjs');
-const { seedProblem: seedWorkspaceProblem, openProblem, waitInitialized } = require('./workspace.cjs');
+const { runner, launch, close, requestClose, pause, memoryUse } = require('./support.cjs');
+const { taskPage } = require('./atcoder-fixture.cjs');
+const { seedProblem: seedWorkspaceProblem, openProblem, selectTask, removeContest, waitInitialized } = require('./workspace.cjs');
 
 describe('Application', () => {
 let app;
 let page;
 let root;
-const libraryContest = `ide-e2e-${Date.now()}`;
+const testContest = `ide-e2e-${Date.now()}`;
 before(async () => {
   root = await realpath(await mkdtemp(path.join(tmpdir(), 'AtCoder IDE 日本語 ')));
   app = await launch(root);
@@ -36,17 +37,13 @@ beforeEach(resetWorkspace);
 
 after(async () => {
   if (app) await close(app);
-  if (app) for (const kind of ['library/problems', 'workspaces']) await rm(path.join(app.dataDir, kind, libraryContest), { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-  if (app) {
-    await rm(path.join(app.dataDir, 'library/collections', libraryContest), { recursive: true, force: true });
-    await rm(path.join(app.dataDir, 'library/collections', `${libraryContest}.json`), { force: true });
-  }
+  if (app) for (const contest of [testContest, `${testContest}-list`, `${testContest}-memory`]) await removeContest(app, contest);
   if (root) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 let starterProblem;
 async function openStarter(options = {}) {
-  starterProblem = await seedWorkspaceProblem(app, libraryContest, options.task || 'starter', options);
+  starterProblem = await seedWorkspaceProblem(app, testContest, options.task || 'starter', { ...options, task: options.taskData ?? { samples: [] } });
   await openProblem(page, starterProblem, options);
   return starterProblem;
 }
@@ -139,19 +136,17 @@ test('M03: Ctrl+S saves immediately without a dialog', async () => {
 });
 
 test('M03/M09: a failed save keeps edits, can be retried and is confirmed before leaving', async () => {
-  const other = await seedWorkspaceProblem(app, libraryContest, 'other');
+  const other = await seedWorkspaceProblem(app, testContest, 'other');
+  await openProblem(page, starterProblem);
   await blockSaving(starterProblem.solution);
   try {
     await page.getByTestId('code-editor').fill('puts "失敗しても残る"');
     await waitSaveFailed();
     assert.match(await page.getByTestId('save-state').textContent(), /保存に失敗しました/);
     assert.equal(await page.locator('#save-retry').isVisible(), true);
-    await page.locator('#problem-library').click();
-    await page.locator('#problem-url').fill(other.url);
-    await page.locator('#problem-open').click();
+    await selectTask(page, other);
     await page.locator('#save-failed-dialog').waitFor();
     await page.locator('#save-failed-cancel').click();
-    await page.locator('#problem-close').click();
     assert.equal(await page.locator('#problem-title').textContent(), starterProblem.title);
     assert.equal(await editorText(page), 'puts "失敗しても残る"');
     await requestClose(app);
@@ -168,9 +163,7 @@ test('M03/M09: a failed save keeps edits, can be retried and is confirmed before
   try {
     await page.getByTestId('code-editor').fill('puts "破棄する"');
     await waitSaveFailed();
-    await page.locator('#problem-library').click();
-    await page.locator('#problem-url').fill(other.url);
-    await page.locator('#problem-open').click();
+    await selectTask(page, other);
     await page.locator('#save-failed-dialog').waitFor();
     await page.locator('#save-failed-discard').click();
     await page.locator('#problem-title').filter({ hasText: other.title }).waitFor();
@@ -228,7 +221,7 @@ test('R08: editing one case field preserves raw newlines in the other fields', a
     const bytes = [...Buffer.from(input)].join(',');
     const expected = bytes + newline;
     for (const field of ['expected-output', 'stdin', 'compare-output']) {
-      await openStarter({ task: `raw_${name}`, code: "puts STDIN.read.bytes.join(',')", cases: [{ stdin: input, expectedOutput: expected, compare: true }] });
+      await openStarter({ task: `raw_${name}_${field}`.replace("-", "_"), code: "puts STDIN.read.bytes.join(',')", cases: [{ stdin: input, expectedOutput: expected, compare: true }] });
       if (field === 'compare-output') {
         await page.locator('#compare-output').uncheck();
         await page.locator('#compare-output').check();
@@ -284,13 +277,13 @@ test('M12: Ruby detection can fail and recover without losing edits', async () =
 });
 
 test('M01: editor, output and run controls fit the minimum window size', async () => {
-  await page.setViewportSize({ width: 900, height: 650 });
+  await page.setViewportSize({ width: 1280, height: 720 });
   await assertWorkspaceFits();
   await page.setViewportSize({ width: 1280, height: 850 });
 });
 
 test('R03: larger font line boxes do not push output into run controls', async () => {
-  await page.setViewportSize({ width: 900, height: 650 });
+  await page.setViewportSize({ width: 1280, height: 720 });
   try {
     await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
     await page.evaluate(() => { document.body.style.lineHeight = '1.8'; });
@@ -478,7 +471,7 @@ test('M08: a local memory-limit result is distinct and the batch continues', asy
   assert.equal(await page.getByTestId('run-status').textContent(), 'ローカルのメモリ上限で停止（1 GiB）');
   assert.equal(await page.getByTestId('comparison-status').textContent(), '判定なし');
   assert.equal(await page.locator('#error-location').isHidden(), true);
-  await page.setViewportSize({ width: 900, height: 650 });
+  await page.setViewportSize({ width: 1280, height: 720 });
   await assertWorkspaceFits();
   assert.equal(await page.locator('#run').isEnabled(), true);
   await page.locator('#case-select').selectOption('1');
@@ -545,12 +538,10 @@ test('M08: an oversized solution fails to open and preserves the current problem
   await page.getByTestId('expected-output').fill('keep');
   await runAndWait();
   await page.getByTestId('comparison-status').filter({ hasText: /^一致$/ }).waitFor();
-  const large = await seedWorkspaceProblem(app, libraryContest, 'large', { code: 'a'.repeat(1048577) });
-  await page.locator('#problem-library').click();
-  await page.locator('#problem-url').fill(large.url);
-  await page.locator('#problem-open').click();
-  await page.locator('#problem-message').filter({ hasText: '1 MiB' }).waitFor();
-  await page.locator('#problem-close').click();
+  const large = await seedWorkspaceProblem(app, testContest, 'large', { code: 'a'.repeat(1048577) });
+  await openProblem(page, starterProblem);
+  await selectTask(page, large);
+  await page.locator('#task-message').filter({ hasText: '1 MiB' }).waitFor();
   assert.equal(await page.locator('#problem-title').textContent(), starterProblem.title);
   assert.equal(await editorText(page), 'puts "keep"');
   assert.equal(await page.getByTestId('comparison-status').textContent(), '一致');
@@ -878,14 +869,14 @@ test('M15: edits, clearing and a later matching run remove old details', async (
 
 test('M15: keyboard details fit the minimum window and larger line boxes', async () => {
   await mismatch('日😀A', '日😀B');
-  await page.setViewportSize({ width: 900, height: 650 });
+  await page.setViewportSize({ width: 1280, height: 720 });
   try {
     await page.evaluate(() => { document.body.style.lineHeight = '1.8'; });
     await page.getByTestId('comparison-status').focus();
     await page.getByTestId('comparison-status').press('Enter');
     await page.getByRole('dialog').waitFor();
     const bounds = await page.getByRole('dialog').boundingBox();
-    assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 900 && bounds.y + bounds.height <= 650);
+    assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 1280 && bounds.y + bounds.height <= 720);
     await assertWorkspaceFits();
     await page.keyboard.press('Escape');
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
@@ -911,647 +902,13 @@ test('M15: long lines show bounded context around the correct Unicode column', a
   await page.getByTestId('stdin').fill('');
 });
 
-async function seedProblem(task) {
-  const url = `https://atcoder.jp/contests/${libraryContest}/tasks/${task}`;
-  const problem = { url, title: `A - ${task}`, statement: [{ type: 'text', text: '整数AとBの和。<img src=x onerror=alert(1)>\n1 \\leq A,B \\leq 100\n'.repeat(80) }], samples: [{ stdin: '1 2\n', expectedOutput: '3\n', compare: true }, { stdin: '10 20\n', expectedOutput: '30\n', compare: true }] };
-  const directory = path.join(app.dataDir, 'library/problems', libraryContest, task);
-  await mkdir(directory, { recursive: true });
-  await writeFile(path.join(directory, 'problem.json'), JSON.stringify(problem));
-  return problem;
-}
-async function openProblemDialog(url) {
-  await page.locator('#problem-library').click();
-  await page.locator('#problem-url').fill(url);
-}
-async function waitProblem() {
-  await page.waitForFunction(() => !document.getElementById('problem-open').disabled);
-}
-
-test('P01: cached problem opens offline, runs samples and restores its saved workspace', async () => {
-  const problem = await seedProblem('save');
-  await page.setViewportSize({ width: 900, height: 650 });
-  await openProblemDialog(problem.url);
-  await page.locator('#problem-open').click({ timeout: 2000 });
-  await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
-  assert.equal(await page.locator('#problem-statement img').count(), 0);
-  assert.equal(await page.locator('#problem-statement').textContent(), problem.statement.map(p => p.text).join(''));
-  const panelFits = await page.locator('#problem-panel').evaluate(element => {
-    const rect = element.getBoundingClientRect();
-    return rect.top >= 0 && rect.left >= 0 && rect.bottom <= innerHeight && rect.right <= innerWidth;
-  });
-  assert.equal(panelFits, true);
-  await page.screenshot({ path: 'test-results/problem-library.png' });
-  assert.equal(await page.locator('#problem-dialog').isVisible(), false);
-  assert.equal(await editorText(page), '');
-  const sourcePath = path.join(app.dataDir, 'workspaces', libraryContest, 'save', 'solution.rb');
-  const normalizePath = value => process.platform === 'win32' ? path.toNamespacedPath(value).toLowerCase() : path.resolve(value);
-  assert.equal(normalizePath(await page.locator('#file-path').textContent()), normalizePath(sourcePath));
-  await page.locator('#code-editor').fill('puts STDIN.read.split.map(&:to_i).sum');
-  await page.keyboard.press('Control+s');
-  await waitSaved();
-  await page.locator('#run-all').click();
-  await page.locator('#cases-summary').filter({ hasText: /完了 2 \/ 2.*一致 2/ }).waitFor();
-  await selectCase(1);
-  await page.locator('#stdin').fill('9 1\n');
-  await page.locator('#expected-output').fill('10\n');
-  await waitSaved();
-  await page.reload();
-  await waitInitialized(page);
-  await openProblemDialog(problem.url);
-  await page.locator('#problem-open').click();
-  await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
-  assert.equal(await page.locator('#problem-dialog').isVisible(), false);
-  assert.equal(await page.locator('#stdin').inputValue(), '9 1\n');
-  assert.equal(await editorText(page), await readFile(sourcePath, 'utf8'));
-  await runAndWait();
-  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
-});
-
-test('P02: problem switching saves pending code and cases without asking', async () => {
-  const a = await seedProblem('guard_a'); const b = await seedProblem('guard_b');
-  await openProblemDialog(a.url); await page.locator('#problem-open').click();
-  await page.locator('#problem-title').filter({ hasText: a.title }).waitFor();
-  assert.equal(await page.locator('#problem-dialog').isVisible(), false);
-  await page.locator('#code-editor').fill('puts "keep code"');
-  await page.locator('#stdin').fill('keep cases');
-  await openProblemDialog(b.url);
-  await page.locator('#problem-open').click();
-  await page.locator('#problem-title').filter({ hasText: b.title }).waitFor();
-  assert.equal(await page.locator('dialog[open]').count(), 0);
-  assert.equal(await editorText(page), '');
-  assert.equal(await page.locator('#stdin').inputValue(), '1 2\n');
-  assert.equal(await page.locator('#problem-panel').isVisible(), true);
-  assert.equal(await page.locator('#problem-statement').evaluate(el => el.scrollTop), 0);
-  const workspace = path.join(app.dataDir, 'workspaces', libraryContest, 'guard_a');
-  assert.equal(await readFile(path.join(workspace, 'solution.rb'), 'utf8'), 'puts "keep code"');
-  assert.equal(JSON.parse(await readFile(path.join(workspace, 'cases.json'), 'utf8')).cases[0].stdin, 'keep cases');
-  await openProblemDialog(a.url); await page.locator('#problem-open').click();
-  await page.locator('#problem-title').filter({ hasText: a.title }).waitFor();
-  assert.equal(await editorText(page), 'puts "keep code"');
-  assert.equal(await page.locator('#stdin').inputValue(), 'keep cases');
-});
-test('P03: invalid cache preserves the current problem and workspace', async () => {
-  const a = await seedProblem('failure_a'); const b = await seedProblem('failure_b');
-  await openProblemDialog(a.url); await page.locator('#problem-open').click();
-  await page.locator('#problem-title').filter({ hasText: a.title }).waitFor();
-  await writeFile(path.join(app.dataDir, 'library/problems', libraryContest, 'failure_b', 'problem.json'), '{}');
-  await openProblemDialog(b.url);
-  await page.locator('#problem-open').click(); await waitProblem();
-  await page.locator('#message').filter({ hasText: '失敗' }).waitFor();
-  assert.equal(await page.locator('#problem-title').textContent(), a.title);
-  assert.equal(await page.locator('#problem-dialog').isVisible(), true);
-  assert.equal(await page.locator('#problem-statement').textContent(), a.statement.map(p => p.text).join(''));
-  await page.locator('#problem-close').click();
-  assert.equal(await page.locator('#stdin').inputValue(), '1 2\n');
-});
-
-test('P04: refresh keeps edited code and cases and retains the previous statement on error', async () => {
-  const problem = await seedProblem('refresh');
-  await openProblemDialog(problem.url); await page.locator('#problem-open').click();
-  await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
-  assert.equal(await page.locator('#problem-dialog').isVisible(), false);
-  await page.locator('#code-editor').fill('puts "my edits"');
-  await page.locator('#stdin').fill('my cases');
-  await page.locator('#problem-statement').evaluate(el => { el.scrollTop = 150; });
-  const originalScroll = await page.locator('#problem-statement').evaluate(el => el.scrollTop);
-  await page.locator('#problem-library').click();
-  // Isolate external HTTP at the bridge; Rust separately verifies HTTP and atomic cache updates.
-  await page.evaluate(async problem => {
-    const { ide } = await import('./bridge.mjs');
-    ide.refreshProblem = async () => ({ ...problem, title: 'Updated problem', statement: [...problem.statement, { type: 'text', text: '\nRefreshed' }] });
-  }, problem);
-  await page.locator('#problem-refresh').click();
-  await page.locator('#problem-title').filter({ hasText: 'Updated problem' }).waitFor();
-  assert.equal(await editorText(page), 'puts "my edits"');
-  assert.equal(await page.locator('#stdin').inputValue(), 'my cases');
-  await waitSaved();
-  const workspace = path.join(app.dataDir, 'workspaces', libraryContest, 'refresh');
-  assert.equal(await readFile(path.join(workspace, 'solution.rb'), 'utf8'), 'puts "my edits"');
-  assert.equal(JSON.parse(await readFile(path.join(workspace, 'cases.json'), 'utf8')).cases[0].stdin, 'my cases');
-  assert.equal(await page.locator('#problem-statement').evaluate(el => el.scrollTop), originalScroll);
-  await page.locator('#problem-close').click();
-  await page.locator('#problem-toggle').click();
-  await page.locator('#problem-library').click();
-  await page.locator('#problem-refresh').click(); await waitProblem();
-  assert.equal(await page.locator('#problem-panel').isVisible(), false);
-  await page.locator('#problem-close').click();
-  await page.locator('#problem-toggle').click();
-  assert.equal(await page.locator('#problem-statement').evaluate(el => el.scrollTop), originalScroll);
-  await page.locator('#problem-library').click();
-  await page.evaluate(async () => {
-    const { ide } = await import('./bridge.mjs');
-    ide.refreshProblem = async () => { throw new Error('network offline'); };
-  });
-  await page.locator('#problem-refresh').click(); await waitProblem();
-  await page.locator('#problem-message').filter({ hasText: 'network offline' }).waitFor();
-  assert.equal(await page.locator('#problem-title').textContent(), 'Updated problem');
-  await page.locator('#problem-close').click();
-});
-
-test('P06: refresh can repair a cache before any problem is selected', async () => {
-  await page.reload();
-  await waitInitialized(page);
-  const problem = await seedProblem('repair');
-  const cache = path.join(app.dataDir, 'library/problems', libraryContest, 'repair', 'problem.json');
-  await writeFile(cache, '{}');
-  await openProblemDialog(problem.url);
-  await page.locator('#problem-open').click(); await waitProblem();
-  await page.locator('#problem-message').filter({ hasText: '再取得' }).waitFor();
-  assert.equal(await page.locator('#problem-refresh').isEnabled(), true);
-  await page.evaluate(async problem => {
-    const { ide } = await import('./bridge.mjs');
-    window.refreshedUrl = null;
-    ide.refreshProblem = async url => { window.refreshedUrl = url; return problem; };
-  }, problem);
-  await page.locator('#problem-refresh').click(); await waitProblem();
-  assert.equal(await page.evaluate(() => window.refreshedUrl), problem.url);
-  assert.equal(await page.locator('#problem-title').textContent(), '問題を選んでください');
-  assert.match(await page.locator('#problem-message').textContent(), /「開く」/);
-  // The bridge mock represents only HTTP; open through the real cache/workspace API.
-  await writeFile(cache, JSON.stringify(problem));
-  await page.locator('#problem-open').click();
-  await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
-  assert.equal(await page.locator('#problem-dialog').isVisible(), false);
-});
-
-test('P07: reading panel allows editing and shortcuts, and toggling preserves edits and results', async () => {
-  const problem = await seedProblem('reading');
-  await openProblemDialog(problem.url);
-  await page.locator('#problem-open').click();
-  await waitProblem();
-  assert.equal(await page.locator('#problem-dialog').isVisible(), false);
-  assert.equal(await page.locator('#problem-panel').isVisible(), true);
-  assert.equal(await page.locator('#problem-toggle').getAttribute('aria-expanded'), 'true');
-  await page.locator('#code-editor').fill('puts STDIN.read.split.map(&:to_i).sum');
-  await page.keyboard.press('Control+s');
-  await waitSaved();
-  const source = await page.locator('#file-path').textContent();
-  assert.equal(await readFile(source, 'utf8'), 'puts STDIN.read.split.map(&:to_i).sum');
-  await page.locator('#stdin').fill('9 1\n');
-  await page.locator('#expected-output').fill('10\n');
-  await page.keyboard.press('Control+Enter');
-  await page.locator('#comparison-status').filter({ hasText: '一致' }).waitFor();
-  assert.equal(await page.locator('#stdout').textContent(), '10\n');
-  await page.locator('#code-editor').fill('puts "edited"');
-  await waitSaved();
-  await page.locator('#problem-statement').evaluate(el => { el.scrollTop = 150; });
-  const scroll = await page.locator('#problem-statement').evaluate(el => el.scrollTop);
-  assert.ok(scroll > 0);
-  const capture = async () => ({ code: await editorText(page), fields: await page.evaluate(() => Object.fromEntries(['stdin', 'expected-output', 'compare-output', 'file-path', 'save-state', 'case-count', 'stdout', 'stderr', 'run-status', 'run-duration', 'comparison-status'].map(id => {
-    const el = document.getElementById(id);
-    return [id, el.type === 'checkbox' ? el.checked : el.value ?? el.textContent];
-  }))) });
-  const before = await capture();
-  const width = await page.locator('#code-editor').evaluate(el => el.clientWidth);
-  await page.evaluate(async () => {
-    const { ide } = await import('./bridge.mjs');
-    for (const name of ['openProblem', 'refreshProblem', 'openCollectionTask', 'fetchCollectionTask', 'repairCollectionTask']) ide[name] = () => { throw new Error('display toggles must stay offline'); };
-  });
-  await page.locator('#problem-toggle').click();
-  assert.equal(await page.locator('#problem-panel').isVisible(), false);
-  assert.equal(await page.locator('#problem-toggle').getAttribute('aria-expanded'), 'false');
-  assert.ok(await page.locator('#code-editor').evaluate(el => el.clientWidth) > width);
-  await page.locator('#problem-toggle').click();
-  assert.equal(await page.locator('#problem-panel').isVisible(), true);
-  assert.deepEqual(await capture(), before);
-  assert.equal(await page.locator('#problem-statement').evaluate(el => el.scrollTop), scroll);
-  assert.equal(await readFile(source, 'utf8'), 'puts "edited"');
-});
-
-test('P08: long reading panel, editor and results fit wide and minimum windows with large line boxes', async () => {
-  const problem = await seedProblem('reading_layout');
-  await openProblemDialog(problem.url);
-  await page.locator('#problem-open').click();
-  await waitProblem();
-  assert.equal(await page.locator('#problem-dialog').isVisible(), false);
-  await page.locator('#code-editor').fill('puts "reading and editing"\n'.repeat(80));
-  for (const [width, height] of [[1440, 900], [1200, 650], [900, 650]]) {
-    await page.setViewportSize({ width, height });
-    await page.locator('#editor-search').click();
-    await page.evaluate(() => { document.body.style.lineHeight = '1.8'; });
-    await assertWorkspaceFits();
-    const layout = await page.evaluate(() => {
-      const rect = selector => { const { x, y, right, bottom, width, height } = document.querySelector(selector).getBoundingClientRect(); return { x, y, right, bottom, width, height }; };
-      const contents = ['problem-statement', 'code-editor'].map(id => {
-        const el = id === 'code-editor' ? document.querySelector('.cm-scroller') : document.getElementById(id), css = getComputedStyle(el);
-        return { id, content: el.clientHeight - parseFloat(css.paddingTop) - parseFloat(css.paddingBottom), line: parseFloat(css.lineHeight), fits: el.scrollWidth <= el.clientWidth };
-      });
-      return { problem: rect('#problem-panel'), editor: rect('.editor-panel'), cases: rect('.right-column'), toolbar: rect('.run-toolbar'), pageWidth: document.documentElement.scrollWidth, contents };
-    });
-    const details = JSON.stringify(layout);
-    assert.ok(layout.problem.x >= 0 && layout.problem.bottom <= layout.toolbar.y, details);
-    assert.ok(layout.editor.bottom <= layout.toolbar.y && layout.cases.bottom <= layout.toolbar.y, details);
-    assert.ok(layout.pageWidth <= width, details);
-    if (width >= 1200) {
-      assert.ok(layout.problem.right <= layout.editor.x && layout.editor.right <= layout.cases.x, details);
-    } else {
-      assert.ok(layout.problem.bottom <= layout.editor.y && layout.problem.right <= layout.cases.x, details);
-    }
-    for (const area of layout.contents) assert.ok(area.content >= area.line, details);
-    assert.equal(layout.contents[0].fits, true, details);
-    await page.locator('#problem-statement').evaluate(el => { el.scrollTop = 200; });
-    assert.ok(await page.locator('#problem-statement').evaluate(el => el.scrollTop) > 0);
-    await page.locator('.cm-scroller').evaluate(el => { el.scrollTop = 150; });
-    const editorScroll = await page.locator('.cm-scroller').evaluate(el => el.scrollTop);
-    await page.locator('#problem-statement').evaluate(el => { el.scrollTop += 50; });
-    assert.ok(editorScroll > 0);
-    assert.equal(await page.locator('.cm-scroller').evaluate(el => el.scrollTop), editorScroll);
-    await page.screenshot({ path: `test-results/problem-panel-${width}.png` });
-  }
-});
-
-test('P09: reading panel can be toggled during a run and Stop remains usable', async () => {
-  const problem = await seedProblem('reading_run');
-  await openProblemDialog(problem.url);
-  await page.locator('#problem-open').click(); await waitProblem();
-  await page.locator('#code-editor').fill('puts "reading"; sleep 30');
-  await page.locator('#run').click();
-  await page.locator('#stdout').filter({ hasText: 'reading' }).waitFor();
-  await page.locator('#problem-toggle').click();
-  assert.equal(await page.locator('#problem-panel').isVisible(), false);
-  await page.locator('#problem-toggle').click();
-  assert.equal(await page.locator('#problem-panel').isVisible(), true);
-  assert.equal(await page.locator('#stop').isEnabled(), true);
-  await page.locator('#stop').click();
-  await page.locator('#run-status').filter({ hasText: '停止しました' }).waitFor();
-  assert.equal(await page.locator('#stdout').textContent(), 'reading\n');
-});
-
-async function seedCollection(count = 2) {
-  await rm(path.join(app.dataDir, 'workspaces', libraryContest), { recursive: true, force: true });
-  const url = `https://atcoder.jp/contests/${libraryContest}`;
-  const collection = { url, title: '練習問題集 <script>safe</script>', tasks: Array.from({ length: count }, (_, index) => ({ label: `A${String(index + 1).padStart(2, '0')}`, title: `Problem ${index + 1}`, url: `${url}/tasks/collection_${index}`, error: null })) };
-  const directory = path.join(app.dataDir, 'library/collections');
-  await rm(path.join(directory, libraryContest), { recursive: true, force: true });
-  await mkdir(path.join(directory, libraryContest), { recursive: true });
-  await writeFile(path.join(directory, `${libraryContest}.json`), JSON.stringify(collection));
-  return collection;
-}
-async function seedCollectionTask(task) {
-  const problem = { url: task.url, title: `${task.label} - ${task.title}`, statement: [{ type: 'text', text: '固定保存した問題文' }], samples: [{ stdin: '1 2\n', expectedOutput: '3\n', compare: true }] };
-  await writeFile(path.join(app.dataDir, 'library/collections', libraryContest, `${task.url.split('/').at(-1)}.json`), JSON.stringify(problem));
-}
-async function showCollections() {
-  await page.locator('#collections').click();
-  await page.waitForFunction(() => !document.getElementById('collection-register').disabled);
-  await page.locator('#collection-select').selectOption(`https://atcoder.jp/contests/${libraryContest}`);
-}
-
-test('C01: fixed collection opens offline, protects edits and restores the saved workspace', async () => {
-  const collection = await seedCollection();
-  await Promise.all(collection.tasks.map(seedCollectionTask));
-  await showCollections();
-  assert.equal(await page.locator('#collection-title').textContent(), collection.title);
-  assert.equal(await page.locator('#collection-title script').count(), 0);
-  await page.setViewportSize({ width: 900, height: 650 });
-  assert.equal(await page.locator('#collection-dialog').evaluate(el => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth && el.scrollWidth <= el.clientWidth; }), true);
-  await page.screenshot({ path: 'test-results/collection-library.png' });
-  await page.locator('#collection-tasks [data-action="open"]').first().click();
-  await page.locator('#problem-title').filter({ hasText: 'A01 - Problem 1' }).waitFor();
-  assert.equal(await page.locator('#problem-refresh').isDisabled(), true);
-  assert.equal(await page.locator('#collection-dialog').isVisible(), false);
-  await page.locator('#code-editor').fill('puts STDIN.read.split.map(&:to_i).sum');
-  await page.locator('#stdin').fill('4 5\n');
-  await page.locator('#expected-output').fill('9\n');
-  await showCollections();
-  await page.locator('#collection-tasks [data-action="open"]').nth(1).click();
-  await page.locator('#problem-title').filter({ hasText: 'A02' }).waitFor();
-  assert.equal(await page.locator('#collection-dialog').isVisible(), false);
-  await showCollections();
-  await page.locator('#collection-tasks [data-action="open"]').first().click();
-  await page.locator('#problem-title').filter({ hasText: 'A01 - Problem 1' }).waitFor();
-  assert.equal(await page.locator('#collection-dialog').isVisible(), false);
-  assert.equal(await page.locator('#stdin').inputValue(), '4 5\n');
-  await runAndWait();
-  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
-});
-
-test('C02: registration fetches sequentially, pauses and resumes only missing tasks after reload', async () => {
-  const collection = await seedCollection(3);
-  // HTTP alone is replaced; persistence and subsequent opens use the real store.
-  const calls = [];
-  let failFirst = true;
-  let signalFirst;
-  const firstStarted = new Promise(resolve => { signalFirst = resolve; });
-  let releaseFirst;
-  const firstResponse = new Promise(resolve => { releaseFirst = resolve; });
-  await page.exposeFunction('__collectionFetch', async (url, taskUrl) => {
-    calls.push(taskUrl);
-    const task = collection.tasks.find(task => task.url === taskUrl);
-    if (task === collection.tasks[0] && failFirst) { signalFirst(); await firstResponse; task.error = 'network offline'; failFirst = false; }
-    else { await seedCollectionTask(task); task.error = null; }
-    await writeFile(path.join(app.dataDir, 'library/collections', `${libraryContest}.json`), JSON.stringify(collection));
-    const downloaded = [];
-    for (const task of collection.tasks) if (await access(path.join(app.dataDir, 'library/collections', libraryContest, `${task.url.split('/').at(-1)}.json`)).then(() => true, () => false)) downloaded.push(task.url);
-    return { collection, downloaded };
-  });
-  await page.evaluate(async collection => {
-    const { ide } = await import('./bridge.mjs');
-    ide.registerCollection = async () => ({ view: { collection, downloaded: [] }, created: true });
-    ide.fetchCollectionTask = (url, task) => window.__collectionFetch(url, task);
-  }, collection);
-  await page.locator('#collections').click();
-  await page.waitForFunction(() => !document.getElementById('collection-register').disabled);
-  await page.locator('#collection-url').fill(collection.url);
-  await page.locator('#collection-register').click();
-  await firstStarted;
-  assert.equal(await page.locator('#collection-register').isDisabled(), true);
-  assert.equal(await page.locator('#collection-resume').isDisabled(), true);
-  assert.equal(await page.locator('#collection-select').isDisabled(), true);
-  await page.locator('#collection-close').click();
-  await page.getByTestId('code-editor').fill('puts "during fetch"');
-  await runAndWait();
-  assert.equal(await page.getByTestId('stdout').textContent(), 'during fetch\n');
-  const executionMessage = await page.locator('#message').textContent();
-  await page.locator('#collections').click();
-  await page.locator('#collection-pause').click();
-  releaseFirst();
-  await page.waitForFunction(() => !document.getElementById('collection-register').disabled);
-  await page.locator('#collection-tasks').filter({ hasText: 'network offline' }).waitFor();
-  assert.equal(await page.locator('#message').textContent(), executionMessage);
-  const beforeReload = calls.length;
-  assert.ok(beforeReload < 3);
-  await page.reload();
-  await waitInitialized(page);
-  await page.evaluate(async () => { const { ide } = await import('./bridge.mjs'); ide.fetchCollectionTask = (url, task) => window.__collectionFetch(url, task); });
-  await showCollections();
-  await page.locator('#collection-resume').click();
-  await page.waitForFunction(() => document.getElementById('collection-progress').textContent.includes('取得済み 3 / 3'));
-  await page.waitForFunction(() => document.getElementById('collection-pause').disabled);
-  assert.equal(calls.filter(url => url === collection.tasks[0].url).length, 2);
-  for (const task of collection.tasks.slice(1)) assert.equal(calls.filter(url => url === task.url).length, 1);
-  const total = calls.length;
-  await page.locator('#collection-url').fill(collection.url);
-  await page.locator('#collection-register').click();
-  await page.waitForFunction(() => !document.getElementById('collection-register').disabled);
-  assert.equal(calls.length, total);
-  assert.equal(await page.locator('#collection-resume').isDisabled(), true);
-  await page.locator('#collection-close').click();
-});
-
-test('C06: running code can reopen collections and pause a pending download without changing run messages', async () => {
-  const collection = await seedCollection(2);
-  await showCollections();
-  await page.evaluate(async collection => {
-    const { ide } = await import('./bridge.mjs');
-    ide.fetchCollectionTask = () => new Promise(resolve => {
-      window.finishCollectionFetch = () => resolve({ collection, downloaded: [] });
-    });
-  }, collection);
-  await page.locator('#collection-resume').click();
-  await page.waitForFunction(() => typeof window.finishCollectionFetch === 'function');
-  await page.locator('#collection-close').click();
-  await page.getByTestId('code-editor').fill('puts "active"; sleep 30');
-  await page.locator('#run').click();
-  await page.locator('#stdout').filter({ hasText: 'active' }).waitFor();
-  assert.equal(await page.locator('#collections').isEnabled(), true);
-  const executionMessage = await page.locator('#message').textContent();
-  await page.locator('#collections').click();
-  for (const id of ['collection-register', 'collection-resume', 'collection-select']) {
-    assert.equal(await page.locator(`#${id}`).isDisabled(), true);
-  }
-  await page.locator('#collection-pause').click();
-  await page.evaluate(() => window.finishCollectionFetch());
-  await page.locator('#collection-message').filter({ hasText: '取得を中断しました' }).waitFor();
-  assert.equal(await page.locator('#message').textContent(), executionMessage);
-  assert.equal(await page.locator('#collection-pause').isDisabled(), true);
-  await page.locator('#collection-close').click();
-  await page.locator('#stop').click();
-  await waitInitialized(page);
-});
-
-test('C03: tasks without inline samples open, and corrupt snapshots preserve the current document', async () => {
-  const collection = await seedCollection();
-  const directory = path.join(app.dataDir, 'library/collections', libraryContest);
-  await writeFile(path.join(directory, 'collection_0.json'), JSON.stringify({ url: collection.tasks[0].url, title: 'A01 - No inline samples', statement: [{ type: 'text', text: 'サンプルは別ファイルで配布' }], samples: [] }));
-  await writeFile(path.join(directory, 'collection_1.json'), 'corrupt');
-  await showCollections();
-  await page.locator('#collection-tasks [data-action="open"]').first().click();
-  await page.locator('#problem-title').filter({ hasText: 'No inline samples' }).waitFor();
-  assert.equal(await page.locator('#collection-dialog').isVisible(), false);
-  assert.equal(await page.locator('#case-count').textContent(), '1 ケース');
-  assert.equal(await page.locator('#compare-output').isChecked(), false);
-  await page.locator('#code-editor').fill('puts 42');
-  const currentPath = await page.locator('#file-path').textContent();
-  await showCollections();
-  await page.locator('#collection-tasks [data-action="open"]').nth(1).click();
-  await page.locator('#collection-message').filter({ hasText: '不正' }).waitFor();
-  assert.equal(await editorText(page), 'puts 42');
-  assert.equal(await page.locator('#file-path').textContent(), currentPath);
-  await page.locator('#collection-close').click();
-});
-
-test('C04: individual repair requires confirmation and cancel or Escape never starts a request', async () => {
-  const collection = await seedCollection(3);
-  await Promise.all(collection.tasks.slice(0, 2).map(seedCollectionTask));
-  const original = await readFile(path.join(app.dataDir, 'library/collections', libraryContest, 'collection_0.json'), 'utf8');
-  await page.evaluate(async () => {
-    const { ide } = await import('./bridge.mjs');
-    window.repairCalls = 0;
-    ide.repairCollectionTask = async () => { window.repairCalls++; throw new Error('must not request'); };
-  });
-  await showCollections();
-  assert.equal(await page.locator('#collection-tasks [data-action="repair"]').nth(2).isDisabled(), true);
-  await page.locator('#collection-tasks [data-action="repair"]').first().click();
-  await page.locator('#collection-repair-dialog').waitFor();
-  assert.match(await page.locator('#collection-repair-target').textContent(), /A01.*Problem 1/);
-  assert.equal(await page.locator('#collection-repair-url').textContent(), collection.tasks[0].url);
-  assert.match(await page.locator('#collection-repair-warning').textContent(), /保存時と内容が変わっている/);
-  await page.setViewportSize({ width: 900, height: 650 });
-  assert.equal(await page.locator('#collection-repair-dialog').evaluate(el => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth; }), true);
-  await page.screenshot({ path: 'test-results/collection-repair.png' });
-  await page.locator('#collection-repair-cancel').click();
-  assert.equal(await page.locator('#collection-repair-dialog').isVisible(), false);
-  await page.locator('#collection-tasks [data-action="repair"]').first().click();
-  await page.keyboard.press('Escape');
-  assert.equal(await page.locator('#collection-repair-dialog').isVisible(), false);
-  assert.equal(await page.evaluate(() => window.repairCalls), 0);
-  assert.equal(await readFile(path.join(app.dataDir, 'library/collections', libraryContest, 'collection_0.json'), 'utf8'), original);
-  await page.locator('#collection-close').click();
-});
-
-test('C05: confirmed repair preserves current edits, other snapshots and the previous original on failure', async () => {
-  const collection = await seedCollection();
-  await Promise.all(collection.tasks.map(seedCollectionTask));
-  const directory = path.join(app.dataDir, 'library/collections', libraryContest);
-  const firstPath = path.join(directory, 'collection_0.json');
-  const secondPath = path.join(directory, 'collection_1.json');
-  const original = await readFile(firstPath, 'utf8');
-  await writeFile(secondPath, 'corrupt');
-  await showCollections();
-  await page.locator('#collection-tasks [data-action="open"]').first().click();
-  await page.locator('#problem-title').filter({ hasText: 'A01 - Problem 1' }).waitFor();
-  assert.equal(await page.locator('#collection-dialog').isVisible(), false);
-  await page.locator('#code-editor').fill('puts "my saved answer"');
-  await runAndWait();
-  const outputBeforeRepair = await page.locator('#stdout').textContent();
-  await page.locator('#code-editor').fill('puts "my edited answer"');
-  await page.locator('#stdin').fill('my edited case');
-  await waitSaved();
-  await page.locator('#problem-toggle').click();
-  const sourcePath = await page.locator('#file-path').textContent();
-  const savedCases = await readFile(path.join(path.dirname(sourcePath), 'cases.json'), 'utf8');
-  const manifestPath = path.join(app.dataDir, 'library/collections', `${libraryContest}.json`);
-  const manifest = await readFile(manifestPath, 'utf8');
-  const calls = [];
-  let fail = true;
-  await page.exposeFunction('__collectionRepair', async (url, taskUrl) => {
-    calls.push(taskUrl);
-    if (fail) { fail = false; throw new Error('network offline'); }
-    const task = collection.tasks.find(task => task.url === taskUrl);
-    const problem = { url: taskUrl, title: `${task.label} - Repaired`, statement: [{ type: 'text', text: '取り直した問題文' }], samples: [{ stdin: '8 9\n', expectedOutput: '17\n', compare: true }] };
-    await writeFile(path.join(directory, `${taskUrl.split('/').at(-1)}.json`), JSON.stringify(problem));
-    return { view: { collection, downloaded: collection.tasks.map(task => task.url) }, problem };
-  });
-  await page.evaluate(async () => { const { ide } = await import('./bridge.mjs'); ide.repairCollectionTask = (url, task) => window.__collectionRepair(url, task); });
-  await showCollections();
-  async function confirmRepair(index) {
-    await page.locator('#collection-tasks [data-action="repair"]').nth(index).click();
-    await page.locator('#collection-repair-confirm').click();
-    await page.waitForFunction(() => !document.getElementById('collection-register').disabled);
-  }
-  await confirmRepair(0);
-  await page.locator('#collection-message').filter({ hasText: 'network offline' }).waitFor();
-  assert.equal(await readFile(firstPath, 'utf8'), original);
-  await confirmRepair(0);
-  assert.equal(await page.locator('#problem-title').textContent(), 'A01 - Repaired');
-  assert.equal(await page.locator('#problem-statement').textContent(), '取り直した問題文');
-  assert.equal(await page.locator('#problem-panel').isVisible(), false);
-  assert.equal(await editorText(page), 'puts "my edited answer"');
-  assert.equal(await page.locator('#stdin').inputValue(), 'my edited case');
-  assert.equal(await page.locator('#expected-output').inputValue(), '3\n');
-  assert.equal(await page.locator('#stdout').textContent(), outputBeforeRepair);
-  assert.equal(await page.locator('#file-path').textContent(), sourcePath);
-  assert.equal(await readFile(sourcePath, 'utf8'), 'puts "my edited answer"');
-  assert.equal(await readFile(path.join(path.dirname(sourcePath), 'cases.json'), 'utf8'), savedCases);
-  assert.equal(await readFile(secondPath, 'utf8'), 'corrupt');
-  await confirmRepair(1);
-  assert.equal(await page.locator('#problem-title').textContent(), 'A01 - Repaired');
-  assert.equal(JSON.parse(await readFile(secondPath, 'utf8')).title, 'A02 - Repaired');
-  assert.deepEqual(calls, [collection.tasks[0].url, collection.tasks[0].url, collection.tasks[1].url]);
-  assert.equal(await readFile(manifestPath, 'utf8'), manifest);
-  await page.locator('#collection-close').click();
-  await page.locator('#problem-toggle').click();
-  assert.equal(await page.locator('#problem-panel').isVisible(), true);
-  assert.equal(await page.locator('#problem-statement').textContent(), '取り直した問題文');
-});
-
-test('P10: formulas and saved images render offline and enlarge without changing the workspace', async () => {
-  const problem = await seedProblem('media');
-  const data = 'data:image/svg+xml;base64,' + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="320"><rect width="640" height="320" fill="white"/><path d="M60 240 L320 60 L580 240 Z" stroke="black" fill="none"/><text x="300" y="40" font-size="24">A</text></svg>').toString('base64');
-  problem.statement = [
-    { type: 'text', text: '数式と図\n<script>window.injected = true</script>' },
-    { type: 'math', text: String.raw`\frac{a_1}{2}+\sum_{i=1}^{N} i`, display: true },
-    { type: 'code', text: '<img onerror=alert(1)> $literal$' },
-    { type: 'image', url: 'https://img.atcoder.jp/test/diagram.png', alt: '保存した図', data, width: 640, height: 320 },
-    { type: 'math', text: String.raw`\notARealCommand`, display: false }
-  ];
-  await writeFile(path.join(app.dataDir, 'library/problems', libraryContest, 'media', 'problem.json'), JSON.stringify(problem));
-  await openProblemDialog(problem.url); await page.locator('#problem-open').click(); await waitProblem();
-  assert.equal(await page.locator('#problem-panel').isVisible(), true, await page.locator('#message').textContent());
-  assert.equal(await page.locator('#problem-statement .katex').count(), 1);
-  assert.equal(await page.locator('#problem-statement script').count(), 0);
-  assert.equal(await page.evaluate(() => window.injected), undefined);
-  await page.locator('#problem-statement img').evaluate(image => image.decode());
-  await page.locator('#code-editor').fill('puts "keep edits"');
-  await page.locator('#stdin').fill('keep case');
-  const source = await page.locator('#file-path').textContent();
-  for (const [width, height] of [[1440, 900], [900, 650]]) {
-    await page.setViewportSize({ width, height });
-    await assertWorkspaceFits();
-    const image = page.locator('#problem-statement img');
-    assert.ok(await image.evaluate(el => el.getBoundingClientRect().width <= el.parentElement.clientWidth));
-    await page.screenshot({ path: `test-results/problem-media-${width}.png` });
-    await image.click();
-    assert.equal(await page.locator('#image-dialog').isVisible(), true);
-    assert.equal(await page.locator('#image-preview').getAttribute('src'), data);
-    await page.keyboard.press('Escape');
-    assert.equal(await page.locator('#image-dialog').isVisible(), false);
-    await page.locator('#problem-statement button').focus();
-    await page.keyboard.press('Enter');
-    await page.locator('#image-close').click();
-  }
-  await page.locator('#problem-statement').evaluate(el => { el.scrollTop = 80; });
-  const scroll = await page.locator('#problem-statement').evaluate(el => el.scrollTop);
-  assert.ok(scroll > 0);
-  await page.locator('#problem-toggle').click();
-  await page.locator('#problem-library').click();
-  await page.evaluate(async problem => {
-    const { ide } = await import('./bridge.mjs'); ide.refreshProblem = async () => problem;
-  }, problem);
-  await page.locator('#problem-refresh').click(); await waitProblem();
-  assert.equal(await page.locator('#problem-panel').isVisible(), false);
-  await page.locator('#problem-close').click(); await page.locator('#problem-toggle').click();
-  await page.locator('#problem-statement img').evaluate(image => image.decode());
-  assert.equal(await page.locator('#problem-statement').evaluate(el => el.scrollTop), scroll);
-  await page.screenshot({ path: 'test-results/problem-media.png' });
-  assert.equal(await editorText(page), 'puts "keep edits"');
-  assert.equal(await page.locator('#stdin').inputValue(), 'keep case');
-  assert.equal(await page.locator('#file-path').textContent(), source);
-  await waitSaved();
-  await page.reload(); await waitInitialized(page);
-  await openProblemDialog(problem.url); await page.locator('#problem-open').click(); await waitProblem();
-  await page.locator('#problem-statement img').evaluate(image => image.decode());
-  assert.equal(await page.locator('#problem-statement .katex').count(), 1);
-  assert.equal(await editorText(page), 'puts "keep edits"');
-});
-
-test('P11: SVG styles and internal references render with preformatted and legacy math offline', async () => {
-  const problem = await seedProblem('internal-svg');
-  const svg = await readFile(path.join(__dirname, '../fixtures/internal-diagram.svg'));
-  const data = 'data:image/svg+xml;base64,' + svg.toString('base64');
-  problem.statement = [
-    { type: 'text', text: '入力形式と旧形式の数式\n' },
-    { type: 'math', text: '10^{9}', display: false },
-    { type: 'preformatted', parts: [
-      { type: 'text', text: '  ' }, { type: 'math', text: 'H_{1}', display: false },
-      { type: 'text', text: '\n  ' }, { type: 'math', text: 'H_{2}', display: false },
-      { type: 'text', text: '\n$literal$ <script>\n' }
-    ] },
-    { type: 'code', text: '$literal$ <script>' },
-    { type: 'image', url: 'https://img.atcoder.jp/test/internal.svg', alt: '内部CSSの矢印とグラデーション', data, width: 240, height: 120 }
-  ];
-  await writeFile(path.join(app.dataDir, 'library/problems', libraryContest, 'internal-svg', 'problem.json'), JSON.stringify(problem));
-  async function verify() {
-    await openProblemDialog(problem.url); await page.locator('#problem-open').click(); await waitProblem();
-    assert.equal(await page.locator('#problem-title').textContent(), problem.title, await page.locator('#message').textContent());
-    const input = page.locator('#problem-statement pre').first();
-    assert.equal(await input.locator('.katex').count(), 2);
-    assert.deepEqual(await input.evaluate(el => [...el.childNodes].filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent)), ['  ', '\n  ', '\n$literal$ <script>\n']);
-    assert.equal(await input.locator('msub').count(), 2);
-    assert.equal(await page.locator('#problem-statement msup').count(), 1);
-    assert.equal(await page.locator('#problem-statement pre').nth(1).textContent(), '$literal$ <script>');
-    assert.equal(await page.locator('#problem-statement pre').nth(1).locator('.katex').count(), 0);
-    assert.equal(await page.locator('#problem-statement script, #problem-statement style').count(), 0);
-    await page.locator('#problem-statement img').evaluate(image => image.decode());
-    assert.equal(await page.locator('#problem-statement img').getAttribute('src'), data);
-    await page.locator('.statement-image').click();
-    await page.locator('#image-preview').evaluate(image => image.decode());
-    await page.keyboard.press('Escape');
-  }
-  await verify();
-  await mkdir('test-results', { recursive: true });
-  for (const [width, height] of [[1440, 900], [900, 650]]) {
-    await page.setViewportSize({ width, height });
-    await assertWorkspaceFits();
-    await page.screenshot({ path: `test-results/problem-internal-svg-${width}.png` });
-  }
-  await page.reload(); await waitInitialized(page);
-  await verify();
-});
-
 test('P12: optional problem limits and per-case time warnings work offline at both window sizes', async () => {
-  const legacy = await seedProblem('limits_unknown');
-  await openProblemDialog(legacy.url); await page.locator('#problem-open').click(); await waitProblem();
   assert.equal(await page.locator('#problem-limits').count(), 1);
-  assert.equal(await page.locator('#problem-limits').textContent(), '実行時間制限: 不明 / メモリ制限: 不明');
+  assert.equal(await page.locator('#problem-limits').textContent(), '実行時間制限 不明 / メモリ制限 不明');
   assert.equal(await page.locator('#time-limit-warning').isVisible(), false);
-  const problem = await seedProblem('limits');
-  Object.assign(problem, { timeLimitMs: 1000, memoryLimitMiB: 1024,
-    samples: [{ stdin: '0', expectedOutput: 'ok\n'.repeat(1000), compare: true }, { stdin: '1.1', expectedOutput: 'ok\n'.repeat(1000), compare: true }] });
-  await writeFile(path.join(app.dataDir, 'library/problems', libraryContest, 'limits', 'problem.json'), JSON.stringify(problem));
-  await openProblemDialog(problem.url); await page.locator('#problem-open').click(); await waitProblem();
-  assert.equal(await page.locator('#problem-limits').textContent(), '実行時間制限: 1 秒 / メモリ制限: 1024 MiB');
+  const samples = [{ stdin: '0', expectedOutput: 'ok\n'.repeat(1000) }, { stdin: '1.1', expectedOutput: 'ok\n'.repeat(1000) }];
+  await openStarter({ task: 'limits', taskData: { samples, timeLimitMs: 1000, memoryLimitMiB: 1024 }, cases: samples.map(sample => ({ ...sample, compare: true })) });
+  assert.equal(await page.locator('#problem-limits').textContent(), '実行時間制限 1 秒 / メモリ制限 1024 MiB');
   await page.locator('#code-editor').fill('sleep STDIN.read.to_f; 1000.times { puts "ok" }');
   await page.locator('#run-all').click();
   await page.locator('#cases-summary').filter({ hasText: /完了 2 \/ 2.*一致 2/ }).waitFor();
@@ -1562,7 +919,7 @@ test('P12: optional problem limits and per-case time warnings work offline at bo
   assert.equal(await page.locator('#time-limit-warning').textContent(), '制限超過の可能性（問題の制限 1 秒）');
   assert.equal(await page.locator('#time-limit-warning').isVisible(), true);
   assert.equal(await page.locator('#comparison-status').textContent(), '一致');
-  for (const [width, height] of [[1440, 900], [1200, 650], [900, 650]]) {
+  for (const [width, height] of [[1440, 900], [1280, 720]]) {
     await page.setViewportSize({ width, height });
     await page.addStyleTag({ content: '#problem-limits, .run-summary { line-height: 24px; }' });
     await assertWorkspaceFits();
@@ -1581,38 +938,9 @@ test('P12: optional problem limits and per-case time warnings work offline at bo
   assert.equal(await page.locator('#time-limit-warning').isVisible(), false);
 });
 
-test('P13: refreshing limits applies to the next run and preserves the old result limit', async () => {
-  const problem = await seedProblem('limits_refresh');
-  Object.assign(problem, { timeLimitMs: 1, memoryLimitMiB: 64 });
-  await writeFile(path.join(app.dataDir, 'library/problems', libraryContest, 'limits_refresh', 'problem.json'), JSON.stringify(problem));
-  await openProblemDialog(problem.url); await page.locator('#problem-open').click(); await waitProblem();
-  await page.locator('#code-editor').fill('puts 3');
-  await runAndWait();
-  assert.equal(await page.locator('#execution-limit').textContent(), '実行時上限 5 秒');
-  assert.equal(await page.locator('#time-limit-warning').textContent(), '制限超過の可能性（問題の制限 0.001 秒）');
-  await page.evaluate(async problem => {
-    const { ide } = await import('./bridge.mjs');
-    ide.refreshProblem = async () => ({ ...problem, timeLimitMs: 60000, memoryLimitMiB: 1024 });
-  }, problem);
-  await page.locator('#problem-library').click();
-  await page.locator('#problem-refresh').click(); await waitProblem();
-  assert.equal(await page.locator('#problem-limits').textContent(), '実行時間制限: 60 秒 / メモリ制限: 1024 MiB');
-  assert.equal(await page.locator('#execution-limit').textContent(), '実行時上限 5 秒');
-  assert.equal(await page.locator('#time-limit-warning').isVisible(), true);
-  assert.equal(await page.locator('#time-limit-warning').textContent(), '制限超過の可能性（問題の制限 0.001 秒）');
-  await page.locator('#problem-close').click();
-  await runAndWait();
-  assert.equal(await page.locator('#execution-limit').textContent(), '実行時上限 30 秒');
-  assert.equal(await page.locator('#time-limit-warning').isVisible(), false);
-  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
-});
-
 test('P14: long problem runs receive their budget before output and keep per-case limits', async () => {
-  const problem = await seedProblem('long_execution');
-  Object.assign(problem, { timeLimitMs: 8000, memoryLimitMiB: 1024,
-    samples: [{ stdin: '6', expectedOutput: 'ok\n', compare: true }, { stdin: '0', expectedOutput: 'ok\n', compare: true }] });
-  await writeFile(path.join(app.dataDir, 'library/problems', libraryContest, 'long_execution', 'problem.json'), JSON.stringify(problem));
-  await openProblemDialog(problem.url); await page.locator('#problem-open').click(); await waitProblem();
+  const samples = [{ stdin: '6', expectedOutput: 'ok\n' }, { stdin: '0', expectedOutput: 'ok\n' }];
+  await openStarter({ task: 'long_execution', taskData: { samples, timeLimitMs: 8000, memoryLimitMiB: 1024 }, cases: samples.map(sample => ({ ...sample, compare: true })) });
   assert.equal(await page.locator('#execution-limit').count(), 1);
   assert.equal(await page.locator('#execution-limit').textContent(), '実行上限 5〜30 秒');
   await page.locator('#code-editor').fill('sleep STDIN.read.to_f; puts :ok');
@@ -1629,17 +957,10 @@ test('P14: long problem runs receive their budget before output and keep per-cas
   await page.locator('#stop').click();
   await page.locator('#run-status').filter({ hasText: '停止しました' }).waitFor();
   assert.equal(await page.locator('#execution-limit').textContent(), '実行時上限 9 秒');
-  await page.evaluate(async problem => {
-    const { ide } = await import('./bridge.mjs');
-    ide.refreshProblem = async () => ({ ...problem, timeLimitMs: 60000 });
-  }, problem);
-  await page.locator('#problem-library').click(); await page.locator('#problem-refresh').click(); await waitProblem();
-  await page.locator('#problem-close').click();
-  assert.equal(await page.locator('#execution-limit').textContent(), '実行時上限 9 秒');
   await page.evaluate(async () => {
     const { ide } = await import('./bridge.mjs');
     ide.run = async (code, stdin, expectedOutput, tolerance, problemTimeLimitMs, notify) => {
-      if (problemTimeLimitMs !== 60000) throw new Error('run did not use the new problem limit');
+      if (problemTimeLimitMs !== 8000) throw new Error('run did not use the problem limit');
       notify({ type: 'started', executionLimitMs: 30000 });
       return { status: 'timeout', stdout: '', stderr: '', exitCode: 1, durationMs: 30001, executionLimitMs: 30000, comparison: null, difference: null, errorLine: null };
     };
@@ -1649,7 +970,7 @@ test('P14: long problem runs receive their budget before output and keep per-cas
   assert.equal(await page.locator('#execution-limit').textContent(), '実行時上限 30 秒');
   assert.equal(await page.locator('#comparison-status').textContent(), '判定なし');
   assert.match(await page.locator('#case-select option').nth(1).textContent(), /30 秒/);
-  for (const [width, height] of [[1440, 900], [1200, 650], [900, 650]]) {
+  for (const [width, height] of [[1440, 900], [1280, 720]]) {
     await page.setViewportSize({ width, height });
     await assertWorkspaceFits();
     const right = await page.locator('#execution-limit').evaluate(element => element.getBoundingClientRect().right);
@@ -1662,9 +983,107 @@ test('P14: long problem runs receive their budget before output and keep per-cas
   assert.equal(await page.locator('#execution-limit').textContent(), '実行上限 5〜30 秒');
 });
 
+const railIcon = contest => page.locator(`#contest-icons .rail-icon[aria-label="テスト ${contest}"]`);
+
+test('M17/M18: a registered contest lists its tasks in official order and the four columns fit 1280x720', async () => {
+  const contest = `${testContest}-list`;
+  const first = await seedWorkspaceProblem(app, contest, 'list_b', { label: 'A', title: '最初' });
+  await seedWorkspaceProblem(app, contest, 'list_a', { label: 'B', title: '次' });
+  await page.locator('#contest-add').click();
+  await page.locator('#contest-url').fill(`https://atcoder.jp/contests/${contest}`);
+  await page.locator('#contest-register').click();
+  await page.waitForFunction(() => !document.querySelector('dialog[open]'));
+  assert.equal(await railIcon(contest).getAttribute('aria-pressed'), 'true');
+  assert.deepEqual(await page.locator('.task-item .task-label').allTextContents(), ['A', 'B']);
+  assert.equal(await page.locator('#problem-title').textContent(), starterProblem.title);
+  await selectTask(page, first);
+  await page.locator('#problem-title').filter({ hasText: 'A - 最初' }).waitFor();
+  assert.equal(await page.locator(`.task-item[data-url="${first.url}"]`).getAttribute('aria-current'), 'true');
+  const saved = JSON.parse(await readFile(path.join(app.dataDir, 'contests', `${contest}.json`), 'utf8'));
+  assert.deepEqual(saved.tasks.map(task => task.label), ['A', 'B']);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const columns = await page.evaluate(() => ['contest-rail', 'task-list', 'editor-host', 'browser-host'].map(id => document.getElementById(id).getBoundingClientRect().width));
+  assert.ok(columns.every(width => width > 30), JSON.stringify(columns));
+  assert.ok(columns[3] >= 300, JSON.stringify(columns));
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await assertWorkspaceFits();
+  await page.screenshot({ path: 'test-results/contest-columns-1280.png' });
+});
+
+test('M18: each task has its own page, pages close with the contest and the memory use is reported', { skip: runner !== 'native' && 'needs the WebView2 child pages' }, async () => {
+  const contest = `${testContest}-memory`;
+  const problems = [];
+  for (const label of 'ABCDEFGH') problems.push(await seedWorkspaceProblem(app, contest, `memory_${label.toLowerCase()}`, { label, page: { samples: [['1\n', '1\n']] } }));
+  const taskPages = () => app.browser.contexts()[0].pages().filter(candidate => candidate.url().startsWith(`${app.atcoder.origin}/contests/${contest}/tasks/`));
+  const waitPages = async count => {
+    const deadline = Date.now() + 15000;
+    while (taskPages().length !== count) {
+      if (Date.now() > deadline) throw new Error(`expected ${count} task pages, got ${taskPages().length}`);
+      await pause(200);
+    }
+  };
+  await openProblem(page, problems[0]);
+  for (const problem of problems.slice(1)) {
+    await selectTask(page, problem);
+    await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
+  }
+  await waitPages(8);
+  const open = await memoryUse(app);
+  await page.locator(`#contest-icons .rail-icon[aria-label="テスト ${testContest}"]`).click();
+  await waitPages(0);
+  console.log(JSON.stringify({ taskPages: 8, open, closed: await memoryUse(app) }));
+  assert.ok(open.processes > 1, JSON.stringify(open));
+});
+
+test('M16: a task without saved data is read from its page with samples and limits', async () => {
+  const problem = await seedWorkspaceProblem(app, testContest, 'read_page', { task: null, code: null, cases: null, page: { samples: [['1 2\n', '3\n'], ['10 20\n', '30\n']], timeLimit: '2 sec', memoryLimit: '256 MiB' } });
+  await openProblem(page, problem);
+  assert.equal(await page.locator('#stdin').inputValue(), '1 2\n');
+  assert.equal(await page.locator('#expected-output').inputValue(), '3\n');
+  assert.equal(await page.locator('#compare-output').isChecked(), true);
+  assert.equal(await page.locator('#case-count').textContent(), '2 ケース');
+  assert.equal(await page.locator('#problem-limits').textContent(), '実行時間制限 2 秒 / メモリ制限 256 MiB');
+  const task = JSON.parse(await readFile(path.join(problem.workspace, 'task.json'), 'utf8'));
+  assert.deepEqual(task, { url: problem.url, samples: [{ stdin: '1 2\n', expectedOutput: '3\n' }, { stdin: '10 20\n', expectedOutput: '30\n' }], timeLimitMs: 2000, memoryLimitMiB: 256 });
+  await page.locator('#code-editor').fill('puts STDIN.read.split.map(&:to_i).sum');
+  await page.locator('#run-all').click();
+  await page.locator('#cases-summary').filter({ hasText: /完了 2 \/ 2.*一致 2/ }).waitFor();
+});
+
+test('M16: a page that needs login asks to log in and opens once the page can be read', async () => {
+  const problem = await seedWorkspaceProblem(app, testContest, 'needs_login', { task: null, code: null, cases: null });
+  await page.locator('#contest-add').click();
+  await page.locator('#contest-url').fill(problem.url);
+  await page.locator('#contest-register').click();
+  await page.locator('#task-message').filter({ hasText: 'ログイン' }).waitFor();
+  assert.equal(await page.locator('#problem-title').textContent(), starterProblem.title);
+  await assert.rejects(access(path.join(problem.workspace, 'task.json')), { code: 'ENOENT' });
+  app.atcoder.pages.set(`/contests/${testContest}/tasks/needs_login`, taskPage({ samples: [['x\n', 'x\n']] }));
+  await selectTask(page, problem);
+  await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
+  assert.equal(await page.locator('#stdin').inputValue(), 'x\n');
+});
+
+test('M17: contest icons can be hidden and restored from the rail', async () => {
+  const icon = railIcon(testContest);
+  await icon.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: /非表示にする/ }).click();
+  await icon.waitFor({ state: 'detached' });
+  assert.equal(JSON.parse(await readFile(path.join(app.dataDir, 'contests', `${testContest}.json`), 'utf8')).hidden, true);
+  assert.equal(await page.locator('#problem-title').textContent(), starterProblem.title);
+  await page.locator('#contest-rail').click({ button: 'right', position: { x: 28, y: 300 } });
+  await page.getByRole('menuitem', { name: /表示する/ }).click();
+  await icon.waitFor();
+  assert.equal(JSON.parse(await readFile(path.join(app.dataDir, 'contests', `${testContest}.json`), 'utf8')).hidden, false);
+  await workspaceStillOpen();
+});
+async function workspaceStillOpen() {
+  await runAndWait();
+  assert.equal(await page.locator('#stdout').textContent(), '6 test\n');
+}
+
 test('T01: tolerant comparison keeps exact whitespace, separate columns and saved per-case settings', async () => {
-  const problem = await seedProblem('tolerance');
-  await openProblemDialog(problem.url); await page.locator('#problem-open').click(); await waitProblem();
+  await openStarter({ task: 'tolerance', cases: [{ stdin: '1 2\n', expectedOutput: '3\n', compare: true }, { stdin: '10 20\n', expectedOutput: '30\n', compare: true }] });
   assert.equal(await page.locator('#tolerant-compare').count(), 1);
   assert.equal(await page.locator('#tolerant-compare').isChecked(), false);
   await page.locator('#code-editor').fill('puts "0.500 日😀A"');
@@ -1689,7 +1108,7 @@ test('T01: tolerant comparison keeps exact whitespace, separate columns and save
   assert.match(await page.locator('#stderr').textContent(), /許容誤差/);
   await page.locator('#tolerance').fill('1e-9');
   await waitSaved();
-  const saved = JSON.parse(await readFile(path.join(app.dataDir, 'workspaces', libraryContest, 'tolerance', 'cases.json'), 'utf8'));
+  const saved = JSON.parse(await readFile(starterProblem.cases, 'utf8'));
   assert.equal(saved.cases[0].tolerance, 1e-9);
   assert.equal(saved.cases[1].tolerance, undefined);
   await selectCase(2);
@@ -1697,7 +1116,7 @@ test('T01: tolerant comparison keeps exact whitespace, separate columns and save
   await selectCase(1);
   assert.equal(Number(await page.locator('#tolerance').inputValue()), 1e-9);
   await runAndWait();
-  for (const [width, height] of [[1440, 900], [1200, 650], [900, 650]]) {
+  for (const [width, height] of [[1440, 900], [1280, 720]]) {
     await page.setViewportSize({ width, height });
     await page.evaluate(() => { document.body.style.lineHeight = '1.8'; });
     await assertWorkspaceFits();

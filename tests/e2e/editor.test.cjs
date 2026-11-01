@@ -4,7 +4,7 @@ const { mkdtemp, rm, readFile, mkdir } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 const { launch, close } = require('./support.cjs');
-const { seedProblem, openProblem, waitInitialized } = require('./workspace.cjs');
+const { seedProblem, openProblem, removeContest, waitInitialized } = require('./workspace.cjs');
 const { editorText } = require('./editor.cjs');
 describe('Ruby editor', () => {
 let app, page, root, starter;
@@ -23,7 +23,7 @@ beforeEach(async () => {
 });
 after(async () => {
   if (app) await close(app);
-  if (app) for (const kind of ['library/problems', 'workspaces']) await rm(path.join(app.dataDir, kind, contest), { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  if (app) await removeContest(app, contest);
   if (root) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 async function openWith(task, code) {
@@ -42,7 +42,7 @@ test('E01: Ruby highlighting, line numbers and search fit the minimum viewport',
   assert.ok(colors.length >= 3, JSON.stringify(colors));
   assert.ok(await page.locator('.cm-lineNumbers').textContent().then(text => text.includes('4')));
   await code().fill('puts "long line" # ' + 'x'.repeat(300) + '\n' + 'puts 1\n'.repeat(120));
-  for (const [width, height] of [[1440, 900], [900, 650]]) {
+  for (const [width, height] of [[1440, 900], [1280, 720]]) {
     await page.setViewportSize({ width, height });
     await code().press('Control+Home');
     await page.getByRole('button', { name: '検索・置換', exact: true }).click();
@@ -280,14 +280,14 @@ test('E09: completion is blocked during composition and resets with the problem'
   } finally { await cdp.detach(); }
 });
 test('E10: completion fits a small viewport and works near the end of a large document', async () => {
-  await page.setViewportSize({ width: 900, height: 650 });
+  await page.setViewportSize({ width: 1280, height: 720 });
   await openWith('completion_large', '# long document\n'.repeat(50000) + 'total_count = 1\ntot');
   await code().press('Control+End'); await code().press('Control+Space'); await completions();
   await option('total_count').waitFor();
   const bounds = await page.locator('.cm-tooltip-autocomplete').boundingBox();
-  assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 900 && bounds.y + bounds.height <= 650, JSON.stringify(bounds));
+  assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 1280 && bounds.y + bounds.height <= 720, JSON.stringify(bounds));
   await mkdir('test-results', { recursive: true });
-  await page.screenshot({ path: 'test-results/ruby-completion-900.png' });
+  await page.screenshot({ path: 'test-results/ruby-completion-1280.png' });
   await option('total_count').click();
   assert.ok((await editorText(page)).endsWith('\ntotal_count'));
 });
@@ -328,15 +328,15 @@ test('E15: literal method completion shows offline argument hints and preserves 
   await code().press('Escape');
   assert.equal(await page.locator('#comparison-status').textContent(), '一致');
   assert.equal(await editorText(page), 'puts("abc".upcase)');
-  await page.setViewportSize({ width: 900, height: 650 });
+  await page.setViewportSize({ width: 1280, height: 720 });
   await code().fill('{}.fe'); await code().press('Control+Space'); await completions();
   await info.filter({ hasText: 'Hash#fetch' }).waitFor();
   for (const selector of ['.cm-tooltip-autocomplete', '.cm-completionInfo']) {
     const bounds = await page.locator(selector).boundingBox();
-    assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 901 && bounds.y + bounds.height <= 651, JSON.stringify(bounds));
+    assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 1281 && bounds.y + bounds.height <= 721, JSON.stringify(bounds));
   }
   await mkdir('test-results', { recursive: true });
-  await page.screenshot({ path: 'test-results/ruby-method-hints-900.png' });
+  await page.screenshot({ path: 'test-results/ruby-method-hints-1280.png' });
 });
 
 test('E16: local variables select typed methods, refresh hints after assignment edits and preserve save-run', async () => {
@@ -406,14 +406,14 @@ test('E17: real LSP completes unsaved declarations with UTF-16 edits offline and
     assert.equal(await readFile(file, 'utf8'), expected);
     await code().press('Control+Enter'); await page.locator('#run-status').filter({ hasText: /^正常終了$/ }).waitFor();
     assert.equal(await page.locator('#stdout').textContent(), '42\n');
-    await page.setViewportSize({ width: 900, height: 650 });
+    await page.setViewportSize({ width: 1280, height: 720 });
     await code().fill(original); await code().press('Control+End'); await code().press('Control+Space'); await completions();
     await page.locator('.cm-completionInfo').filter({ hasText: 'EditorProbe#unique_editor_method' }).waitFor();
     for (const selector of ['.cm-tooltip-autocomplete', '.cm-completionInfo', '.completion-state']) {
       const bounds = await page.locator(selector).boundingBox();
-      assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 901 && bounds.y + bounds.height <= 651, JSON.stringify(bounds));
+      assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 1281 && bounds.y + bounds.height <= 721, JSON.stringify(bounds));
     }
-    await page.screenshot({ path: 'test-results/lsp-completion-900.png' });
+    await page.screenshot({ path: 'test-results/lsp-completion-1280.png' });
     await code().fill('Math::P'); await code().press('Control+Space'); await completions();
     await option('Math::PI').waitFor(); await option('Math::PI').click();
     assert.equal(await editorText(page), 'Math::PI');
@@ -511,7 +511,7 @@ test('E11: runtime and syntax errors navigate without changing code, saved state
   await page.locator('#run').click(); await page.waitForFunction(() => !document.getElementById('run').disabled);
   const jump = page.getByRole('button', { name: 'コードの82行目へ', exact: true });
   await jump.waitFor();
-  await page.setViewportSize({ width: 900, height: 650 });
+  await page.setViewportSize({ width: 1280, height: 720 });
   await jump.focus(); await page.keyboard.press('Enter');
   assert.equal(await page.locator('#cursor-position').textContent(), 'Ln 82, Col 1');
   assert.equal(await code().evaluate(el => el === document.activeElement), true);
@@ -524,7 +524,7 @@ test('E11: runtime and syntax errors navigate without changing code, saved state
   const editorRect = await page.locator('.cm-scroller').boundingBox();
   assert.ok(rect.y >= editorRect.y && rect.y + rect.height <= editorRect.y + editorRect.height);
   await mkdir('test-results', { recursive: true });
-  await page.screenshot({ path: 'test-results/run-error-900.png' });
+  await page.screenshot({ path: 'test-results/run-error-1280.png' });
   await code().press('Control+s'); await waitSaved();
   assert.equal(await jump.isVisible(), true);
   assert.equal(await jump.isEnabled(), true);

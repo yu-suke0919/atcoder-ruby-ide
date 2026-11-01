@@ -1,7 +1,6 @@
 import { ide } from './bridge.mjs';
 import { createEditor } from './editor.mjs';
 import { createLspClient } from './lsp-completion.mjs';
-import { renderStatement } from './presentation.mjs';
 import { SampleCases, MAX_CASES } from './sample-cases.mjs';
 
 const $ = (id) => document.getElementById(id);
@@ -11,18 +10,14 @@ const compareOutput = $('compare-output');
 const tolerantCompare = $('tolerant-compare');
 const toleranceInput = $('tolerance');
 const differenceDialog = $('difference-dialog');
-const problemDialog = $('problem-dialog');
-const collectionDialog = $('collection-dialog');
-const imageDialog = $('image-dialog');
-$('image-close').addEventListener('click', () => imageDialog.close());
-const collectionRepairDialog = $('collection-repair-dialog');
-let repairTarget = null;
+const contestDialog = $('contest-dialog');
+const railMenu = $('rail-menu');
+// The opened task: the saved task data plus its label and title from the task list.
 let activeProblem = null;
-let activeCollectionUrl = null;
-let collectionViews = [];
-let selectedCollection = null;
-let collectionDownloading = false;
-let cancelCollection = false;
+let contests = [];
+let selectedContest = null;
+// The task whose page is being read; it opens when its task-page event arrives.
+let pendingTask = null;
 const saveFailedDialog = $('save-failed-dialog');
 const cases = new SampleCases([{ stdin: '', expectedOutput: '', compare: false }]);
 // Edits are written to the opened problem's workspace after a short pause; Ctrl+S writes immediately.
@@ -92,7 +87,7 @@ async function saveNow() {
   saving = (async () => {
     try {
       if (codeChanged) { await ide.saveCode(code); if (problem.url === activeProblem?.url) savedCode = code; }
-      if (casesChanged) { await ide.saveProblemCases(problem.url, data); if (problem.url === activeProblem?.url) cases.markSaved(data); }
+      if (casesChanged) { await ide.saveTaskCases(problem.url, data); if (problem.url === activeProblem?.url) cases.markSaved(data); }
       saveError = null;
     } catch (error) {
       saveError = error.message;
@@ -109,7 +104,7 @@ async function saveNow() {
 
 function confirmSaveFailed() {
   $('save-failed-message').textContent = `${saveError}\n保存できなかった変更を破棄して続けますか？`;
-  saveFailedDialog.showModal();
+  openDialog(saveFailedDialog);
   return new Promise(resolve => { resolveSaveFailed = resolve; });
 }
 function finishSaveFailed(discard) {
@@ -171,7 +166,7 @@ function openDifference() {
     : `最初の不一致：${detail.line} 行 実際 ${detail.column} 列 / 期待 ${detail.expectedColumn} 列`;
   showDifferenceLine($('difference-expected'), detail.expectedLine, detail.expectedColumn);
   showDifferenceLine($('difference-actual'), detail.actualLine, detail.column);
-  differenceDialog.showModal();
+  openDialog(differenceDialog);
 }
 $('comparison-status').addEventListener('click', openDifference);
 $('difference-close').addEventListener('click', () => differenceDialog.close());
@@ -255,13 +250,11 @@ function resetComparison(all = false) {
 function message(text, error = false) {
   $('message').textContent = text;
   $('message').dataset.error = String(error);
-  $('problem-message').textContent = text;
-  $('problem-message').dataset.error = String(error);
 }
 
-function collectionMessage(text, error = false) {
-  $('collection-message').textContent = text;
-  $('collection-message').dataset.error = String(error);
+function taskMessage(text, error = false) {
+  $('task-message').textContent = text;
+  $('task-message').dataset.error = String(error);
 }
 
 function updateEditor() {
@@ -280,19 +273,8 @@ function updateCursor() {
 
 function updateButtons() {
   const locked = fileBusy || closing || !activeProblem;
-  $('problem-toggle').disabled = !activeProblem || fileBusy || closing;
-  for (const id of ['collection-repair-cancel', 'collection-repair-confirm']) $(id).disabled = fileBusy || closing || running;
-  $('collections').disabled = fileBusy || closing;
-  for (const id of ['collection-register', 'collection-url', 'collection-select']) $(id).disabled = fileBusy || closing || running || collectionDownloading;
-  $('collection-close').disabled = fileBusy;
-  $('collection-resume').disabled = collectionDownloading || fileBusy || closing || running || !selectedCollection || selectedCollection.downloaded.length === selectedCollection.collection.tasks.length;
-  $('collection-pause').disabled = !collectionDownloading || cancelCollection;
-  for (const button of $('collection-tasks').querySelectorAll('button')) button.disabled = collectionDownloading || fileBusy || closing || running || button.dataset.available !== 'true';
-  $('problem-library').disabled = fileBusy || closing;
-  for (const id of ['problem-open', 'problem-url']) $(id).disabled = running || fileBusy || closing;
-  $('problem-refresh').disabled = running || fileBusy || closing || activeCollectionUrl !== null;
-  $('problem-refresh').title = activeCollectionUrl ? '問題集は初回取得した内容を固定保存しています。' : '';
-  $('problem-close').disabled = fileBusy;
+  for (const button of document.querySelectorAll('.task-item')) button.disabled = fileBusy || closing || running;
+  $('contest-add').disabled = fileBusy || closing;
   $('ruby-recheck').disabled = rubyChecking || running || fileBusy || closing;
   for (const id of ['run', 'run-all']) $(id).disabled = running || !rubyAvailable || locked;
   $('case-add').disabled = running || locked || cases.items.length >= MAX_CASES;
@@ -414,7 +396,7 @@ document.addEventListener('keydown', (event) => {
   if (!event.ctrlKey && !event.metaKey) return;
   const key = event.key.toLowerCase();
   if (['s', 'o', 'enter'].includes(key)) event.preventDefault();
-  if (differenceDialog.open || problemDialog.open || collectionDialog.open || collectionRepairDialog.open || imageDialog.open || saveFailedDialog.open) return;
+  if (document.querySelector('dialog[open]')) return;
   if (key === 's' && activeProblem && !closing) saveNow();
   if (key === 'enter') run();
 });
@@ -424,193 +406,187 @@ function showProblem() {
   $('problem-title').textContent = activeProblem ? activeProblem.title : '問題を選んでください';
   $('problem-title').title = activeProblem?.title || '';
   $('problem-limits').textContent = activeProblem
-    ? `実行時間制限: ${activeProblem.timeLimitMs == null ? '不明' : `${activeProblem.timeLimitMs / 1000} 秒`} / メモリ制限: ${activeProblem.memoryLimitMiB == null ? '不明' : `${activeProblem.memoryLimitMiB} MiB`}` : '';
-  const statement = $('problem-statement');
-  const scroll = statement.scrollTop;
-  renderStatement(statement, activeProblem?.statement || []);
-  statement.scrollTop = scroll;
-  $('problem-library').title = activeProblem ? activeProblem.title : 'AtCoder の問題を開く';
-  document.querySelector('.brand-caption').textContent = activeProblem ? activeProblem.title : '小さく書いて、すぐ試す。';
+    ? `実行時間制限 ${activeProblem.timeLimitMs == null ? '不明' : `${activeProblem.timeLimitMs / 1000} 秒`} / メモリ制限 ${activeProblem.memoryLimitMiB == null ? '不明' : `${activeProblem.memoryLimitMiB} MiB`}` : '';
+  renderTasks();
 }
-function setProblemVisible(visible) {
-  $('problem-panel').hidden = !visible;
-  document.querySelector('.workspace').classList.toggle('with-problem', visible);
-  $('problem-toggle').textContent = visible ? '問題文を隠す' : '問題文を表示する';
-  $('problem-toggle').setAttribute('aria-expanded', String(visible));
-}
-$('problem-toggle').addEventListener('click', () => {
-  if (activeProblem && !fileBusy && !closing) setProblemVisible($('problem-panel').hidden);
-});
-function applyWorkspace(result, collectionUrl = null) {
-  const changedProblem = activeProblem?.url !== result.problem.url;
+function applyWorkspace(result, task) {
   clearTimeout(saveTimer);
   saveTimer = null;
   saveError = null;
-  activeProblem = result.problem;
-  activeCollectionUrl = collectionUrl;
+  activeProblem = { ...result.task, title: `${task.label} - ${task.title}` };
   editor.value = result.document.code;
   savedCode = editor.value;
   filePath = result.document.filePath;
   cases.replace(result.cases, { saved: true });
   showProblem(); showCase(); updateEditor();
-  setProblemVisible(true);
-  if (changedProblem) $('problem-statement').scrollTop = 0;
 }
-$('problem-library').addEventListener('click', () => problemDialog.showModal());
-$('problem-close').addEventListener('click', () => problemDialog.close());
-problemDialog.addEventListener('cancel', event => { if (fileBusy) event.preventDefault(); });
-$('problem-open').addEventListener('click', () => {
-  if (running) return;
-  fileAction(async () => {
-    if (!await leaveProblem()) return;
-    message('問題を読み込んでいます。');
-    const result = await ide.openProblem($('problem-url').value);
-    applyWorkspace(result);
-    problemDialog.close();
-    editor.focus();
-    message('問題と保存済みの解答・ケースを開きました。');
-  });
-});
-$('problem-refresh').addEventListener('click', () => {
-  if (running || activeCollectionUrl) return;
-  fileAction(async () => {
-    message('問題を再取得しています。');
-    const problem = await ide.refreshProblem($('problem-url').value);
-    if (activeProblem?.url === problem.url) {
-      activeProblem = problem;
-      showProblem();
-      updateEditor();
-      message('問題文と元のサンプルを更新しました。解答・ケースは保持しています。');
-    } else {
-      message('問題を再取得しました。「開く」で解答・ケースを開けます。');
-    }
-  });
-});
 
-function renderCollection() {
-  const options = collectionViews.map(view => {
-    const option = document.createElement('option');
-    option.value = view.collection.url;
-    option.textContent = view.collection.title;
-    return option;
-  });
-  if (!options.length) { const option = document.createElement('option'); option.value = ''; option.textContent = '問題集を登録してください'; options.push(option); }
-  $('collection-select').replaceChildren(...options);
-  $('collection-select').value = selectedCollection?.collection.url || '';
-  $('collection-title').textContent = selectedCollection?.collection.title || '';
-  const tasks = selectedCollection?.collection.tasks || [];
-  const downloaded = new Set(selectedCollection?.downloaded || []);
-  const failed = tasks.filter(task => !downloaded.has(task.url) && task.error).length;
-  $('collection-progress').textContent = `取得済み ${downloaded.size} / ${tasks.length} · 未取得 ${tasks.length - downloaded.size - failed} · 失敗 ${failed}`;
-  $('collection-tasks').replaceChildren(...tasks.map(task => {
-    const row = document.createElement('div'); row.className = 'collection-task';
-    const name = document.createElement('span'); name.textContent = `${task.label} · ${task.title}`;
-    const state = document.createElement('span'); state.className = 'task-state';
-    state.textContent = downloaded.has(task.url) ? '取得済み' : task.error ? `失敗: ${task.error}` : '未取得';
-    state.dataset.error = String(!downloaded.has(task.url) && !!task.error);
-    const button = document.createElement('button'); button.textContent = '開く'; button.dataset.available = String(downloaded.has(task.url));
-    button.dataset.action = 'open';
-    button.setAttribute('aria-label', `${task.label} ${task.title} を開く`);
-    const collectionUrl = selectedCollection.collection.url;
-    const collectionTitle = selectedCollection.collection.title;
-    button.addEventListener('click', () => fileAction(async () => {
-      if (running || !await leaveProblem()) return;
-      const result = await ide.openCollectionTask(collectionUrl, task.url);
-      applyWorkspace(result, collectionUrl);
-      collectionDialog.close();
-      editor.focus();
-      message('固定保存した問題と解答・ケースを開きました。');
-    }, collectionMessage));
-    const repair = document.createElement('button'); repair.textContent = '取り直す'; repair.dataset.available = String(downloaded.has(task.url)); repair.dataset.action = 'repair';
-    repair.setAttribute('aria-label', `${task.label} ${task.title} を取り直す`);
-    repair.addEventListener('click', () => {
-      if (collectionDownloading || fileBusy || running || closing) return;
-      repairTarget = { collectionUrl, taskUrl: task.url, label: task.label };
-      $('collection-repair-target').textContent = `${collectionTitle}\n${task.label} · ${task.title}`;
-      $('collection-repair-url').textContent = task.url;
-      collectionRepairDialog.showModal();
+// Native pages sit above the HTML, so they are hidden while an in-app dialog is open.
+function syncBrowser() {
+  ide.browserVisible(!document.querySelector('dialog[open]')).catch(() => {});
+}
+function openDialog(dialog) {
+  dialog.showModal();
+  syncBrowser();
+}
+for (const dialog of document.querySelectorAll('dialog')) dialog.addEventListener('close', syncBrowser);
+function layoutBrowser() {
+  const rect = $('browser-host').getBoundingClientRect();
+  ide.browserLayout(rect.x, rect.y, rect.width, rect.height).catch(() => {});
+}
+new ResizeObserver(layoutBrowser).observe($('browser-host'));
+window.addEventListener('resize', layoutBrowser);
+
+const contestFor = url => contests.find(contest => contest.url === url) || null;
+function renderRail() {
+  $('contest-icons').replaceChildren(...contests.filter(contest => !contest.hidden).map(contest => {
+    const button = document.createElement('button');
+    button.className = 'rail-icon';
+    button.textContent = contest.url.split('/').at(-1).slice(0, 6);
+    button.title = contest.title;
+    button.setAttribute('aria-label', contest.title);
+    button.setAttribute('aria-pressed', String(contest.url === selectedContest));
+    button.addEventListener('click', () => selectContest(contest.url));
+    button.addEventListener('contextmenu', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      showMenu(event, [{ label: `「${contest.title}」を非表示にする`, action: () => setHidden(contest.url, true) }]);
     });
-    const actions = document.createElement('div'); actions.className = 'task-actions'; actions.append(button, repair);
-    row.append(name, state, actions); return row;
+    return button;
+  }));
+}
+function renderTasks() {
+  const contest = contestFor(selectedContest);
+  $('contest-title').textContent = contest ? contest.title : 'コンテストを選んでください';
+  $('task-list').replaceChildren(...(contest?.tasks || []).map(task => {
+    const button = document.createElement('button');
+    button.className = 'task-item';
+    button.dataset.url = task.url;
+    const label = document.createElement('span'); label.className = 'task-label'; label.textContent = task.label;
+    const title = document.createElement('span'); title.textContent = task.title;
+    button.append(label, title);
+    button.setAttribute('aria-current', String(task.url === activeProblem?.url));
+    button.addEventListener('click', () => openTask(task));
+    return button;
   }));
   updateButtons();
 }
-function rememberCollection(view) {
-  const index = collectionViews.findIndex(item => item.collection.url === view.collection.url);
-  if (index < 0) collectionViews.push(view); else collectionViews[index] = view;
-  selectedCollection = view;
-  renderCollection();
+function showMenu(event, items) {
+  railMenu.replaceChildren(...(items.length ? items.map(item => {
+    const button = document.createElement('button');
+    button.setAttribute('role', 'menuitem');
+    button.textContent = item.label;
+    button.addEventListener('click', () => { hideMenu(); item.action(); });
+    return button;
+  }) : [Object.assign(document.createElement('p'), { textContent: '非表示のコンテスト・問題集はありません' })]));
+  railMenu.style.left = `${event.clientX}px`;
+  railMenu.style.top = `${event.clientY}px`;
+  railMenu.hidden = false;
 }
-async function collectionAction(action) {
-  if (collectionDownloading || fileBusy || closing) return;
-  collectionDownloading = true; cancelCollection = false;
-  $('collection-pause').textContent = '中断'; updateButtons();
-  try { await action(); }
-  catch (error) { collectionMessage(error.message, true); }
-  finally { collectionDownloading = false; updateButtons(); }
+function hideMenu() { railMenu.hidden = true; }
+document.addEventListener('click', event => { if (!railMenu.contains(event.target)) hideMenu(); });
+document.addEventListener('keydown', event => { if (event.key === 'Escape') hideMenu(); });
+$('contest-rail').addEventListener('contextmenu', event => {
+  event.preventDefault();
+  showMenu(event, contests.filter(contest => contest.hidden).map(contest => ({ label: `「${contest.title}」を表示する`, action: () => setHidden(contest.url, false) })));
+});
+
+function rememberContest(contest) {
+  const index = contests.findIndex(item => item.url === contest.url);
+  if (index < 0) contests.push(contest); else contests[index] = contest;
+  contests.sort((a, b) => a.url.localeCompare(b.url));
 }
-async function fetchMissingCollectionTasks() {
-  const url = selectedCollection.collection.url;
-  const downloaded = new Set(selectedCollection.downloaded);
-  const queue = selectedCollection.collection.tasks.filter(task => !downloaded.has(task.url));
-  for (let index = 0; index < queue.length; index++) {
-    if (cancelCollection) break;
-    collectionMessage(`${queue[index].label} を取得しています…`);
-    rememberCollection(await ide.fetchCollectionTask(url, queue[index].url));
-    if (index + 1 < queue.length && !cancelCollection) await new Promise(resolve => setTimeout(resolve, 500));
+async function setHidden(url, hidden) {
+  try {
+    rememberContest(await ide.setContestHidden(url, hidden));
+    if (hidden && selectedContest === url) await selectContest(null);
+    renderRail();
+  } catch (error) { taskMessage(error.message, true); }
+}
+async function selectContest(url) {
+  hideMenu();
+  if (url !== selectedContest) {
+    selectedContest = url;
+    pendingTask = null;
+    taskMessage('');
+    await ide.browserCloseTasks().catch(() => {});
   }
-  collectionMessage(cancelCollection ? '取得を中断しました。未取得分から再開できます。' : '取得処理が終了しました。失敗した問題は「未取得分を取得」で再試行できます。');
+  await ide.browserHome(url).catch(error => taskMessage(error.message, true));
+  renderRail();
+  renderTasks();
 }
-$('collections').addEventListener('click', () => {
-  collectionDialog.showModal();
-  if (collectionDownloading) { renderCollection(); return; }
-  collectionMessage('');
-  fileAction(async () => {
-    const previous = selectedCollection?.collection.url;
-    collectionViews = await ide.listCollections();
-    selectedCollection = collectionViews.find(view => view.collection.url === previous) || collectionViews[0] || null;
-    renderCollection();
-  }, collectionMessage);
-});
-$('collection-select').addEventListener('change', () => {
-  selectedCollection = collectionViews.find(view => view.collection.url === $('collection-select').value) || null;
-  renderCollection();
-});
-$('collection-register').addEventListener('click', () => collectionAction(async () => {
-  if (running) return;
-  collectionMessage('問題集の一覧を読み込んでいます…');
-  const result = await ide.registerCollection($('collection-url').value);
-  rememberCollection(result.view);
-  if (result.created) await fetchMissingCollectionTasks();
-  else collectionMessage('保存済みの問題集を開きました。');
-}));
-$('collection-resume').addEventListener('click', () => collectionAction(async () => {
-  if (!running && selectedCollection) await fetchMissingCollectionTasks();
-}));
-$('collection-pause').addEventListener('click', () => {
-  cancelCollection = true;
-  $('collection-pause').textContent = '中断中…';
-  updateButtons();
-});
-$('collection-close').addEventListener('click', () => collectionDialog.close());
-collectionDialog.addEventListener('cancel', event => { if (fileBusy) event.preventDefault(); });
-$('collection-repair-cancel').addEventListener('click', () => collectionRepairDialog.close());
-collectionRepairDialog.addEventListener('close', () => { repairTarget = null; });
-$('collection-repair-confirm').addEventListener('click', () => {
-  const target = repairTarget;
-  if (!target || running) return;
-  fileAction(async () => {
-    collectionRepairDialog.close();
-    collectionMessage(`${target.label} を取り直しています…`);
-    const result = await ide.repairCollectionTask(target.collectionUrl, target.taskUrl);
-    rememberCollection(result.view);
-    if (activeCollectionUrl === target.collectionUrl && activeProblem?.url === target.taskUrl) {
-      activeProblem = result.problem;
-      showProblem(); updateEditor();
+
+// Shows the task page; its workspace opens once the page has been read.
+async function openTask(task) {
+  if (running || fileBusy || closing) return;
+  if (activeProblem?.url === task.url) {
+    // The open problem keeps its edits; only its page is shown again.
+    pendingTask = null;
+    await ide.browserTask(task.url).catch(error => taskMessage(error.message, true));
+    return;
+  }
+  if (!await leaveProblem()) return;
+  pendingTask = task;
+  try {
+    await ide.browserTask(task.url);
+    await openPendingTask();
+  } catch (error) { taskMessage(error.message, true); }
+}
+// Opens run one after another, so a page read while the previous open is checking is not lost.
+let opening = Promise.resolve();
+function openPendingTask() {
+  opening = opening.then(openPendingTaskNow);
+  return opening;
+}
+async function openPendingTaskNow() {
+  const task = pendingTask;
+  if (!task) return;
+  await fileAction(async () => {
+    const result = await ide.openTask(task.url);
+    if (pendingTask !== task) return;
+    if (!result) {
+      taskMessage(`${task.label} の問題ページを読み込んでいます。表示されない場合は、右側のブラウザでログインし、開催中のコンテストは参加登録してください。`);
+      return;
     }
-    collectionMessage('問題文と元のサンプルを取り直しました。解答・編集済みケースは保持しています。');
-  }, collectionMessage);
+    pendingTask = null;
+    applyWorkspace(result, task);
+    taskMessage('');
+    message(`${task.label} を開きました。`);
+    editor.focus();
+  }, taskMessage);
+}
+ide.onTaskPage(page => {
+  if (page.url !== pendingTask?.url) return;
+  if (page.error) taskMessage(`${pendingTask.label}：${page.error}`, true);
+  else openPendingTask();
+}).catch(error => message(String(error), true));
+
+$('contest-add').addEventListener('click', () => {
+  $('contest-message').textContent = '';
+  openDialog(contestDialog);
+  $('contest-url').focus();
 });
+$('contest-cancel').addEventListener('click', () => contestDialog.close());
+$('contest-register').addEventListener('click', async () => {
+  if ($('contest-register').disabled) return;
+  $('contest-register').disabled = true;
+  $('contest-message').dataset.error = 'false';
+  $('contest-message').textContent = '問題一覧を取得しています…';
+  try {
+    const registered = await ide.registerContest($('contest-url').value);
+    rememberContest(registered.contest);
+    contestDialog.close();
+    await selectContest(registered.contest.url);
+    const task = registered.task && registered.contest.tasks.find(item => item.url === registered.task);
+    if (task) await openTask(task);
+  } catch (error) {
+    $('contest-message').dataset.error = 'true';
+    $('contest-message').textContent = error.message;
+  } finally {
+    $('contest-register').disabled = false;
+  }
+});
+$('contest-url').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.isComposing) $('contest-register').click(); });
 
 window.addEventListener('beforeunload', event => {
   if (closing || (!fileBusy && !running && !saving && saveError === null && !needsSave())) return;
@@ -665,6 +641,10 @@ async function initialize() {
     await ide.resetSession();
     fileBusy = false;
     updateButtons();
+    layoutBrowser();
+    contests = await ide.listContests();
+    renderRail();
+    renderTasks();
     await checkRuby();
   } catch (error) {
     $('ruby-version').textContent = '初期化できません';
