@@ -4,7 +4,7 @@ const { tmpdir } = require('node:os');
 const path = require('node:path');
 const { launch, close } = require('./support.cjs');
 const { verifyLsp } = require('./lsp.cjs');
-const { seedProblem, openProblem, waitInitialized } = require('./workspace.cjs');
+const { seedProblem, openProblem, removeContest, waitInitialized } = require('./workspace.cjs');
 
 test('LSP: packaged backend completes unsaved UTF-16 code offline and restarts', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'IDE LSP 日本語 '));
@@ -18,7 +18,7 @@ test('LSP: packaged backend completes unsaved UTF-16 code offline and restarts',
     await verifyLsp(app.page);
   } finally {
     if (app) await close(app);
-    if (app) for (const kind of ['library/problems', 'workspaces']) await rm(path.join(app.dataDir, kind, contest), { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    if (app) await removeContest(app, contest);
     await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });

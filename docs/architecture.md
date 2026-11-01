@@ -90,6 +90,17 @@ Unixでは停止後250 msで出力パイプが閉じない場合も実行予約�
 
 問題一覧と問題ページの取得・検証は、ブラウザのCookieを受け取る同じHTTP処理にまとめる。問題を開く処理は作業領域を受け取るコールバックで共有し、ロック方式は呼び出し側が決める。
 
+## 右端のブラウザと問題の読み取り
+
+[画面の作り直しの調査](#画面の作り直しの調査u0)の結論を、次のように実装する。
+
+- 右端の列はHTMLの`#browser-host`で場所だけを確保し、画面がその位置と大きさをRustへ送る。Rustはメインウィンドウに子のWebViewを置き、見せるものだけを`#browser-host`の位置に重ねる。ウィンドウの大きさが変わったら画面が送り直す。
+- 子のWebViewは「ホーム」1つと、選択中のコンテスト・問題集の問題ごとに1つ。ホームは問題を選んでいないときに表示し、選択中のコンテストのトップ（なければ`https://atcoder.jp/`）を開く。ログインや、問題一覧の取得に使うCookieの読み取りにも使う。問題のWebViewは問題を初めて選んだときに作り、別のコンテスト・問題集を選ぶと閉じる。
+- `on_navigation`で`https://atcoder.jp`以外への移動を止める。AtCoderのページが別ウィンドウで開こうとするリンク（`target="_blank"`など）は、AtCoder内なら同じWebViewで開き、それ以外は開かない。
+- 問題のWebViewで、その問題のページの読み込みが終わり、`task.json`がない・読めない場合は、Rustが`eval_with_callback`でHTMLを受け取り、サンプルと制限値を読み取って`task.json`へ保存する。画面へは`task-read`（読み取れた）または`task-unavailable`（問題文がない。ログインしていない・参加登録していない・ページが存在しない）のイベントで知らせる。
+- 問題を開く操作は、`task.json`が読めればすぐ作業領域を開く。なければ問題のWebViewを開いて読み取りを待ち、`task-read`を受けて作業領域を開く。`task-unavailable`ならブラウザでのログイン・参加登録を案内する。
+- 画面テストのため、`ATCODER_IDE_TEST_ORIGIN`を指定した場合だけ、子のWebViewが開くURLの`https://atcoder.jp`をその値（ローカルのHTTPサーバー）に置き換え、移動の許可もその値にする。通常起動では使わない。LinuxのブラウザーE2Eは子のWebViewを持たないため、テスト用ホストが読み取りの処理を直接呼び、同じイベントを画面へ送る。
+
 ## 画面の作り直しの調査（U0）
 
 [画面の仕様](ui.md)の右端のブラウザについて、2026-10-31にTauri 2.12.5（wry 0.57.1）のソースとWindows CIの試作で確かめた結論。U2以降の実装はこの節に従う。試作は`spike/u0-embedded-browser`ブランチにあり、マージしない（[検証記録](verification.md#画面の作り直しの調査u0)）。
@@ -107,7 +118,7 @@ AtCoderのページからアプリの機能を呼べないよう、次の3つを
 
 1. capabilityは`webviews: ["main"]`で画面のWebViewだけに与え、`windows`は書かない。`windows`で指定すると、同じウィンドウの子のWebViewにも同じ権限が付く。`remote`も書かない。Tauriはリモートのオリジン（`https://atcoder.jp`）からの呼び出しを、`remote`を指定した権限がない限り拒否する。
 2. アプリのコマンドを`build.rs`の`tauri_build::AppManifest::commands`で宣言し、`allow-<コマンド>`を画面のWebViewのcapabilityにだけ付ける。宣言がないと、ローカルのオリジン（`tauri.localhost`）からのアプリのコマンドは権限を確かめずに実行される。試作では、AtCoderのページに`http://tauri.localhost/`のiframeを差し込むとアプリのページが読み込まれ、宣言があることで`ruby_info`などが拒否された。
-3. AtCoder用のWebViewは`on_navigation`で`https://atcoder.jp`以外への移動を止める。ページ全体の移動は止まるが、iframeの読み込みは止まらないため、2を省略しない。外部サイトへのリンクの扱いはU2bで決める。
+3. AtCoder用のWebViewは`on_navigation`で`https://atcoder.jp`以外への移動を止める。ページ全体の移動は止まるが、iframeの読み込みは止まらないため、2を省略しない。外部サイトへのリンクは開かない。新しいウィンドウで開くAtCoderのリンクは同じページで開く（[右端のブラウザと問題の読み取り](#右端のブラウザと問題の読み取り)）。
 
 試作のWindows CIでは、AtCoderのページから`ruby_info`・試作のコマンド・通知・ウィンドウのタイトル変更がすべて「not allowed by ACL」で拒否され、IPCのURLへ直接送った要求も500で拒否された。画面のWebViewからは同じコマンドを実行できた。
 

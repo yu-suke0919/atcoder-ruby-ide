@@ -21,7 +21,7 @@ Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使
 
 ## 機能
 
-画面は作り直しの途中です。この節は[ロードマップ](docs/roadmap.md)のPhase U（U2b〜U6）を終えた後の機能で、[画面の仕様](docs/ui.md)を正とします。
+画面は作り直しの途中です。この節は[ロードマップ](docs/roadmap.md)のPhase U（U3〜U6）を終えた後の機能で、[画面の仕様](docs/ui.md)を正とします。
 
 - 左からコンテスト・問題集のアイコン、問題一覧、エディタとサンプル、AtCoderのページを表示するブラウザの4列で、開催中のコンテストの問題を読む・解く・確かめる・提出するまでを1つの画面で行う
 - 右端のブラウザでログイン・参加登録・提出。アプリはパスワードを扱わず、ブラウザのページからアプリの機能を呼べない
@@ -74,7 +74,7 @@ npm run prepare:lsp
 npm start
 ```
 
-`npm ci` は数式用資産とCodeMirrorのバンドル・ライセンスを `src/vendor/` に生成します。エディタの依存や `scripts/codemirror.mjs` を変更した場合は `npm run prepare:editor` で再生成します。表示時にCDNや外部サービスへ接続しません。
+`npm ci` はCodeMirrorのバンドル・ライセンスを `src/vendor/` に生成します。エディタの依存や `scripts/codemirror.mjs` を変更した場合は `npm run prepare:editor` で再生成します。表示時にCDNや外部サービスへ接続しません。
 
 Windows のデスクトップアプリは `npm start` による開発時も同梱 Ruby を使います。`RUBY_PATH` や PATH の別の Ruby には切り替わりません。
 共通テスト（`npm test`）とブラウザー用テストホストは、OS にかかわらず `RUBY_PATH`、未指定なら PATH の `ruby` を使います。Linuxでは `config/ruby-windows.json` の `rubyVersion` と同じ、書き込み可能なRubyを用意して `npm run prepare:gems` で標準gemディレクトリへ固定gemを追加します。実行時も同じディレクトリだけを探索し、GEM_HOME・GEM_PATHやユーザー用gemの影響を受けません。Windows の共通テストでは、CI と同じく準備済みの同梱 Ruby を指定します。
@@ -101,10 +101,10 @@ npm run test:e2e
 
 共通テストは Rust による実際の Ruby プロセス・ファイル操作と、Node によるケース状態・アーカイブ検証です。
 ケース状態だけなら `node --test --test-isolation=none tests/unit/sample-cases.test.cjs` で Ruby・ブラウザーなしで確認できます。
-AtCoder の実サイトとの連携は、通信できる開発環境で `npm run test:atcoder-live` を明示実行します。公開3問の取得・再取得と実Rubyでの全サンプル比較に加え、tessoku-bookの151問の一覧と先頭2問の固定保存・復元・破損原本の個別取り直しを確認します。画像付きのABC243 Cでは実画像の取得・保存・再取得、900×650と1,440×900での表示・拡大を確認します。再起動したRustホストとブラウザーの通信を遮断し、保存済み本文・画像・解答・ケースの復元と、再取得失敗時の原本保持も確認します。全151問の取得は `ATCODER_COLLECTION_LIVE_ALL=1 cargo test --locked --test library live_atcoder_collection -- --ignored --nocapture` で明示実行できます。CIを含む通常の自動テストではAtCoderへ接続しません。依存パッケージ・Ruby・ブラウザーなどの初回取得には通信が必要です。画像を含む実サイトテストには `atcoder.jp` と `img.atcoder.jp` の通信許可が必要です。画面の実サイトテストは開発用RubyとChromiumを使います。
+AtCoder の実サイトとの連携は、通信できる開発環境で `npm run test:atcoder-live` を明示実行します。ABC086の問題一覧の登録と、終了したコンテストの問題ページからのサンプル・制限の読み取り、実Rubyでの全サンプル比較を確認します。CIを含む通常の自動テストではAtCoderへ接続しません。依存パッケージ・Ruby・ブラウザーなどの初回取得には通信が必要です。
 Linux では `npm run test:e2e` がテスト専用 Rust ホストをビルドし、HTTP 配信した本番画面を headless Chromium で操作します。
 実 Ruby・作業領域のファイル I/O・実行制御・比較は本番の Rust ライブラリを共有し、Tauri 通信・ウィンドウ操作をテスト用に差し替えます。
-通常の GUI テストでは、問題・問題集の登録・取得・再取得・個別取り直しの成功／失敗も、必要に応じてブリッジの応答と保存データをテスト側で用意します。HTTP・HTML解析・原本保存の処理は Rust テストで検証します。
+AtCoderのページは、テストが起動するローカルのサーバーが `ATCODER_IDE_TEST_ORIGIN` で代わりに配信します。問題一覧・問題ページ・ログインが必要なページを用意し、Windowsでは実際の右端のブラウザでページを読み取ります。HTML解析と保存の処理は Rust テストでも検証します。
 Windows は同じ受入ケースを実際の WebView2 で確認します。テスト専用ホストは配布しません。
 `E2E_RUNNER=browser` または `native` で明示選択でき、その他の値はエラーになります（native は Windows 専用）。
 Windows でも browser を選べますが、その場合は開発用の Ruby と Chromium を別途用意し、必要なら `RUBY_PATH` を指定してください。

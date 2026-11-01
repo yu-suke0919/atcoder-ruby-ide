@@ -9,7 +9,6 @@ const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
 pub struct ProblemSample {
     pub stdin: String,
     pub expected_output: String,
-    pub compare: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -27,7 +26,7 @@ impl From<&ProblemSample> for SampleCase {
         Self {
             stdin: sample.stdin.clone(),
             expected_output: sample.expected_output.clone(),
-            compare: sample.compare,
+            compare: true,
             tolerance: None,
         }
     }

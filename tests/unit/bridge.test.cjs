@@ -43,7 +43,7 @@ test('tolerance travels through IPC and invalid values cannot turn into strict m
   assert.equal(calls[0].args.tolerance, 1e-6);
   for (const value of [0, -1, NaN, Infinity, '', '1e-6']) {
     await assert.rejects(ide.run('', '', '', value), /許容誤差/);
-    assert.throws(() => ide.saveProblemCases('url', [{ tolerance: value }]), /許容誤差/);
+    assert.throws(() => ide.saveTaskCases('url', [{ tolerance: value }]), /許容誤差/);
   }
   assert.equal(calls.length, 1);
 });

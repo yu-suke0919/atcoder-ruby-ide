@@ -1,10 +1,12 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod browser;
+
 use atcoder_ruby_ide::{
-    CollectionLibrary, CollectionView, DocumentStore, LspInfo, Problem, ProblemLibrary,
-    ProblemWorkspace, RegisteredCollection, RepairedCollectionTask, RubyInfo, RubyLsp, RunEvent,
-    RunRequest, Runner, SampleCase,
+    fetch_page, http_client, Contest, Contests, DocumentStore, LspInfo, RegisteredContest,
+    RubyInfo, RubyLsp, RunEvent, RunRequest, Runner, SampleCase, TaskWorkspace, Workspaces,
 };
+use browser::Browser;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -13,7 +15,7 @@ use tauri::{ipc::Channel, Manager};
 struct AppState {
     runner: Arc<Runner>,
     documents: Arc<Mutex<DocumentStore>>,
-    collection_lock: Arc<Mutex<()>>,
+    contest_lock: Arc<Mutex<()>>,
     lsp: Arc<RubyLsp>,
 }
 
@@ -157,146 +159,119 @@ async fn session_reset(state: tauri::State<'_, AppState>) -> Result<(), String> 
     .map_err(|e| e.to_string())
 }
 
-fn problem_library(app: &tauri::AppHandle) -> Result<ProblemLibrary, String> {
-    Ok(ProblemLibrary::new(
-        app.path().app_local_data_dir().map_err(|e| e.to_string())?,
-    ))
-}
-
-fn collection_library(app: &tauri::AppHandle) -> Result<CollectionLibrary, String> {
-    Ok(CollectionLibrary::new(
-        app.path().app_local_data_dir().map_err(|e| e.to_string())?,
-    ))
+fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path().app_local_data_dir().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn collection_list(app: tauri::AppHandle) -> Result<Vec<CollectionView>, String> {
-    let library = collection_library(&app)?;
-    tauri::async_runtime::spawn_blocking(move || library.list())
+async fn contest_list(app: tauri::AppHandle) -> Result<Vec<Contest>, String> {
+    let contests = Contests::new(data_dir(&app)?);
+    tauri::async_runtime::spawn_blocking(move || contests.list())
         .await
         .map_err(|e| e.to_string())?
 }
 
+/// Registers a contest from its task list, fetched once with the browser's cookies.
 #[tauri::command]
-async fn collection_register(
+async fn contest_register(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     url: String,
-) -> Result<RegisteredCollection, String> {
-    let library = collection_library(&app)?;
-    let lock = Arc::clone(&state.collection_lock);
+) -> Result<RegisteredContest, String> {
+    let contests = Contests::new(data_dir(&app)?);
+    let cookie = browser::cookies(&app).await?;
+    let lock = Arc::clone(&state.contest_lock);
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = lock.lock().unwrap();
-        library.register(&url)
+        let client = http_client()?;
+        contests.register(&url, |page| {
+            fetch_page(&client, browser::to_origin(page)?.as_str(), &cookie)
+        })
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-async fn collection_fetch_task(
+async fn contest_set_hidden(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     url: String,
-    task: String,
-) -> Result<CollectionView, String> {
-    let library = collection_library(&app)?;
-    let lock = Arc::clone(&state.collection_lock);
+    hidden: bool,
+) -> Result<Contest, String> {
+    let contests = Contests::new(data_dir(&app)?);
+    let lock = Arc::clone(&state.contest_lock);
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = lock.lock().unwrap();
-        library.fetch_task(&url, &task)
+        contests.set_hidden(&url, hidden)
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
+/// Opens a task's workspace, or returns None while its page has not been read yet.
 #[tauri::command]
-async fn collection_repair_task(
+async fn task_open(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     url: String,
-    task: String,
-) -> Result<RepairedCollectionTask, String> {
-    let library = collection_library(&app)?;
-    let lock = Arc::clone(&state.collection_lock);
-    tauri::async_runtime::spawn_blocking(move || {
-        let _guard = lock.lock().unwrap();
-        library.repair_task(&url, &task)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn collection_open_task(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-    url: String,
-    task: String,
-) -> Result<ProblemWorkspace, String> {
-    let library = collection_library(&app)?;
+) -> Result<Option<TaskWorkspace>, String> {
+    let workspaces = Workspaces::new(data_dir(&app)?);
     let documents = Arc::clone(&state.documents);
     let revision = documents.lock().unwrap().revision();
     tauri::async_runtime::spawn_blocking(move || {
-        library.open_task(&url, &task, revision, &mut documents.lock().unwrap())
+        if workspaces.task(&url)?.is_none() {
+            return Ok(None);
+        }
+        workspaces
+            .open(&url, revision, &mut documents.lock().unwrap())
+            .map(Some)
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-async fn problem_open(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-    url: String,
-) -> Result<ProblemWorkspace, String> {
-    let library = problem_library(&app)?;
-    let documents = Arc::clone(&state.documents);
-    let document_revision = documents.lock().unwrap().revision();
-    tauri::async_runtime::spawn_blocking(move || {
-        library.open_problem(&url, document_revision, || documents.lock().unwrap())
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn problem_refresh(app: tauri::AppHandle, url: String) -> Result<Problem, String> {
-    let library = problem_library(&app)?;
-    tauri::async_runtime::spawn_blocking(move || library.problem(&url, true))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn problem_save_cases(
+async fn task_save_cases(
     app: tauri::AppHandle,
     url: String,
     cases: Vec<SampleCase>,
 ) -> Result<(), String> {
-    let library = problem_library(&app)?;
-    tauri::async_runtime::spawn_blocking(move || library.save_cases(&url, cases))
+    let workspaces = Workspaces::new(data_dir(&app)?);
+    tauri::async_runtime::spawn_blocking(move || workspaces.save_cases(&url, cases))
         .await
         .map_err(|e| e.to_string())?
 }
 
 fn main() {
-    let mut context = tauri::generate_context!();
+    // UI tests open a debugging port on Windows. Child webviews share the WebView2 environment,
+    // so they need the same arguments.
     #[cfg(windows)]
-    if let Ok(port) = std::env::var("ATCODER_IDE_TEST_PORT") {
+    let browser_args = std::env::var("ATCODER_IDE_TEST_PORT").ok().map(|port| {
         let port: u16 = port
             .parse()
             .expect("ATCODER_IDE_TEST_PORT must be a port number");
+        format!("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port={port}")
+    });
+    #[cfg(not(windows))]
+    let browser_args: Option<String> = None;
+    let mut context = tauri::generate_context!();
+    if let Some(args) = &browser_args {
         for window in &mut context.config_mut().app.windows {
-            window.additional_browser_args = Some(format!("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port={port}"));
+            window.additional_browser_args = Some(args.clone());
         }
     }
     tauri::Builder::default()
         .manage(AppState {
             runner: Runner::new(Duration::from_secs(5), 1048576),
             documents: Arc::new(Mutex::new(DocumentStore::default())),
-            collection_lock: Arc::new(Mutex::new(())),
+            contest_lock: Arc::new(Mutex::new(())),
             lsp: Arc::new(RubyLsp::default()),
+        })
+        .manage(Browser::default())
+        .setup(move |app| {
+            Browser::create_home(app, browser_args.clone())?;
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             ruby_info,
@@ -307,14 +282,16 @@ fn main() {
             stop_ruby,
             document_save,
             session_reset,
-            problem_open,
-            problem_refresh,
-            problem_save_cases,
-            collection_list,
-            collection_register,
-            collection_fetch_task,
-            collection_repair_task,
-            collection_open_task
+            contest_list,
+            contest_register,
+            contest_set_hidden,
+            task_open,
+            task_save_cases,
+            browser::browser_layout,
+            browser::browser_visible,
+            browser::browser_home,
+            browser::browser_task,
+            browser::browser_close_tasks
         ])
         .build(context)
         .expect("アプリを起動できませんでした")

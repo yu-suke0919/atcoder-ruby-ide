@@ -1,5 +1,29 @@
 {
   "identifier": "main-window",
-  "windows": ["main"],
-  "permissions": ["core:default", "core:window:allow-set-title", "core:window:allow-destroy"]
+  "webviews": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-title",
+    "core:window:allow-destroy",
+    "allow-ruby-info",
+    "allow-lsp-start",
+    "allow-lsp-complete",
+    "allow-lsp-stop",
+    "allow-run-ruby",
+    "allow-stop-ruby",
+    "allow-document-save",
+    "allow-session-reset",
+    "allow-contest-list",
+    "allow-contest-register",
+    "allow-contest-set-hidden",
+    "allow-task-open",
+    "allow-task-save-cases",
+    "allow-browser-layout",
+    "allow-browser-visible",
+    "allow-browser-home",
+    "allow-browser-task",
+    "allow-browser-close-tasks"
+  ]
 }

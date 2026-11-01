@@ -5,6 +5,7 @@ const { writeFile, mkdir, realpath } = require('node:fs/promises');
 const net = require('node:net');
 const path = require('node:path');
 const { chromium } = require('playwright');
+const { startAtCoder } = require('./atcoder-fixture.cjs');
 const execute = promisify(execFile);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const system = name => path.join(process.env.SystemRoot, 'System32', name);
@@ -30,6 +31,9 @@ async function launch(root, { hostEnv = {} } = {}) {
   env.RUBYLIB = env.GEM_HOME;
   env.BUNDLE_GEMFILE = path.join(env.GEM_HOME, 'missing-Gemfile');
   env.ATCODER_IDE_TEST_PORT = String(port);
+  const atcoder = await startAtCoder();
+  env.ATCODER_IDE_TEST_ORIGIN = atcoder.origin;
+  env.NO_PROXY = '127.0.0.1'; // Tests that block the proxy still reach the local AtCoder server.
   env.WEBVIEW2_USER_DATA_FOLDER = path.join(root, 'webview-profile');
   await assert.rejects(execute(system('where.exe'), ['ruby'], { env }), error => error.code === 1);
   const child = spawn(executable, [], { env, cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -51,7 +55,9 @@ async function launch(root, { hostEnv = {} } = {}) {
     }
     browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
     const context = browser.contexts()[0];
-    page = context.pages()[0] || await context.waitForEvent('page');
+    // Child webviews show AtCoder pages; the app is the page served from tauri.localhost.
+    const isApp = candidate => candidate.url().includes('tauri.localhost');
+    page = context.pages().find(isApp) || await context.waitForEvent('page', { predicate: isApp });
     page.setDefaultTimeout(15000);
     page.on('pageerror', error => console.error('WebView error:', error));
     await page.getByTestId('ruby-version').filter({ hasText: /ruby \d+\.\d+\.\d+\b/i }).waitFor();
@@ -66,7 +72,7 @@ async function launch(root, { hostEnv = {} } = {}) {
     const canonical = value => path.toNamespacedPath(path.resolve(value)).toLowerCase();
     assert.equal(canonical(await realpath(rubyExecutable)), canonical(await realpath(path.join(path.dirname(executable), 'ruby', 'bin', 'ruby.exe'))));
     console.log(JSON.stringify({ executable, ruby, rubyExecutable, systemRubyAvailable: false }));
-    return { child, browser, page, root, dataDir: path.join(process.env.LOCALAPPDATA, require('../../src-tauri/tauri.conf.json').identifier) };
+    return { child, browser, page, root, atcoder, dataDir: path.join(process.env.LOCALAPPDATA, require('../../src-tauri/tauri.conf.json').identifier) };
   } catch (error) {
     if (page) {
       await mkdir('test-results', { recursive: true });
@@ -75,6 +81,7 @@ async function launch(root, { hostEnv = {} } = {}) {
     }
     await execute(system('taskkill.exe'), ['/PID', String(child.pid), '/T', '/F']).catch(() => {});
     await browser?.close().catch(() => {});
+    await new Promise(resolve => atcoder.server.close(resolve));
     throw new Error(`${error.message}\n${log}`, { cause: error });
   }
 }
@@ -82,6 +89,7 @@ async function launch(root, { hostEnv = {} } = {}) {
 async function close(app) {
   if (app.child.exitCode === null) await execute(system('taskkill.exe'), ['/PID', String(app.child.pid), '/T', '/F']).catch(() => {});
   await app.browser.close().catch(() => {});
+  await new Promise(resolve => app.atcoder.server.close(resolve));
 }
 async function requestClose(app) {
   await execute(system('WindowsPowerShell/v1.0/powershell.exe'), [
@@ -90,4 +98,11 @@ async function requestClose(app) {
   ]);
 }
 
-module.exports = { requestClose, launch, close, pause };
+// Sums the memory of the app and its descendants, which include the WebView2 processes.
+async function memoryUse(app) {
+  const script = `$all = Get-CimInstance Win32_Process; $ids = @(${app.child.pid}); do { $count = $ids.Count; $ids = @($ids + @($all | Where-Object { $ids -contains $_.ParentProcessId } | ForEach-Object ProcessId) | Select-Object -Unique) } while ($ids.Count -gt $count); $tree = @($all | Where-Object { $ids -contains $_.ProcessId }); @{ processes = $tree.Count; workingSetMiB = [math]::Round(($tree | Measure-Object WorkingSetSize -Sum).Sum / 1MB); privateMiB = [math]::Round(($tree | Measure-Object PrivatePageCount -Sum).Sum / 1MB) } | ConvertTo-Json -Compress`;
+  const { stdout } = await execute(system('WindowsPowerShell/v1.0/powershell.exe'), ['-NoProfile', '-NonInteractive', '-Command', script]);
+  return JSON.parse(stdout);
+}
+
+module.exports = { requestClose, launch, close, pause, memoryUse };

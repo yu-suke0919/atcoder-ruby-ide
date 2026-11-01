@@ -454,3 +454,12 @@ Windows CI の初回では、HTML固定データがCRLFでチェックアウト�
 - 保存失敗は、作業領域のファイルを同名のディレクトリに置き換えて起こす。保存失敗のまま問題を切り替える・ウィンドウを閉じる操作でアプリ内のダイアログが出て、キャンセルで編集内容が残り、再試行で保存できることを確認した。
 - `tauri-plugin-dialog`と`native-dialog.ps1`、E2Eのダイアログ自動操作を削除した。Cargo.lockから関連する依存が外れた。
 - クラウドセッション（Linux、root）で、Rust（root で失敗する既知の`r02_cleanup_failure_releases_reservation`以外）、Node単体93件、`cargo fmt --all --check`、画面テスト87件（Windows専用1件を除く）が成功した。Windowsのネイティブ画面・NSIS・ZIP検証はPRのCIで確認する。
+
+## 4列の画面とブラウザ（U2b）
+
+- main cbcccacから開始。先に[構成と検証方針](architecture.md#右端のブラウザと問題の読み取り)と[問題ライブラリ](problem-library.md)に右端のブラウザ・問題ごとのページ・`contests/`と`task.json`の形式を書いた。
+- 失敗するテストを先に用意した。Rustは問題一覧（tessoku-bookの151問の固定データを含む）と問題ページの解析、ログインが必要なページの案内、読み取り後の作業領域の作成、読み取り直しで利用者のサンプルを変えないこと、`task.json`が読めないときの案内、Cookieを付けた取得を、新しいAPIがないことによるコンパイル失敗で確認した。E2Eは、テストが起動するローカルのサーバーをAtCoderの代わりにし（`ATCODER_IDE_TEST_ORIGIN`）、「＋」での登録と公式の順の問題一覧、ページからのサンプルと制限の読み取り、ログインが必要なページの案内と読めるようになった後の再選択、アイコンの非表示と復元、1280×720での4列を追加した。
+- 「AtCoder の問題」、問題集の一括取得・中断・再開・取り直し、問題文の解析と表示（`library.rs`・`collections.rs`・`presentation.rs`・`presentation.mjs`、KaTeX）を削除した。Cargo.lockから`base64`・`quick-xml`・`cssparser`・`image`の直接依存と、それだけが使う依存が外れた。実サイトのテストは画面のテストをやめ、ABC086の問題一覧の登録と終了した問題ページからの読み取り・全サンプルの実行を確かめるRustのテストだけにした。
+- 最小の画面テストの大きさを900×650から1280×720に変えた。
+- WindowsのCIでは、8問のページを開いた状態と、別のコンテストを選んでページを閉じた後のアプリとWebView2のメモリ使用量を記録する（`M18: each task has its own page…`のログ）。
+- クラウドセッション（Linux、root）で、Rust（rootで失敗する既知の`r02_cleanup_failure_releases_reservation`以外）、Node単体93件、`cargo fmt --all --check`、画面テスト74件（Windows専用2件を除く）が成功した。WindowsのネイティブのWebView2での子のページ・分離・NSIS・ZIPはPRのCIで確認する。ログインした状態で開催中のコンテストの問題を開く確認は、利用者が手元で行う。

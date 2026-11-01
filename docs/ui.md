@@ -1,6 +1,6 @@
 # 画面の仕様
 
-画面の構成と操作の仕様。受入条件は[MVP](mvp.md)、取得と保存は[問題ライブラリ](problem-library.md)、サンプルは[複数サンプル](multi-sample.md)、エディタは[エディタ仕様](code-editor.md)を参照する。[ロードマップ](roadmap.md)のPhase U（U2b〜U6）で実装する。
+画面の構成と操作の仕様。受入条件は[MVP](mvp.md)、取得と保存は[問題ライブラリ](problem-library.md)、サンプルは[複数サンプル](multi-sample.md)、エディタは[エディタ仕様](code-editor.md)を参照する。[ロードマップ](roadmap.md)のPhase Uで実装し、残りはU3〜U6で実装する。
 
 ## 全体の構成
 

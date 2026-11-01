@@ -9,6 +9,7 @@ const readline = require('node:readline');
 const { once } = require('node:events');
 const { chromium } = require('playwright');
 const native = require('./native.cjs');
+const { startAtCoder } = require('./atcoder-fixture.cjs');
 const execute = promisify(execFile);
 const repo = path.resolve(__dirname, '../..');
 let hostBinary;
@@ -25,13 +26,14 @@ async function launch(root, { hostEnv = {} } = {}) {
   const started = performance.now();
   const binary = await ensureUiTestHostBinary();
   const prepared = performance.now();
-  const child = spawn(binary, [], { cwd: root, env: { ...process.env, ...hostEnv, ATCODER_IDE_UI_TIMEOUT_MS: process.env.ATCODER_IDE_UI_TIMEOUT_MS || '4000' }, stdio: ['pipe', 'pipe', 'pipe'] });
+  const atcoder = await startAtCoder();
+  const child = spawn(binary, [], { cwd: root, env: { ...process.env, ...hostEnv, ATCODER_IDE_TEST_ORIGIN: atcoder.origin, NO_PROXY: '127.0.0.1', ATCODER_IDE_UI_TIMEOUT_MS: process.env.ATCODER_IDE_UI_TIMEOUT_MS || '4000' }, stdio: ['pipe', 'pipe', 'pipe'] });
   const pending = new Map();
   let sequence = 0;
   let stderr = '';
   child.stderr.on('data', data => { stderr += data; });
   child.stdin.on('error', () => {});
-  const app = { child, root, dataDir: path.join(root, 'user-data'), browser: null, page: null, server: null, delivery: Promise.resolve() };
+  const app = { child, root, dataDir: path.join(root, 'user-data'), atcoder, browser: null, page: null, server: null, delivery: Promise.resolve() };
   app.request = (command, args = {}) => new Promise((resolve, reject) => {
     const id = ++sequence;
     pending.set(id, { resolve, reject });
@@ -45,7 +47,7 @@ async function launch(root, { hostEnv = {} } = {}) {
   let pumping = false;
   readline.createInterface({ input: child.stdout }).on('line', line => {
     const message = JSON.parse(line);
-    if ('channel' in message) {
+    if ('channel' in message || 'appEvent' in message) {
       events.push(message);
       if (!pumping) {
         pumping = true;
@@ -53,7 +55,10 @@ async function launch(root, { hostEnv = {} } = {}) {
           while (events.length) {
             const batch = events.splice(0);
             await app.page.evaluate(batch => {
-              for (const { channel, event } of batch) window.__testDispatch(channel, event);
+              for (const message of batch) {
+                if ('appEvent' in message) window.__testEvent(message.appEvent, message.payload);
+                else window.__testDispatch(message.channel, message.event);
+              }
             }, batch);
           }
         })().finally(() => { pumping = false; });
@@ -67,10 +72,7 @@ async function launch(root, { hostEnv = {} } = {}) {
     }
   });
   try {
-    const assets = new Map([['/', 'index.html'], ...['index.html', 'renderer.js', 'bridge.mjs', 'sample-cases.mjs', 'presentation.mjs', 'editor.mjs', 'ruby-completion.mjs', 'lsp-completion.mjs', 'ruby-methods.mjs', 'ruby-receivers.mjs', 'vendor/editor/codemirror.mjs', 'styles.css'].map(name => [`/${name}`, name])]);
-    for (const name of ['katex.mjs', 'katex.min.css', 'LICENSE', ...require('node:fs').readdirSync(path.join(repo, 'src/vendor/katex/fonts')).filter(n => n.endsWith('.woff2')).map(n => `fonts/${n}`)]) {
-      assets.set(`/vendor/katex/${name}`, `vendor/katex/${name}`);
-    }
+    const assets = new Map([['/', 'index.html'], ...['index.html', 'renderer.js', 'bridge.mjs', 'sample-cases.mjs', 'editor.mjs', 'ruby-completion.mjs', 'lsp-completion.mjs', 'ruby-methods.mjs', 'ruby-receivers.mjs', 'vendor/editor/codemirror.mjs', 'styles.css'].map(name => [`/${name}`, name])]);
     app.server = http.createServer(async (req, res) => {
       const name = assets.get(new URL(req.url, 'http://localhost').pathname);
       if (!name) { res.writeHead(404).end(); return; }
@@ -113,8 +115,11 @@ async function launch(root, { hostEnv = {} } = {}) {
           });
         }
       };
+      const listeners = new Map();
+      window.__testEvent = (name, payload) => { for (const handler of listeners.get(name) || []) handler({ payload }); };
       window.__TAURI__ = {
         core: { Channel, invoke: (command, args = {}) => window.__testInvoke(command, { ...args, ...(args.onEvent ? { onEvent: args.onEvent.id } : {}) }) },
+        event: { listen: async (name, handler) => { if (!listeners.has(name)) listeners.set(name, new Set()); listeners.get(name).add(handler); return () => listeners.get(name).delete(handler); } },
         window: { getCurrentWindow: () => appWindow }
       };
     });
@@ -138,6 +143,7 @@ async function close(app) {
   await app.delivery;
   await app.browser?.close();
   if (app.server) await new Promise(resolve => app.server.close(resolve));
+  if (app.atcoder) await new Promise(resolve => app.atcoder.server.close(resolve));
 }
 const requestClose = app => app.page.evaluate(() => window.__TAURI__.window.getCurrentWindow().close());
 

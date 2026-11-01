@@ -10,17 +10,20 @@ export const ide = {
   lspStart: () => invoke('lsp_start'),
   lspComplete: (code, line, character) => invoke('lsp_complete', { code, line, character }),
   lspStop: () => invoke('lsp_stop'),
-  listCollections: () => invoke('collection_list'),
-  registerCollection: url => invoke('collection_register', { url }),
-  fetchCollectionTask: (url, task) => invoke('collection_fetch_task', { url, task }),
-  repairCollectionTask: (url, task) => invoke('collection_repair_task', { url, task }),
-  openCollectionTask: (url, task) => invoke('collection_open_task', { url, task }),
-  openProblem: url => invoke('problem_open', { url }),
-  refreshProblem: url => invoke('problem_refresh', { url }),
-  saveProblemCases: (url, cases) => {
+  listContests: () => invoke('contest_list'),
+  registerContest: url => invoke('contest_register', { url }),
+  setContestHidden: (url, hidden) => invoke('contest_set_hidden', { url, hidden }),
+  openTask: url => invoke('task_open', { url }),
+  saveTaskCases: (url, cases) => {
     cases.forEach(item => validateTolerance(item.tolerance ?? null));
-    return invoke('problem_save_cases', { url, cases });
+    return invoke('task_save_cases', { url, cases });
   },
+  browserLayout: (x, y, width, height) => invoke('browser_layout', { x, y, width, height }),
+  browserVisible: visible => invoke('browser_visible', { visible }),
+  browserHome: url => invoke('browser_home', { url }),
+  browserTask: url => invoke('browser_task', { url }),
+  browserCloseTasks: () => invoke('browser_close_tasks'),
+  onTaskPage: handler => window.__TAURI__.event.listen('task-page', event => handler(event.payload)),
   rubyInfo: () => invoke('ruby_info'),
   run(code, stdin, expectedOutput = null, tolerance = null, problemTimeLimitMs = null, notify = () => {}) {
     return new Promise((resolve, reject) => {
