@@ -420,6 +420,9 @@ impl Workspaces {
     pub fn create_file(&self, workspace: &str, label: &str) -> Result<String, String> {
         solutions::create(&self.directory(workspace)?, label)
     }
+    pub fn copy_file(&self, workspace: &str, name: &str, label: &str) -> Result<String, String> {
+        solutions::copy(&self.directory(workspace)?, name, label)
+    }
     /// Renames a file. The open file keeps being the open one under its new name.
     pub fn rename_file(
         &self,

@@ -21,6 +21,7 @@ fn main() {
             "home_save_cases",
             "file_open",
             "file_create",
+            "file_copy",
             "file_rename",
             "file_delete",
             "browser_layout",
