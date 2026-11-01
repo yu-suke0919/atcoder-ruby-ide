@@ -1242,6 +1242,23 @@ test('M16: a task without saved data is read from its page with samples and limi
   await page.locator('#cases-summary').filter({ hasText: /完了 2 \/ 2.*一致 2/ }).waitFor();
 });
 
+test('M16/U4: the files of a new problem start with code that reads its input', async () => {
+  const problem = await seedWorkspaceProblem(app, testContest, 'reading', { task: null, code: null, cases: null, label: 'B', page: {
+    samples: [['3\n1 2 3\n', '6\n']],
+    input: '<var>N</var>\n<var>A_1</var> <var>A_2</var> <var>\\ldots</var> <var>A_N</var>',
+    constraints: ['<var>1 \\leq N \\leq 100</var>', '入力はすべて整数']
+  } });
+  await openProblem(page, problem);
+  assert.equal(await editorText(page), 'n = gets.to_i\na = gets.split.map(&:to_i)\n');
+  await page.locator('#code-editor').press('Control+End');
+  await page.keyboard.insertText('puts a.sum');
+  await runAndWait();
+  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
+  await page.locator('#file-add').click();
+  await page.waitForFunction(() => document.querySelector('#file-tabs [aria-selected="true"]')?.textContent === 'B_3');
+  assert.equal(await editorText(page), 'n = gets.to_i\na = gets.split.map(&:to_i)\n');
+});
+
 test('M16: a page that needs login asks to log in and opens once the page can be read', async () => {
   const problem = await seedWorkspaceProblem(app, testContest, 'needs_login', { task: null, code: null, cases: null });
   await page.locator('#contest-add').click();

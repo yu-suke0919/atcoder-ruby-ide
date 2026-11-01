@@ -3,6 +3,7 @@ mod comparison;
 mod contests;
 mod document;
 mod files;
+mod input_code;
 mod lsp;
 mod navigation;
 mod process;
@@ -18,6 +19,7 @@ pub use contests::{
     RegisteredContest,
 };
 pub use document::{DocumentResult, DocumentStore};
+pub use input_code::input_code;
 pub use lsp::{LspInfo, RubyLsp};
 pub use navigation::{browser_target, is_allowed, ALLOWED_ORIGINS};
 pub use runner::{Output, PreparedRun, RunRequest, RunResult, Runner};

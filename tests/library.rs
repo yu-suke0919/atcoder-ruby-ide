@@ -1,6 +1,6 @@
 use atcoder_ruby_ide::{
-    browser_target, fetch_page, http_client, parse_task, parse_task_list, Contest, ContestKey,
-    Contests, DocumentStore, SampleCase, Samples, Task, Workspaces,
+    browser_target, fetch_page, http_client, input_code, parse_task, parse_task_list, Contest,
+    ContestKey, Contests, DocumentStore, SampleCase, Samples, Task, Workspaces,
 };
 use std::path::Path;
 
@@ -98,6 +98,187 @@ fn the_url_field_opens_only_allowed_origins() {
         let error = browser_target(input).unwrap_err();
         assert!(error.contains("https://atcoder.jp"), "{input}: {error}");
     }
+}
+
+/// Real task pages as the browser shows them (KaTeX rendered), with the input and constraints
+/// sections only: the input format read, the code made from it and an input it must read.
+const INPUT_FORMATS: &[(&str, &str, &str, &str)] = &[
+    (
+        "abc430_a",
+        "$A$ $B$ $C$ $D$",
+        "a, b, c, d = gets.split.map(&:to_i)\n",
+        "10 20 30 40\n",
+    ),
+    ("tessoku_book_a", "$N$", "n = gets.to_i\n", "2\n"),
+    ("arc065_a", "$S$", "s = gets.chomp\n", "erasedream\n"),
+    (
+        "abc081_b",
+        "$N$\n$A_1$ $A_2$ ... $A_N$",
+        "n = gets.to_i\na = gets.split.map(&:to_i)\n",
+        "3\n8 12 40\n",
+    ),
+    (
+        "abc085_b",
+        "$N$\n$d_1$\n$:$\n$d_N$",
+        "n = gets.to_i\nd = Array.new(n) { gets.to_i }\n",
+        "2\n10\n8\n",
+    ),
+    (
+        "arc089_a",
+        "$N$\n$t_1$ $x_1$ $y_1$\n$t_2$ $x_2$ $y_2$\n$:$\n$t_N$ $x_N$ $y_N$",
+        "n = gets.to_i\ntxy = Array.new(n) { gets.split.map(&:to_i) }\n",
+        "2\n3 1 2\n6 1 1\n",
+    ),
+    (
+        "abc376_b",
+        "$N$ $Q$\n$H_1$ $T_1$\n$H_2$ $T_2$\n$\\vdots$\n$H_Q$ $T_Q$",
+        "n, q = gets.split.map(&:to_i)\nht = Array.new(q) { h, t = gets.split; [h, t.to_i] }\n",
+        "6 2\nR 4\nL 5\n",
+    ),
+    (
+        "abc075_b",
+        "$H$ $W$\n$S_1$\n$:$\n$S_H$",
+        "h, w = gets.split.map(&:to_i)\ns = Array.new(h) { gets.chomp }\n",
+        "2 3\n#.#\n..#\n",
+    ),
+    (
+        "abc430_b",
+        "$N$ $M$\n$S_{1,1}\\ldots S_{1,N}$\n$\\vdots$\n$S_{N,1}\\ldots S_{N,N}$",
+        "n, m = gets.split.map(&:to_i)\ns = Array.new(n) { gets.chomp }\n",
+        "2 1\n.#\n#.\n",
+    ),
+    (
+        "abc183_c",
+        "$N$ $K$\n$T_{1,1}$ $\\ldots$ $T_{1,N}$\n$\\vdots$\n$T_{N,1}$ $\\ldots$ $T_{N,N}$",
+        "n, k = gets.split.map(&:to_i)\nt = Array.new(n) { gets.split.map(&:to_i) }\n",
+        "2 5\n0 3\n3 0\n",
+    ),
+    (
+        "abc088_c",
+        "$c_{1,1}$ $c_{1,2}$ $c_{1,3}$\n$c_{2,1}$ $c_{2,2}$ $c_{2,3}$\n$c_{3,1}$ $c_{3,2}$ $c_{3,3}$",
+        "c = Array.new(3) { gets.split.map(&:to_i) }\n",
+        "1 0 1\n2 1 2\n1 0 1\n",
+    ),
+    (
+        "abc278_d",
+        "$N$\n$A_1$ $A_2$ $\\dots$ $A_N$\n$Q$\n$\\operatorname{query}_1$\n$\\operatorname{query}_2$\n$\\vdots$\n$\\operatorname{query}_Q$",
+        "n = gets.to_i\na = gets.split.map(&:to_i)\nq = gets.to_i\nqueries = Array.new(q) { gets.split.map(&:to_i) }\n",
+        "2\n3 1\n2\n1 5\n3 2\n",
+    ),
+];
+
+#[test]
+fn input_formats_are_read_from_the_loaded_page_and_become_reading_code() {
+    for (task, format, code, _) in INPUT_FORMATS {
+        let html = std::fs::read_to_string(format!("../tests/fixtures/input-formats/{task}.html"))
+            .unwrap();
+        let read = parse_task(URL, &html).unwrap();
+        assert_eq!(read.input_format.as_deref(), Some(*format), "{task}");
+        assert!(!read.constraints.is_empty(), "{task}");
+        assert_eq!(
+            input_code(format, &read.constraints).as_deref(),
+            Some(*code),
+            "{task}"
+        );
+    }
+    let constraints = |items: &[&str]| {
+        items
+            .iter()
+            .map(|item| item.to_string())
+            .collect::<Vec<_>>()
+    };
+    // Types come from the constraints: strings only where they say so.
+    assert_eq!(input_code("$S$", &[]).as_deref(), Some("s = gets.to_i\n"));
+    assert_eq!(
+        input_code(
+            "$N$ $S$",
+            &constraints(&["$S$ は英小文字からなる長さ $N$ の文字列"])
+        )
+        .as_deref(),
+        Some("n, s = gets.split\nn = n.to_i\n")
+    );
+    assert_eq!(
+        input_code("$N$\n$A_1$\n$\\vdots$\n$A_{N-1}$", &[]).as_deref(),
+        Some("n = gets.to_i\na = Array.new(n - 1) { gets.to_i }\n")
+    );
+    // Formats it cannot tell apart give no code at all.
+    for format in [
+        "$T$\n$\\mathrm{case}_1$\n$\\mathrm{case}_2$\n$\\vdots$\n$\\mathrm{case}_T$",
+        "$N$\n$A_1$\n$\\vdots$\n$A_{2N}$",
+        "$N$\n$A_1 + B$",
+        "",
+    ] {
+        assert_eq!(input_code(format, &[]), None, "{format}");
+    }
+}
+
+#[test]
+fn generated_code_reads_the_whole_input_with_ruby() {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    for (task, _, code, input) in INPUT_FORMATS {
+        let mut child = Command::new(ruby())
+            .arg("-e")
+            .arg(format!(
+                "{code}raise 'unread input' unless STDIN.read.strip.empty?"
+            ))
+            .stdin(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(input.as_bytes())
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{task}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn new_files_start_with_reading_code_but_converted_and_copied_files_do_not() {
+    let root = tempfile::tempdir().unwrap();
+    let workspaces = Workspaces::new(root.path());
+    let html = std::fs::read_to_string("../tests/fixtures/input-formats/abc081_b.html").unwrap();
+    workspaces
+        .store_task(&parse_task(URL, &html).unwrap())
+        .unwrap();
+    let directory = root
+        .path()
+        .join("workspaces")
+        .join("abs")
+        .join("practice_1");
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(directory.join("solution.rb"), "puts 'mine'").unwrap();
+    let mut documents = DocumentStore::default();
+    let opened = workspaces
+        .open(URL, "B", documents.revision(), &mut documents)
+        .unwrap();
+    let code = "n = gets.to_i\na = gets.split.map(&:to_i)\n";
+    let read = |name: &str| {
+        std::fs::read_to_string(directory.join("files").join(format!("{name}.rb"))).unwrap()
+    };
+    assert_eq!(opened.document.code, "puts 'mine'");
+    assert_eq!(read("B_2"), code);
+    assert_eq!(workspaces.create_file(URL, "B").unwrap(), "B_3");
+    assert_eq!(read("B_3"), code);
+    assert_eq!(workspaces.copy_file(URL, "B_1", "B").unwrap(), "B_4");
+    assert_eq!(read("B_4"), "puts 'mine'");
+    let home = workspaces
+        .open_home(documents.revision(), &mut documents)
+        .unwrap();
+    assert_eq!(home.document.code, "");
+    assert_eq!(workspaces.create_file("home", "home").unwrap(), "home_3");
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("home").join("files").join("home_3.rb")).unwrap(),
+        ""
+    );
 }
 
 #[test]
@@ -724,5 +905,41 @@ fn live_atcoder_task_list_and_ended_task_pages_run_every_sample() {
                 .unwrap();
             assert_eq!(result.comparison, Some(true), "{url}: {}", result.stderr);
         }
+    }
+    // The reading code made from the raw page reads every sample input to the end.
+    for (contest, task) in [
+        ("abc430", "abc430_a"),
+        ("abc081", "abc081_b"),
+        ("abc085", "abc085_b"),
+        ("abc086", "arc089_a"),
+        ("abc376", "abc376_b"),
+        ("abc075", "abc075_b"),
+        ("abc430", "abc430_b"),
+        ("abc183", "abc183_c"),
+        ("abc088", "abc088_c"),
+        ("abc278", "abc278_d"),
+        ("abc049", "arc065_a"),
+    ] {
+        let url = format!("https://atcoder.jp/contests/{contest}/tasks/{task}");
+        let read = parse_task(
+            &url,
+            &fetch_page(&client, &format!("{url}?lang=ja"), "").unwrap(),
+        )
+        .unwrap();
+        let code = input_code(read.input_format.as_deref().unwrap(), &read.constraints)
+            .unwrap_or_else(|| panic!("{task}: no code"));
+        for sample in &read.samples {
+            let result = Runner::new(Duration::from_secs(10), 1048576)
+                .prepare(RunRequest {
+                    code: format!("{code}raise 'unread input' unless STDIN.read.strip.empty?"),
+                    stdin: sample.stdin.clone(),
+                    ..Default::default()
+                })
+                .unwrap()
+                .execute(Path::new(&ruby()), |_| {})
+                .unwrap();
+            assert_eq!(result.status, "completed", "{task}: {}", result.stderr);
+        }
+        std::thread::sleep(Duration::from_secs(1));
     }
 }

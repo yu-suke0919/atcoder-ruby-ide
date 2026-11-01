@@ -98,10 +98,10 @@ pub(crate) fn list(workspace: &Path) -> Result<Vec<String>, String> {
     Ok(names)
 }
 
-/// Makes `files/` on first use: `<label>_1` holds the old `solution.rb` (or nothing) and
-/// `<label>_2` starts empty. The files are written to a temporary folder that becomes `files/`
+/// Makes `files/` on first use: `<label>_1` holds the old `solution.rb` (or `template`) and
+/// `<label>_2` starts with `template`, the task's reading code or nothing. The files are written to a temporary folder that becomes `files/`
 /// only when complete, so a failure leaves the workspace as it was, `solution.rb` included.
-pub(crate) fn ensure(workspace: &Path, label: &str) -> Result<(), String> {
+pub(crate) fn ensure(workspace: &Path, label: &str, template: &str) -> Result<(), String> {
     let files = workspace.join(FILES);
     if files.exists() {
         return Ok(());
@@ -111,14 +111,14 @@ pub(crate) fn ensure(workspace: &Path, label: &str) -> Result<(), String> {
         read_limited(&solution, MAX_TEXT_BYTES)
             .map_err(|e| format!("solution.rb を変換できません（元のまま残します）: {e}"))?
     } else {
-        Vec::new()
+        template.as_bytes().to_vec()
     };
     let temporary = tempfile::Builder::new()
         .prefix(".files-")
         .tempdir_in(workspace)
         .map_err(|e| format!("作業領域を作成できません: {e}"))?;
     let prefix = prefix(label);
-    for (number, data) in [(1, first.as_slice()), (2, &[][..])] {
+    for (number, data) in [(1, first.as_slice()), (2, template.as_bytes())] {
         std::fs::write(temporary.path().join(format!("{prefix}_{number}.rb")), data)
             .map_err(|e| format!("作業領域を作成できません: {e}"))?;
     }
@@ -129,15 +129,15 @@ pub(crate) fn ensure(workspace: &Path, label: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Adds an empty file with the next free `<label>_<n>` name.
-pub(crate) fn create(workspace: &Path, label: &str) -> Result<String, String> {
+/// Adds a file with the next free `<label>_<n>` name, starting with `template`.
+pub(crate) fn create(workspace: &Path, label: &str, template: &str) -> Result<String, String> {
     let names = list(workspace)?;
     let prefix = prefix(label);
     let name = (1..)
         .map(|number| format!("{prefix}_{number}"))
         .find(|name| !names.iter().any(|used| used.eq_ignore_ascii_case(name)))
         .unwrap();
-    crate::task::create_if_missing(&path(workspace, &name)?, b"")?;
+    crate::task::create_if_missing(&path(workspace, &name)?, template.as_bytes())?;
     Ok(name)
 }
 
@@ -148,7 +148,7 @@ pub(crate) fn copy(workspace: &Path, name: &str, label: &str) -> Result<String, 
     }
     let code = read_limited(&path(workspace, name)?, MAX_TEXT_BYTES)
         .map_err(|e| format!("コピーできません: {e}"))?;
-    let copy = create(workspace, label)?;
+    let copy = create(workspace, label, "")?;
     std::fs::write(path(workspace, &copy)?, code).map_err(|e| format!("コピーできません: {e}"))?;
     Ok(copy)
 }
