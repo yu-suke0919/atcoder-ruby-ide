@@ -184,7 +184,11 @@ pub fn parse_task(url: &str, html: &str) -> Result<Task, String> {
             if pending.is_some() {
                 return Err("サンプル本文がありません。".into());
             }
-            let heading = element.text().collect::<String>();
+            // Only the heading's own text: the loaded page adds a Copy button inside it.
+            let heading = element
+                .children()
+                .filter_map(|node| node.value().as_text().map(|text| &**text))
+                .collect::<String>();
             let heading = heading.trim();
             let (number, is_input) = if let Some(n) = heading
                 .strip_prefix("入力例")

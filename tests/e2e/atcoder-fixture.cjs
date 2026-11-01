@@ -24,7 +24,9 @@ function taskListPage(contest, title, tasks) {
 }
 
 function taskPage({ samples = [], timeLimit = '2 sec', memoryLimit = '1024 MiB' } = {}) {
-  const sections = samples.map(([input, output], index) => `<section><h3>入力例 ${index + 1}</h3><pre>${escape(input)}</pre></section><section><h3>出力例 ${index + 1}</h3><pre>${escape(output)}</pre></section>`).join('');
+  // Headings carry the Copy button that AtCoder's script adds once the page has loaded.
+  const copy = '<span class="btn btn-default btn-sm btn-copy">Copy</span>';
+  const sections = samples.map(([input, output], index) => `<section><h3>入力例 ${index + 1}${copy}</h3><pre>${escape(input)}</pre></section><section><h3>出力例 ${index + 1}${copy}</h3><pre>${escape(output)}</pre></section>`).join('');
   return `<html><body><p>実行時間制限: ${timeLimit} / メモリ制限: ${memoryLimit}</p><div id="task-statement"><span class="lang-ja"><section><h3>問題文</h3><p>テスト用の問題です。</p></section>${sections}</span></div></body></html>`;
 }
 

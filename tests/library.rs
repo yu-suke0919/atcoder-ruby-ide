@@ -60,6 +60,18 @@ fn english_empty_output_entities_and_legacy_pages() {
 }
 
 #[test]
+fn copy_buttons_added_by_the_loaded_page_are_not_part_of_sample_headings() {
+    // The app reads the page after AtCoder's script adds Copy buttons to each sample.
+    let html = r#"<div id="task-statement"><span class="lang"><span class="lang-ja"><div class="part"><section><h3>入力例 1<span class="btn btn-default btn-sm btn-copy" tabindex="0" data-toggle="tooltip" data-trigger="manual" title="Copied!" data-target="pre-sample0">Copy</span></h3><div class="div-btn-copy"><span class="btn-copy btn-pre" tabindex="0" data-toggle="tooltip" data-trigger="manual" title="Copied!" data-target="pre-sample0">Copy</span></div><pre id="pre-sample0">10 20 30 40
+</pre></section></div><div class="part"><section><h3>出力例 1<span class="btn btn-default btn-sm btn-copy" tabindex="0" data-target="pre-sample1">Copy</span></h3><div class="div-btn-copy"><span class="btn-copy btn-pre" data-target="pre-sample1">Copy</span></div><pre id="pre-sample1">No
+</pre></section></div></span></span></div>"#;
+    let task = parse_task(URL, html).unwrap();
+    assert_eq!(task.samples.len(), 1);
+    assert_eq!(task.samples[0].stdin, "10 20 30 40\n");
+    assert_eq!(task.samples[0].expected_output, "No\n");
+}
+
+#[test]
 fn task_limits_parse_exact_milliseconds_in_both_languages() {
     for (header, time, memory) in [
         (
