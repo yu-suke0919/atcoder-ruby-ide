@@ -72,6 +72,22 @@ pub struct Task {
     pub time_limit_ms: Option<u32>,
     #[serde(rename = "memoryLimitMiB", skip_serializing_if = "Option::is_none")]
     pub memory_limit_mib: Option<u32>,
+    /// The input section's `pre`, each variable as `$TeX$`. Pages read before U4 have none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_format: Option<String>,
+    /// The constraints, one item each, variables as in `input_format`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub constraints: Vec<String>,
+}
+
+impl Task {
+    /// The code a new file of this task starts with: reading its input, or nothing.
+    pub(crate) fn input_code(&self) -> String {
+        self.input_format
+            .as_deref()
+            .and_then(|format| crate::input_code(format, &self.constraints))
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -117,6 +133,7 @@ fn empty_case() -> SampleCase {
 fn open_files(
     directory: &Path,
     label: &str,
+    template: &str,
     initial_cases: Vec<SampleCase>,
     expected_document_revision: u64,
     documents: &mut DocumentStore,
@@ -146,7 +163,7 @@ fn open_files(
         create_if_missing(&sample_path, &data)?;
     }
     let samples = load_samples(&sample_path)?;
-    solutions::ensure(directory, label)?;
+    solutions::ensure(directory, label, template)?;
     let files = solutions::list(directory)?;
     let file = files.first().ok_or("ファイルがありません。")?.clone();
     let document = documents.open(solutions::path(directory, &file)?)?;
@@ -167,6 +184,15 @@ fn validate(task: &Task, key: &TaskKey) -> Result<(), String> {
     }
     if task.samples.len() > 100 {
         return Err("サンプルは100件以下にしてください。".into());
+    }
+    if task
+        .input_format
+        .as_ref()
+        .is_some_and(|f| f.len() > 64 * 1024)
+        || task.constraints.len() > 200
+        || task.constraints.iter().any(|item| item.len() > 4096)
+    {
+        return Err("入力形式・制約が長すぎます。".into());
     }
     if task.samples.is_empty() {
         Ok(())
@@ -238,6 +264,75 @@ fn parse_limits(task: ElementRef<'_>) -> Result<(Option<u32>, Option<u32>), Stri
     Ok((time, memory))
 }
 
+/// A heading's own text: the loaded page adds a Copy button inside sample headings.
+fn own_text(element: ElementRef<'_>) -> String {
+    element
+        .children()
+        .filter_map(|node| node.value().as_text().map(|text| text.to_string()))
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+/// Text with each variable as `$TeX$`. The loaded page draws variables with KaTeX, which keeps
+/// the original TeX in an annotation; a page fetched again has the TeX as the variable's text.
+fn tex_text(element: ElementRef<'_>, text: &mut String) {
+    for child in element.children() {
+        match child.value() {
+            Node::Text(value) => text.push_str(value),
+            Node::Element(e) if e.name() == "br" => text.push('\n'),
+            Node::Element(e) if e.name() == "var" => {
+                let var = ElementRef::wrap(child).unwrap();
+                let tex = var
+                    .select(&selector(r#"annotation[encoding="application/x-tex"]"#))
+                    .next()
+                    .unwrap_or(var)
+                    .text()
+                    .collect::<String>();
+                text.push('$');
+                text.push_str(tex.trim());
+                text.push('$');
+            }
+            Node::Element(_) => tex_text(ElementRef::wrap(child).unwrap(), text),
+            _ => {}
+        }
+    }
+}
+
+/// The first element named `name` after the heading `titles`, before the next heading.
+fn after_heading<'a>(body: ElementRef<'a>, titles: &[&str], name: &str) -> Option<ElementRef<'a>> {
+    let heading = body
+        .select(&selector("h3"))
+        .find(|h| titles.contains(&own_text(*h).as_str()))?;
+    heading
+        .next_siblings()
+        .filter_map(ElementRef::wrap)
+        .take_while(|e| e.value().name() != "h3")
+        .find(|e| e.value().name() == name)
+}
+
+fn input_format(body: ElementRef<'_>) -> Option<String> {
+    let pre = after_heading(body, &["入力", "Input"], "pre")?;
+    let mut text = String::new();
+    tex_text(pre, &mut text);
+    let lines: Vec<_> = text.lines().map(str::trim).collect();
+    let format = lines.join("\n").trim().to_string();
+    (!format.is_empty()).then_some(format)
+}
+
+fn constraints(body: ElementRef<'_>) -> Vec<String> {
+    let Some(list) = after_heading(body, &["制約", "Constraints"], "ul") else {
+        return Vec::new();
+    };
+    list.select(&selector("li"))
+        .map(|item| {
+            let mut text = String::new();
+            tex_text(item, &mut text);
+            text.split_whitespace().collect::<Vec<_>>().join(" ")
+        })
+        .collect()
+}
+
 /// Reads samples and limits from a task page. A page without a task statement (not logged in,
 /// not registered, or missing) is an error so the caller can ask the user to log in or register.
 pub fn parse_task(url: &str, html: &str) -> Result<Task, String> {
@@ -264,12 +359,8 @@ pub fn parse_task(url: &str, html: &str) -> Result<Task, String> {
             if pending.is_some() {
                 return Err("サンプル本文がありません。".into());
             }
-            // Only the heading's own text: the loaded page adds a Copy button inside it.
-            let heading = element
-                .children()
-                .filter_map(|node| node.value().as_text().map(|text| &**text))
-                .collect::<String>();
-            let heading = heading.trim();
+            let heading = own_text(element);
+            let heading = heading.as_str();
             let (number, is_input) = if let Some(n) = heading
                 .strip_prefix("入力例")
                 .or_else(|| heading.strip_prefix("Sample Input"))
@@ -326,6 +417,8 @@ pub fn parse_task(url: &str, html: &str) -> Result<Task, String> {
         samples,
         time_limit_ms,
         memory_limit_mib,
+        input_format: input_format(body),
+        constraints: constraints(body),
     };
     validate(&task, &key)?;
     Ok(task)
@@ -379,6 +472,7 @@ impl Workspaces {
         let opened = open_files(
             &key.workspace(&self.root),
             label,
+            &task.input_code(),
             initial_cases,
             expected_document_revision,
             documents,
@@ -400,6 +494,7 @@ impl Workspaces {
         let opened = open_files(
             &self.root.join(HOME),
             HOME,
+            "",
             vec![empty_case()],
             expected_document_revision,
             documents,
@@ -435,7 +530,15 @@ impl Workspaces {
         documents.open(solutions::path(&directory, name)?)
     }
     pub fn create_file(&self, workspace: &str, label: &str) -> Result<String, String> {
-        solutions::create(&self.directory(workspace)?, label)
+        // New files of a task start with its reading code; home has no input format.
+        let template = if workspace == HOME {
+            String::new()
+        } else {
+            self.task(workspace)?
+                .map(|task| task.input_code())
+                .unwrap_or_default()
+        };
+        solutions::create(&self.directory(workspace)?, label, &template)
     }
     pub fn copy_file(&self, workspace: &str, name: &str, label: &str) -> Result<String, String> {
         solutions::copy(&self.directory(workspace)?, name, label)
