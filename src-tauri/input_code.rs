@@ -315,8 +315,44 @@ fn block<T: PartialEq>(
     Some((count(&last)?, used + 2))
 }
 
-/// The reading code for an input format, or None when some line is not understood.
-pub fn input_code(format: &str, constraints: &[String]) -> Option<String> {
+/// Reads one line into one local per variable, converting only the integers.
+fn read_values(types: &Types, names: &[String]) -> Option<Vec<String>> {
+    let locals = names.iter().map(|n| local(n)).collect::<Option<Vec<_>>>()?;
+    let mixed = names.iter().any(|n| types.string(n)) && names.iter().any(|n| !types.string(n));
+    if !mixed {
+        return Some(vec![format!(
+            "{} = {}",
+            locals.join(", "),
+            types.line(names)?
+        )]);
+    }
+    let mut code = vec![format!("{} = gets.split", locals.join(", "))];
+    for (name, local) in names.iter().zip(&locals) {
+        if !types.string(name) {
+            code.push(format!("{local} = {local}.to_i"));
+        }
+    }
+    Some(code)
+}
+
+/// Rows read one by one in a loop: `n.times do ... end`.
+fn rows_loop(rows: &str, body: Vec<String>) -> String {
+    let count = if rows.contains(' ') {
+        format!("({rows})")
+    } else {
+        rows.to_string()
+    };
+    let body: Vec<_> = body.iter().map(|line| format!("  {line}")).collect();
+    format!("{count}.times do\n{}\nend", body.join("\n"))
+}
+
+/// A part of the reading code. Rows also have an array form to switch to.
+struct Block {
+    code: String,
+    array: Option<String>,
+}
+
+fn blocks(format: &str, constraints: &[String]) -> Option<Vec<Block>> {
     let lines = format
         .lines()
         .filter(|line| !line.trim().is_empty())
@@ -327,7 +363,7 @@ pub fn input_code(format: &str, constraints: &[String]) -> Option<String> {
         strings,
         all_integers,
     };
-    let mut code = Vec::new();
+    let mut blocks = Vec::new();
     let mut at = 0;
     while at < lines.len() {
         let current = &lines[at];
@@ -340,23 +376,16 @@ pub fn input_code(format: &str, constraints: &[String]) -> Option<String> {
             })
             .collect::<Option<Vec<_>>>();
         if let Some(names) = scalars.filter(|names| !names.is_empty()) {
-            let locals = names.iter().map(|n| local(n)).collect::<Option<Vec<_>>>()?;
-            let mixed =
-                names.iter().any(|n| types.string(n)) && names.iter().any(|n| !types.string(n));
-            if mixed {
-                code.push(format!("{} = gets.split", locals.join(", ")));
-                for (name, local) in names.iter().zip(&locals) {
-                    if !types.string(name) {
-                        code.push(format!("{local} = {local}.to_i"));
-                    }
-                }
-            } else {
-                code.push(format!("{} = {}", locals.join(", "), types.line(&names)?));
+            for code in read_values(&types, &names)? {
+                blocks.push(Block { code, array: None });
             }
             at += 1;
         } else if let Some(name) = list(current) {
             let read = types.split(types.string(&name));
-            code.push(format!("{} = {read}", local(&name)?));
+            blocks.push(Block {
+                code: format!("{} = {read}", local(&name)?),
+                array: None,
+            });
             at += 1;
         } else if let Some((name, _, joined)) = row(current).filter(|(_, r, _)| r == "1") {
             let (rows, used) = block(&lines[at..], &name, |line| {
@@ -367,10 +396,11 @@ pub fn input_code(format: &str, constraints: &[String]) -> Option<String> {
             } else {
                 types.split(types.string(&name))
             };
-            code.push(format!(
-                "{} = Array.new({rows}) {{ {read} }}",
-                local(&name)?
-            ));
+            let name = local(&name)?;
+            blocks.push(Block {
+                code: rows_loop(&rows, vec![format!("{name} = {read}")]),
+                array: Some(format!("{name} = Array.new({rows}) {{ {read} }}")),
+            });
             at += used;
         } else if let Some((names, _)) = tuple(current).filter(|(_, index)| index == "1") {
             if names.iter().any(|name| {
@@ -387,14 +417,40 @@ pub fn input_code(format: &str, constraints: &[String]) -> Option<String> {
                     .collect::<Option<Vec<_>>>()?
                     .concat(),
             };
-            code.push(format!(
-                "{target} = Array.new({rows}) {{ {} }}",
-                types.line(&names)?
-            ));
+            blocks.push(Block {
+                code: rows_loop(&rows, read_values(&types, &names)?),
+                array: Some(format!(
+                    "{target} = Array.new({rows}) {{ {} }}",
+                    types.line(&names)?
+                )),
+            });
             at += used;
         } else {
             return None;
         }
     }
-    (!code.is_empty()).then(|| code.join("\n") + "\n")
+    (!blocks.is_empty()).then_some(blocks)
+}
+
+/// The reading code for an input format, or None when some line is not understood. Rows are
+/// read in a loop, so they can be used as they are read.
+pub fn input_code(format: &str, constraints: &[String]) -> Option<String> {
+    let blocks = blocks(format, constraints)?;
+    Some(
+        blocks
+            .iter()
+            .map(|block| block.code.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n",
+    )
+}
+
+/// The rows of the reading code as `[loop, array]`: the editor switches one for the other.
+pub fn reading_forms(format: &str, constraints: &[String]) -> Vec<[String; 2]> {
+    blocks(format, constraints)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|block| Some([block.code, block.array?]))
+        .collect()
 }

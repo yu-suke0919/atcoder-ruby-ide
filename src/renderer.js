@@ -441,6 +441,7 @@ function applyWorkspace(result, problem) {
   saveTimer = null;
   saveError = null;
   activeProblem = { ...problem, files: result.files, file: result.file };
+  editor.readingForms = result.readingForms ?? [];
   editor.value = result.document.code;
   savedCode = editor.value;
   filePath = result.document.filePath;

@@ -88,12 +88,20 @@ impl Task {
             .and_then(|format| crate::input_code(format, &self.constraints))
             .unwrap_or_default()
     }
+    fn reading_forms(&self) -> Vec<[String; 2]> {
+        self.input_format
+            .as_deref()
+            .map(|format| crate::reading_forms(format, &self.constraints))
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskWorkspace {
     pub task: Task,
+    /// The rows of the reading code as `[loop, array]`, for the editor's switch buttons.
+    pub reading_forms: Vec<[String; 2]>,
     /// The file names in tab order; `file` is the open one.
     pub files: Vec<String>,
     pub file: String,
@@ -478,6 +486,7 @@ impl Workspaces {
             documents,
         )?;
         Ok(TaskWorkspace {
+            reading_forms: task.reading_forms(),
             task,
             files: opened.files,
             file: opened.file,
