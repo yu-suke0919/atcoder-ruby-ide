@@ -1,7 +1,7 @@
 # AtCoder Ruby IDE
 
 Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使います。Rubyの実行とRuby LSPはWSL2の中で動き、AtCoderと同じRuby 3.4.5（YJIT付き）を配布物に同梱します。
-WSL2の準備は必要ですが、Ruby のインストールや PATH 設定は（WindowsにもWSLにも）不要です。WSLでの実行は[ロードマップ](docs/roadmap.md)のPhase Cで実装中で、それまではWindowsに同梱したRubyで実行します。
+WSL2の準備は必要ですが、Ruby のインストールや PATH 設定は（WindowsにもWSLにも）不要です。
 
 - [MVP の仕様と受入条件](docs/mvp.md)
 - [画面の仕様](docs/ui.md)
@@ -65,74 +65,37 @@ WSL2の準備は必要ですが、Ruby のインストールや PATH 設定は�
 ac-library-rb 1.2.0、bitarray 1.3.1、faster_prime 1.0.2、rgl 0.6.6、sorted_containers 1.1.0と必要な依存gemを同梱し、C拡張のあるgemもC3bで加えます。対応範囲・未同梱gem・制限の差は[実行環境の資料](docs/atcoder-runtime.md)を参照してください。
 ZIP はフォルダー全体を保持してください。単体のアプリ exe だけを取り出すと Ruby を実行できません。
 
-Phase Cの実装（C4）までは、検証済みのRuby 3.4系のパッチに対応するRubyInstaller x64を同梱し、`ruby/bin/ruby.exe` を直接起動する以前の配布物です。
-
 WebView2 Runtime が必要です。Windows で未導入の場合、NSIS インストーラーが取得します（初回はネット接続が必要）。
 オフライン利用する ZIP 版では、あらかじめ WebView2 を用意してください。現時点ではコード署名を設定していません。
 AtCoder 本番の追加 gem や実行環境との完全一致は対象外です。
 
 ## 開発
 
-この節は現在のコードの手順です。Windows同梱Rubyの準備（`prepare:ruby`・`update:ruby`）は、Phase C（C2〜C4）でWSL向けの手順に書き換えます。
-
-Node.js 24、Rust 1.99.1、Windows の Visual Studio C++ Build Tools と WebView2 を使います。
+Node.js 24、Rust 1.99.1、Ruby 3.4.5（`config/ruby-wsl.json`）を使います。Windows のアプリのビルドには Visual Studio C++ Build Tools と WebView2 も使います。
 Rust は `rust-toolchain.toml`、npm と Cargo の依存は各ロックファイルで固定しています。
 
-```powershell
-npm ci
-npm run prepare:ruby
-npm run prepare:lsp
-npm start
-```
-
-`npm ci` はCodeMirrorのバンドル・ライセンスを `src/vendor/` に生成します。エディタの依存や `scripts/codemirror.mjs` を変更した場合は `npm run prepare:editor` で再生成します。表示時にCDNや外部サービスへ接続しません。
-
-Windows のデスクトップアプリは `npm start` による開発時も同梱 Ruby を使います。`RUBY_PATH` や PATH の別の Ruby には切り替わりません。
-共通テスト（`npm test`）とブラウザー用テストホストは、OS にかかわらず `RUBY_PATH`、未指定なら PATH の `ruby` を使います。Linuxでは `config/ruby-windows.json` の `rubyVersion` と同じ、書き込み可能なRubyを用意して `npm run prepare:gems` で標準gemディレクトリへ固定gemを追加します。実行時も同じディレクトリだけを探索し、GEM_HOME・GEM_PATHやユーザー用gemの影響を受けません。Windows の共通テストでは、CI と同じく準備済みの同梱 Ruby を指定します。
-
-```powershell
-npm run prepare:ruby
-$env:RUBY_PATH = (Resolve-Path vendor/ruby/bin/ruby.exe).Path
-npm run prepare:lsp
-npm test
-cargo fmt --all --check
-```
-
-Windows のネイティブ GUI テストは、後述の「ビルドと検証」の手順で実行します。
-Linux の画面テストは headless Chromium と既存の Rust コアを使い、GTK / WebKitGTK は不要です。通常の Tauri デスクトップアプリ自体を Linux で起動する場合は、GTK / WebKitGTK 開発依存が別途必要です。
-Linux の共通・画面テストは次のコマンドで実行します。
-
 ```bash
+npm ci
 npm run prepare:gems
 npm run prepare:lsp
 npm test
 cargo fmt --all --check
-npm run test:e2e
 ```
 
-共通テストは Rust による実際の Ruby プロセス・ファイル操作と、Node によるケース状態・アーカイブ検証です。
-ケース状態だけなら `node --test --test-isolation=none tests/unit/sample-cases.test.cjs` で Ruby・ブラウザーなしで確認できます。
-AtCoder の実サイトとの連携は、通信できる開発環境で `npm run test:atcoder-live` を明示実行します。ABC086の問題一覧の登録と、終了したコンテストの問題ページからのサンプル・制限の読み取り、実Rubyでの全サンプル比較を確認します。CIを含む通常の自動テストではAtCoderへ接続しません。依存パッケージ・Ruby・ブラウザーなどの初回取得には通信が必要です。
-Linux では `npm run test:e2e` がテスト専用 Rust ホストをビルドし、HTTP 配信した本番画面を headless Chromium で操作します。
-実 Ruby・作業領域のファイル I/O・実行制御・比較は本番の Rust ライブラリを共有し、Tauri 通信・ウィンドウ操作をテスト用に差し替えます。
-AtCoderのページは、テストが起動するローカルのサーバーが `ATCODER_IDE_TEST_ORIGIN` で代わりに配信します。問題一覧・問題ページ・ログインが必要なページを用意し、Windowsでは実際の右端のブラウザでページを読み取ります。HTML解析と保存の処理は Rust テストでも検証します。
-Windows は同じ受入ケースを実際の WebView2 で確認します。テスト専用ホストは配布しません。
-`E2E_RUNNER=browser` または `native` で明示選択でき、その他の値はエラーになります（native は Windows 専用）。
-Windows でも browser を選べますが、その場合は開発用の Ruby と Chromium を別途用意し、必要なら `RUBY_PATH` を指定してください。
+`npm ci` はCodeMirrorのバンドル・ライセンスを `src/vendor/` に生成します。エディタの依存や `scripts/codemirror.mjs` を変更した場合は `npm run prepare:editor` で再生成します。表示時にCDNや外部サービスへ接続しません。
 
-Linux の初回セットアップでは、Node.js 24・Rust・Ruby に加えて Chromium を用意してください。
-`CHROMIUM_PATH` で実行ファイルを指定でき、未指定なら導入済みの Playwright 版、次に `/usr/bin/chromium` を使います。
-システム版がなければ `npx playwright install --with-deps chromium` で Playwright 版を導入します。
-1 ケースだけ確認する場合は `node --test --test-isolation=none --test-name-pattern='M04: the initial' tests/e2e/app.test.cjs` を使えます。
-ブラウザー起動や localhost の接続をサンドボックスが制限する環境では、環境の通常の実行承認を使います。
+共通テスト（`npm test`）とブラウザー用テストホストは `RUBY_PATH`、未指定なら PATH の `ruby` を使い、テストホストは自分自身をエージェントとして起動して Ruby を実行します。`npm run prepare:gems` で、その Ruby の標準gemディレクトリへ固定gemを追加します。実行時も同じディレクトリだけを探索し、GEM_HOME・GEM_PATHやユーザー用gemの影響を受けません。
+
+WSL へ置く同梱物（`vendor/wsl/`）は、Ubuntu 22.04 などの Linux（WSL の中でもよい）で、Ruby のビルドに必要なパッケージ（`build-essential libssl-dev libyaml-dev libffi-dev zlib1g-dev libgmp-dev`）を入れてから `npm run prepare:wsl` で作り、`npm run check:wsl` で確かめます。CI の `wsl-runtime` Artifact を `vendor/wsl/` に置いても使えます。Windows で `npm start` するときも、この同梱物を WSL へ置いて Ruby を実行します。
+
 初回導入・コンパイルと、準備後の画面テスト時間は分けて測定します。
 
-Windows ではアプリから Ruby の PATH を除去し、不正な `RUBY_PATH` でも同梱 Ruby を使うことを確認します。
+Windows では、アプリから Ruby の PATH を除去しても、WSL に置いた同梱の Ruby で実行することを確認します。
 通常起動ではテスト用デバッグポートを開きません。機能追加ごとの検証結果は [検証記録](docs/verification.md)、Ruby 削減時の速度・容量の測定は [テスト速度の改善](docs/test-feedback.md) を参照してください。
 
 ## ビルドと検証
 
-Windows で実行します。
+Windows で、`vendor/wsl/` を用意し、WSL を入れてから実行します。
 
 ```powershell
 npm run build:win
@@ -143,9 +106,9 @@ node scripts/test-installed-windows.cjs
 npm run package:win
 ```
 
-Ruby は公式配布元から取得し、[固定した SHA-256](config/ruby-windows.json) を検証します。
-配布物は `artifacts/`、容量とRuby・LSPの全ファイルのハッシュは `artifacts/reports/` に生成します。`ruby-lsp/`の固定bundleも両配布物へ同梱し、画面とバックエンドの両方で未保存コードからの補完取得を検証します。
-[GitHub Actions](.github/workflows/ci.yml) は Linux の共通・画面テストと、Windows の共通テスト・ビルド・ZIP 展開相当のアプリ・NSIS インストール後のアプリ起動スモークテストを実行します。
+Ruby のソースは公式配布元から取得し、[固定した SHA-256](config/ruby-wsl.json) を検証します。
+配布物は `artifacts/`、容量と同梱物のハッシュは `artifacts/reports/` に生成します。両配布物で、未保存コードからの補完取得を WSL の Ruby LSP で検証します。
+[GitHub Actions](.github/workflows/ci.yml) は、WSL へ置く同梱物の作成と確認（Ubuntu 22.04）、Linux の共通・画面テストと、Windows のビルド・ZIP 展開相当のアプリ・NSIS インストール後のアプリ起動スモークテスト（WSL1）を実行します。
 資料だけの変更（`docs/**` とルートの `*.md`）では実行せず、同じブランチ・PR に新しい push があると古い実行を止めます。
 成功した Windows ジョブの Artifacts から ZIP またはインストーラーを取得できます。
 

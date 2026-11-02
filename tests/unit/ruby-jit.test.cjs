@@ -8,7 +8,7 @@ const path = require('node:path');
 const execute = promisify(execFile);
 const root = path.resolve(__dirname, '../..');
 const script = path.join(root, 'scripts/probe-ruby-jit.cjs');
-const pinned = require('../../config/ruby-windows.json');
+const pinned = require('../../config/ruby-wsl.json');
 
 test('pinned Ruby JIT probes distinguish ignored flags from enabled engines', { timeout: 30000 }, async () => {
   const { stdout } = await execute(process.execPath, [script], {

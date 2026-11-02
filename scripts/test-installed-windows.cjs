@@ -19,13 +19,13 @@ async function main() {
   await execute(installer, ['/S', `/D=${directory}`], { timeout: 120000, windowsVerbatimArguments: true });
   const executable = path.join(directory, 'atcoder-ruby-ide.exe');
   await access(executable);
-  const runtime = JSON.parse(await readFile(path.join(root, 'artifacts/reports/ruby-manifest.json'), 'utf8'));
-  const required = ['bin/ruby.exe', 'lib/ruby', 'LICENSE.txt', 'licenses/ruby/COPYING.html', 'licenses/ruby/COPYING_ja.html', 'licenses/ruby/LEGAL.html', ...Object.keys(runtime).filter(name => name.startsWith('bin/') && name.endsWith('.dll'))];
-  for (const name of required) await access(path.join(directory, 'ruby', name));
+  const runtime = JSON.parse(await readFile(path.join(root, 'artifacts/reports/wsl-manifest.json'), 'utf8'));
+  assert.deepEqual(Object.keys(runtime).sort(), ['atcoder-runtime.tar.gz', 'runtime.json']);
+  for (const name of Object.keys(runtime)) await access(path.join(directory, 'wsl', name));
   let app;
   try {
     process.env.APP_EXE = executable;
-    app = await launch(profile, { hostEnv: { HTTP_PROXY: 'http://127.0.0.1:1', HTTPS_PROXY: 'http://127.0.0.1:1' } }); // Removes Ruby from PATH and verifies the app's actual Ruby path.
+    app = await launch(profile, { hostEnv: { HTTP_PROXY: 'http://127.0.0.1:1', HTTPS_PROXY: 'http://127.0.0.1:1' } }); // Removes Ruby from PATH and verifies that Ruby runs in WSL.
     const page = app.page;
     await page.context().setOffline(true);
     await waitInitialized(page);
@@ -43,7 +43,7 @@ async function main() {
     await page.getByRole('button', { name: '実行', exact: true }).click();
     await page.getByTestId('run-status').filter({ hasText: '正常終了' }).waitFor();
     assert.equal(await page.getByTestId('stdout').textContent(), await readFile(path.join(root, 'tests/fixtures/runtime-gems.txt'), 'utf8'));
-    console.log('NSIS smoke passed: installed exe, runtime files, offline LSP, sample, bundled extensions and AtCoder gems without system Ruby');
+    console.log('NSIS smoke passed: installed exe, WSL runtime files, offline LSP, sample, bundled extensions and AtCoder gems in WSL without Windows Ruby');
   } finally {
     if (app) await close(app);
     if (app) await removeContest(app, contest);

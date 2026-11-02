@@ -13,6 +13,7 @@ mod runner;
 mod samples;
 mod solutions;
 mod task;
+pub mod wsl;
 
 pub use agent_client::AgentClient;
 pub use commands::{ruby_info, RubyInfo};

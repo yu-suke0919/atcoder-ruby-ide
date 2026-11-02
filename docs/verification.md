@@ -585,3 +585,10 @@ after killing wsl.exe: agents, sleeps, timeout groups, signal: 0, 0, 0, HUP
 - 画面テスト用ホストは、Rubyの実行・停止・補完を`AgentClient`で自分自身（`--agent`）へ送るようにした。既存の画面テストがすべてエージェントを通る。
 - クラウドセッション（Linux、root）で、Rust（rootで失敗する既知の`r02_cleanup_failure_releases_reservation`以外。エージェント10件を含む）、Node単体96件、`cargo fmt --all --check`、画面テスト79件（Windows専用3件を除く）が成功した。1回目の画面テストではE10（大きな文書の末尾での補完）が補完の表示待ちで15秒を超えて失敗したが、単独・ファイル単位・全件の再実行ではいずれも成功した（全件で1.8秒）。
 - PR #52の最初のCIで、画面テスト用ホストの単体テスト（入力が終わったときに大きな最後のイベントを書き終えてから終了する）が失敗した。`AgentClient::shutdown`がエージェントの終了だけを待ち、エージェントが最後に書いた行の中継を待っていなかったため、ホストが書き込みの途中で終了していた。イベントを受け取る側を遅くしたテストで再現させてから、終了時に中継のスレッドの完了も待つように直した。
+
+## WSLへの配置と中継（C3a）
+
+- main b1841dcから開始。Ruby LSPの固定がRubyに含まれるgemの版（3.4.12のprism 1.5.3と3.4.5の1.2.0）で食い違うため、開発・LinuxのCIのRubyも3.4.5にし、WindowsのCIの単体テストをやめることにした（ロードマップのC3a）。Ruby LSP 0.26.11はprism 1.2以上2.0未満に対応している。Ruby 3.4.5のソースのSHA-256は[公式のリリース一覧](https://raw.githubusercontent.com/ruby/www.ruby-lang.org/master/_data/releases.yml)で確かめた。
+- 失敗するテストを先に用意した。`tests/wsl.rs`は、配置のスクリプトを`sh`で直接動かし、日本語と空白を含むパスのアーカイブがSHA-256のフォルダーに1回だけ置かれて再利用されること、別の版と残った一時フォルダーが消えること、SHA-256が違うアーカイブは置かれないこと、`wsl.exe`がない場合に準備の手順を出すこと、置いた場所のRubyとLSPでエージェントを起動することを確かめる。`tests/agent.rs`には、エージェントの起動の準備が失敗したときに要求のエラーになり、次の要求で準備し直すことを加えた。
+- 同梱物を作るスクリプトは、クラウドセッションから`cache.ruby-lang.org`に接続できない（403）ため、CIの`wsl-runtime`ジョブで確かめる。確認のスクリプト（`scripts/check-wsl-runtime.cjs`）は、ruby-builderのRuby 3.4.5・LSPの準備物・エージェントを組み合わせた仮のアーカイブで、Ruby確認・YJIT・採用gem・LSPの補完を確かめた。
+- Windowsのメモリ上限の画面テスト（M08）は、WSLへ移るとメモリ上限がなくなる（C5で作り直す）ため削除した。

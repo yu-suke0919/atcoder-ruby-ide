@@ -34,7 +34,7 @@ fn main() {
     let agent = AgentClient::new(|| {
         let mut command = std::process::Command::new(std::env::current_exe().unwrap());
         command.arg("--agent");
-        command
+        Ok(command)
     });
     let stop_and_wait = || {
         let _ = agent.request("stop_ruby", Value::Null);

@@ -286,7 +286,7 @@ fn agent_completes_unsaved_code_through_ruby_lsp() {
 }
 
 fn client() -> AgentClient {
-    AgentClient::new(agent_command)
+    AgentClient::new(|| Ok(agent_command()))
 }
 
 fn run_events(client: &AgentClient, args: Value) -> Arc<Mutex<Vec<Value>>> {
@@ -383,4 +383,25 @@ fn client_shutdown_ends_the_agent_and_its_runs() {
     assert!(gone_within(&[agent], Duration::from_secs(3)));
     assert!(gone_within(&pids, Duration::from_secs(2)));
     assert_eq!(client.pid(), None);
+}
+
+#[test]
+fn a_failing_start_is_reported_and_tried_again_on_the_next_request() {
+    let attempts = Arc::new(Mutex::new(0));
+    let counter = Arc::clone(&attempts);
+    let client = AgentClient::new(move || {
+        let mut attempts = counter.lock().unwrap();
+        *attempts += 1;
+        if *attempts == 1 {
+            Err("WSLを起動できません。".into())
+        } else {
+            Ok(agent_command())
+        }
+    });
+    assert_eq!(
+        client.request("ruby_info", Value::Null).unwrap_err(),
+        "WSLを起動できません。"
+    );
+    assert!(client.request("ruby_info", Value::Null).unwrap()["version"].is_string());
+    assert_eq!(*attempts.lock().unwrap(), 2);
 }

@@ -1,6 +1,6 @@
 # AtCoderとのRuby実行環境の整合
 
-Phase C（Rubyの実行とLSPをWSL内のエージェントへ）を終えた後の仕様を書く。各項目には実装する[ロードマップ](roadmap.md)の項目を付け、その実装までは、Windowsに同梱したRuby（RubyInstaller 3.4.12）で実行する以前の実装・測定スクリプト・テストが残る（C4で削除する）。以前の測定結果は[検証記録](verification.md)とgitの履歴にある。
+Phase C（Rubyの実行とLSPをWSL内のエージェントへ）を終えた後の仕様を書く。C3aで、RubyはWSL内の3.4.5で実行するようになった。残りの項目には実装する[ロードマップ](roadmap.md)の項目を付ける。使われなくなったWindows版Ruby（RubyInstaller 3.4.12）の準備・測定スクリプト・テストはC4で削除する。以前の測定結果は[検証記録](verification.md)とgitの履歴にある。
 
 ## 参照元と対象
 
@@ -15,7 +15,7 @@ AtCoderの公開環境はLinux上のCRubyの `Ruby 3.4 (ruby 3.4.5)` で、`ruby
 
 ## Rubyのビルド（C3a）
 
-- Ruby 3.4.5の公式ソース（`cache.ruby-lang.org`）のSHA-256を設定に固定し、CIのUbuntu 22.04で`--enable-yjit --enable-load-relative --disable-install-doc`を付けてビルドする。配置場所に依存しないため、WSL内のどこに置いても動く。
+- Ruby 3.4.5の公式ソース（`cache.ruby-lang.org`）のSHA-256を`config/ruby-wsl.json`に固定し、`scripts/build-wsl-runtime.sh`がCIのUbuntu 22.04で`--enable-yjit --enable-load-relative --disable-install-doc`を付けてビルドする。配置場所に依存しないため、WSL内のどこに置いても動く。
 - 静的ライブラリ（`libruby-static.a`）を除き、実行ファイルと拡張ライブラリのデバッグ情報を`strip`で除く。Rubyの`COPYING`・`LEGAL`はライセンスとして残す。採用gemとLSP用gemもCIで同じRubyへ入れ、エージェントとまとめたアーカイブのSHA-256を固定する。
 - 古いglibcに合わせるためUbuntu 22.04でビルドし、対象は`wsl --install`の既定のUbuntu（22.04以降）とする。使う共有ライブラリ（`libc`・`libm`・`libgcc_s`・`libcrypt`・`libz`・`libgmp`・`libffi`・`libyaml`・`libssl`・`libcrypto`）は、WSLの標準のUbuntuにある。足りない場合はエージェントの起動時に案内する。
 - 開発・LinuxのCIのテストも同じ3.4.5を使う。AtCoderの言語アップデートでバージョンが変わったときは、設定の版とハッシュを変えてビルドし直す（Phase Dで手順をまとめる）。最新パッチを自動で探す更新コマンドは持たない。
@@ -66,11 +66,11 @@ C5で、AtCoderと同じく`RUBY_THREAD_VM_STACK_SIZE`を問題のメモリ制�
 - 手段はcgroup v2の`memory.max`か、エージェントによる使用中のメモリ（RSS）の監視のどちらかにする。WSL2でcgroupを通常のユーザーが使えるかを利用者の手元で確かめてから決める。上限の値（端末保護の固定1 GiBか、問題のメモリ制限か）もC5で決める。
 - 上限で止めた実行は`memory-limit`を停止理由にし、出力比較とエラー行ジャンプを付けず、全件実行は次のケースへ進む。最初に確定した手動停止・時間制限・出力上限は上書きしない。
 - WSL1はメモリ上限の仕組み（`RLIMIT_AS`・`RLIMIT_DATA`・cgroup）がなく、上限は効かない。そのことを画面に表示する。
-- C4までは、WindowsのRunnerがRubyと子孫のJob全体に1 GiBのコミット上限を設ける以前の実装が残る。
+- C3aでWSLへ移ってからC5までは、メモリ上限がない。C3aまでは、WindowsのRunnerがRubyと子孫のJob全体に1 GiBのコミット上限を設けていた。
 
 ## JIT（C5）
 
-AtCoderと同じく`--jit`で実行する。同梱のRubyはYJIT付きでビルドするため、`--jit`でYJITが有効になる（C0で`RubyVM::YJIT.enabled?`がtrueになることを確かめた）。Runnerで有効になったことをテストで確かめる。LSPはJITを指定しない。時間超過の注意表示の説明をJITありの前提に更新する。C4までは、YJIT・RJIT非対応のWindows同梱Rubyで、JITを指定しない以前の実装が残る。
+AtCoderと同じく`--jit`で実行する。同梱のRubyはYJIT付きでビルドするため、`--jit`でYJITが有効になる（C0で`RubyVM::YJIT.enabled?`がtrueになることを確かめた）。Runnerで有効になったことをテストで確かめる。LSPはJITを指定しない。時間超過の注意表示の説明をJITありの前提に更新する。C5までは、JITを指定せずに実行する。
 
 ## 追加するgem
 

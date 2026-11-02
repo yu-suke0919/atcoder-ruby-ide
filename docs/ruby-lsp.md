@@ -1,6 +1,6 @@
 # Ruby LSPによる補完
 
-Shopify Ruby LSPをローカルの別プロセスとして利用し、CodeMirrorの手動補完へ接続する。未保存文書の同期・補完取得・停止はRustで管理する。Phase C（C2・C3a）以降、Ruby LSPはWSL内のエージェントが競技実行と同じRubyで動かし、Windowsのアプリは`lsp_start`・`lsp_complete`・`lsp_stop`の要求と結果を中継する（[WSLのエージェント](architecture.md#wslのエージェント)）。それまではWindows同梱のRubyで動かす以前の実装が残る。
+Shopify Ruby LSPをローカルの別プロセスとして利用し、CodeMirrorの手動補完へ接続する。未保存文書の同期・補完取得・停止はRustで管理する。C3a以降、Ruby LSPはWSL内のエージェントが競技実行と同じRubyで動かし、Windowsのアプリは`lsp_start`・`lsp_complete`・`lsp_stop`の要求と結果を中継する（[WSLのエージェント](architecture.md#wslのエージェント)）。
 
 - Rubyは競技実行と同じ固定済み3.4.xを使う。LSP用の追加gemは`vendor/ruby-lsp/gems`へ分離し、競技用の標準gemディレクトリには追加しない。
 - `config/ruby-lsp.json`へRuby LSPと依存gemのバージョンを固定する。Rubyに含まれるPrism・RBS・logger・Bundlerも指定バージョンを確認する。追加するpure Ruby gemはRubyGemsのSHA-256を検証し、ライセンスごと準備する。C拡張のビルドは行わない。Ruby更新で同梱依存が変われば、固定情報とテストも見直す。

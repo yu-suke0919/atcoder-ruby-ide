@@ -54,15 +54,17 @@ impl Runs {
 }
 
 pub struct AgentClient {
-    command: Box<dyn Fn() -> Command + Send + Sync>,
+    command: Box<dyn Fn() -> Result<Command, String> + Send + Sync>,
     connection: Arc<Mutex<Option<Arc<Connection>>>>,
     runs: Arc<Runs>,
     next_id: AtomicU64,
 }
 
 impl AgentClient {
-    /// `command` builds the command that starts the agent, e.g. `wsl.exe -e …/atcoder-ruby-agent`.
-    pub fn new(command: impl Fn() -> Command + Send + Sync + 'static) -> Self {
+    /// `command` prepares and builds the command that starts the agent, e.g. placing the runtime
+    /// in WSL and returning `wsl.exe -e …/atcoder-ruby-agent`. A failure is the request's error,
+    /// and the next request tries again.
+    pub fn new(command: impl Fn() -> Result<Command, String> + Send + Sync + 'static) -> Self {
         Self {
             command: Box::new(command),
             connection: Arc::default(),
@@ -160,7 +162,7 @@ impl AgentClient {
         if let Some(connection) = slot.as_ref() {
             return Ok(Arc::clone(connection));
         }
-        let mut child = (self.command)()
+        let mut child = (self.command)()?
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
