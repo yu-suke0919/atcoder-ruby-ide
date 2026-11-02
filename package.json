@@ -17,7 +17,9 @@
     "update:ruby": "node --use-env-proxy scripts/update-ruby.cjs",
     "prepare:gems": "node --use-env-proxy scripts/prepare-gems.cjs",
     "prepare:lsp": "node --use-env-proxy scripts/prepare-lsp.cjs",
-    "build:win": "npm run prepare:ruby && npm run prepare:lsp && tauri build --features desktop",
+    "prepare:wsl": "bash scripts/build-wsl-runtime.sh",
+    "check:wsl": "node scripts/check-wsl-runtime.cjs",
+    "build:win": "tauri build --features desktop",
     "package:win": "node scripts/package-windows.cjs",
     "prepare:editor": "node scripts/prepare-editor.cjs",
     "postinstall": "npm run prepare:editor"

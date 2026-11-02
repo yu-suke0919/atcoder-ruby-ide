@@ -50,5 +50,8 @@ path = "../tests/library.rs"
 name = "agent"
 path = "../tests/agent.rs"
 [[test]]
+name = "wsl"
+path = "../tests/wsl.rs"
+[[test]]
 name = "ruby_lsp"
 path = "../tests/ruby_lsp.rs"

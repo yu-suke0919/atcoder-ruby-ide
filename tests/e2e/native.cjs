@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
-const { spawn, execFile } = require('node:child_process');
+const { spawn, execFile, execFileSync } = require('node:child_process');
 const { promisify } = require('node:util');
-const { writeFile, mkdir, realpath } = require('node:fs/promises');
+const { writeFile, mkdir } = require('node:fs/promises');
 const net = require('node:net');
 const path = require('node:path');
 const { chromium } = require('playwright');
@@ -64,17 +64,18 @@ async function launch(root, { hostEnv = {} } = {}) {
     }
     page.setDefaultTimeout(15000);
     page.on('pageerror', error => console.error('WebView error:', error));
-    await page.getByTestId('ruby-version').filter({ hasText: /ruby \d+\.\d+\.\d+\b/i }).waitFor();
+    // The first start places the runtime in WSL, which the app allows 60 seconds (slow on CI's WSL1).
+    await page.getByTestId('ruby-version').filter({ hasText: /ruby \d+\.\d+\.\d+\b/i }).waitFor({ timeout: 90000 });
     const ruby = await page.evaluate(() => window.__TAURI__.core.invoke('ruby_info'));
-    assert.equal(ruby.version.match(/^ruby (\d+\.\d+\.\d+)\b/i)?.[1], require('../../config/ruby-windows.json').rubyVersion);
+    assert.equal(ruby.version.match(/^ruby (\d+\.\d+\.\d+)\b/i)?.[1], require('../../config/ruby-wsl.json').rubyVersion);
     const rubyExecutable = await page.evaluate(async () => {
       const { ide } = await import('./bridge.mjs');
       const result = await ide.run('require "rbconfig"; puts File.realpath(RbConfig.ruby)', '');
       if (result.status !== 'completed') throw new Error(`Bundled Ruby probe failed: ${result.stderr}`);
       return result.stdout.trim();
     });
-    const canonical = value => path.toNamespacedPath(path.resolve(value)).toLowerCase();
-    assert.equal(canonical(await realpath(rubyExecutable)), canonical(await realpath(path.join(path.dirname(executable), 'ruby', 'bin', 'ruby.exe'))));
+    // Ruby runs in the app's own WSL distribution (docs/architecture.md#wslのエージェント).
+    assert.equal(rubyExecutable, '/opt/atcoder-ruby-ide/ruby/bin/ruby');
     console.log(JSON.stringify({ executable, ruby, rubyExecutable, systemRubyAvailable: false }));
     return { child, browser, page, root, atcoder, dataDir: path.join(process.env.LOCALAPPDATA, require('../../src-tauri/tauri.conf.json').identifier) };
   } catch (error) {
@@ -115,4 +116,6 @@ async function memoryUse(app) {
   return JSON.parse(stdout);
 }
 
-module.exports = { requestClose, launch, close, pause, memoryUse, moveWindow };
+// A file path for code the app runs: the app's Ruby runs inside WSL (docs/architecture.md#wslのエージェント).
+const rubyPath = file => execFileSync(system('wsl.exe'), ['-e', 'wslpath', '-a', file], { encoding: 'utf8' }).trim();
+module.exports = { requestClose, launch, close, pause, memoryUse, moveWindow, rubyPath };

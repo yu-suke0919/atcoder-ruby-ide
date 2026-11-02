@@ -550,7 +550,7 @@ GitHubのWindows環境にはWSL2がないため、次を利用者のPCで確か�
 | 同梱するRubyが動くか | `missing libraries`が空、`yjit: true`、`stdlib: ok`、`first ruby run ms` |
 | メモリ上限の手段 | `AS 1024MB …`、`cgroup v2 controllers`に`memory`があるか、`systemd`、`user` |
 | スタックの上限 | `ulimit -s`のハードリミット、`recursion 1000000, 1GB stacks`が`1000000`か |
-| やり取り | `echo 300`の取り違えが0、`flood 20000 lines`が20000、`echo after 75 s idle: ok`（エージェントの動作中はWSLのVMが止まらない） |
+| やり取り | `echo 300`と`flood 20000 lines`の時間（数は下記の理由で常に0）、`echo after 75 s idle: ok`（エージェントの動作中はWSLのVMが止まらない） |
 | 停止 | 標準入力を閉じた後と`wsl.exe`を強制終了した後に、エージェントと`sleep`が0 |
 
 WindowsのCI（WSL1）での試運転の結果は次のとおりで、WSL1でもやり取りと停止は期待どおりだった。
@@ -574,6 +574,33 @@ after closing stdin: agents, sleeps: 0, 0
 after killing wsl.exe: agents, sleeps, timeout groups, signal: 0, 0, 0, HUP
 ```
 
+利用者のWSL2での結果（2026-11-02、Windows 11 Home、WSL 3.0.3）は次のとおりで、まとめは[構成と検証方針](architecture.md#wsl2での確認)にある。`echo 300`と`flood 20000 lines`の最初の数は、スクリプトがPowerShellのスクリプトブロックの中で数えていて外へ伝わらないため、どちらの環境でも常に0になる。取り違えと大量出力は、本物のエージェントの画面テストで確かめている。
+
+```text
+start after shutdown ms: 2952
+start again ms: 89
+kernel: 6.18.54.1-microsoft-standard-WSL2
+first ruby run ms: 92
+missing libraries: end
+yjit: true
+stdlib: ok
+AS 1024MB, 512MB string: NoMemoryError
+AS 1024MB, 1536MB string: NoMemoryError
+DATA 1024MB, 1536MB string: NoMemoryError
+cgroup v2 controllers: cpuset cpu io memory hugetlb pids rdma
+cgroup writable: false
+systemd: systemd
+ulimit -s: 8192 / hard unlimited
+recursion 100000, default stack: SystemStackError
+recursion 1000000, 1GB stacks: 1000000
+echo 300 (mismatched, ms): 0, 203
+flood 20000 lines (received, ms): 0, 722
+echo after 75 s idle: ok
+after closing stdin: agents, sleeps: 0, 0
+after killing wsl.exe: agents, sleeps, timeout groups, signal: 0, 0, 0, HUP
+after 8 s timeout: sleeps, timeout groups: 0, 0
+```
+
 ## 資料の書き換え（C1）
 
 - main 07c9cf6から開始。利用者の判断で、U5・U6より先にPhase Cを進めることにし、ロードマップの順番を変えた。
@@ -588,3 +615,17 @@ after killing wsl.exe: agents, sleeps, timeout groups, signal: 0, 0, 0, HUP
 - 画面テスト用ホストは、Rubyの実行・停止・補完を`AgentClient`で自分自身（`--agent`）へ送るようにした。既存の画面テストがすべてエージェントを通る。
 - クラウドセッション（Linux、root）で、Rust（rootで失敗する既知の`r02_cleanup_failure_releases_reservation`以外。エージェント10件を含む）、Node単体96件、`cargo fmt --all --check`、画面テスト79件（Windows専用3件を除く）が成功した。1回目の画面テストではE10（大きな文書の末尾での補完）が補完の表示待ちで15秒を超えて失敗したが、単独・ファイル単位・全件の再実行ではいずれも成功した（全件で1.8秒）。
 - PR #52の最初のCIで、画面テスト用ホストの単体テスト（入力が終わったときに大きな最後のイベントを書き終えてから終了する）が失敗した。`AgentClient::shutdown`がエージェントの終了だけを待ち、エージェントが最後に書いた行の中継を待っていなかったため、ホストが書き込みの途中で終了していた。イベントを受け取る側を遅くしたテストで再現させてから、終了時に中継のスレッドの完了も待つように直した。
+
+## WSLへの配置と中継（C3a）
+
+- main b1841dcから開始。Ruby LSPの固定がRubyに含まれるgemの版（3.4.12のprism 1.5.3と3.4.5の1.2.0）で食い違うため、開発・LinuxのCIのRubyも3.4.5にし、WindowsのCIの単体テストをやめることにした（ロードマップのC3a）。Ruby LSP 0.26.11はprism 1.2以上2.0未満に対応している。Ruby 3.4.5のソースのSHA-256は[公式のリリース一覧](https://raw.githubusercontent.com/ruby/www.ruby-lang.org/master/_data/releases.yml)で確かめた。
+- 失敗するテストを先に用意した。`tests/wsl.rs`は、配置のスクリプトを`sh`で直接動かし、日本語と空白を含むパスのアーカイブがSHA-256のフォルダーに1回だけ置かれて再利用されること、別の版と残った一時フォルダーが消えること、SHA-256が違うアーカイブは置かれないこと、`wsl.exe`がない場合に準備の手順を出すこと、置いた場所のRubyとLSPでエージェントを起動することを確かめる。`tests/agent.rs`には、エージェントの起動の準備が失敗したときに要求のエラーになり、次の要求で準備し直すことを加えた。
+- 同梱物を作るスクリプトは、クラウドセッションから`cache.ruby-lang.org`に接続できない（403）ため、CIの`wsl-runtime`ジョブで確かめる。確認のスクリプト（`scripts/check-wsl-runtime.cjs`）は、ruby-builderのRuby 3.4.5・LSPの準備物・エージェントを組み合わせた仮のアーカイブで、Ruby確認・YJIT・採用gem・LSPの補完を確かめた。
+- Windowsのメモリ上限の画面テスト（M08）は、WSLへ移るとメモリ上限がなくなる（C5で作り直す）ため削除した。
+- PR #53の最初のCIで、WSL用の同梱物の作成（約4分）と確認は成功し、Windowsの画面テストはWSL1で81件中77件が成功した。インストールしていない状態のアプリが`~/.atcoder-ruby-ide/<SHA-256>/ruby/bin/ruby`のRuby 3.4.5で実行した。失敗した4件のうち3件は、テストがWindowsのパスで待ち合わせ・目印のファイルをRubyのコードに埋め込んでいたため（WSLのRubyからは見えない）で、テストの`rubyPath`でWSLのパスに読み替えるようにした。閉じたときに子プロセスが残らないことのテスト（M06/M09）も同じ理由で目印のファイルを書けず、何も確かめていなかったため、同じく直した。残りの1件（E07）は、最初の補完でRuby LSPの起動とインデックス作成を待つ時間がWSL1で15秒を超えたためで、最初の補完だけ60秒まで待つようにした。インストール版のLSPのテスト（起動2回）は48秒かかった。WSL2での時間は利用者の手元で確かめる。
+- 2回目のCIでは、最初の起動でRuby確認が15秒以内に終わらず、画面テストが始まらなかった（1回目は約11秒で通った）。新しいWindows環境では、最初の起動でWSLへ同梱物を置く。アプリは配置に60秒まで待つのに、テストの起動の待ち時間が15秒だったため、90秒にした。LSPの補完のテスト（`tests/e2e/lsp.cjs`）も、止めた後に補完でLSPを起動し直すため、60秒まで待つようにした。画面の下部の「Windows メモリ 1 GiB」は、WSLへ移ってメモリ上限がなくなったため消した。
+- mainのU4bを取り込んだ後のCIで、画面テスト用ホストの単体テスト（深い再帰）が失敗した。テストの準備がRubyの最初の出力の直後に一時フォルダーがあることを確かめていたが、このテストのRubyはすぐ終わるため、エージェントを通して出力が届くまでにフォルダーが消えることがあった。フォルダーがあることは、Rubyが動き続けて後で消えたことを確かめるテストだけで確かめるようにした。
+- 利用者の判断で、既定のUbuntuではなくアプリ専用のディストリビューション（`AtCoderRubyIDE`）を同梱する方式に変えた。失敗するテストを先に用意し（`tests/wsl.rs`を書き直した）、`wsl.exe`の代わりのスクリプトで、登録がなければ日本語と空白を含むパスのイメージをデータフォルダーへ登録すること、同じ版なら何もしないこと、別の版なら登録を解除して登録し直すこと、登録の失敗と`wsl.exe`がない場合にWSLの出力と準備の手順を出すこと、エージェントを専用のディストリビューションで起動することを確かめる。専用のディストリビューションはCIのUbuntuでDockerから作り、同じジョブでDockerに読み込んで、ユーザー`atcoder`のエージェントで確かめる。クラウドセッションではDockerは動いたが、Rubyのソース（`cache.ruby-lang.org`）とCIの成果物（Blob Storage）に接続できず、組み立てはCIで確かめる。インストール版の確認は、アンインストールで登録が解除されることも確かめるようにした。
+- 専用のディストリビューションにした最初のCIで、Dockerでの確認が失敗し、そのまま50分止まった。Ruby LSPの準備物のフォルダーが`mkdtemp`で作った権限（0700）のまま置かれ、ユーザー`atcoder`のエージェントがLSPを起動できなかった。確認のスクリプトは、失敗してもエージェントが動いたままのため終了しなかった。確認に「`atcoder`が読めないファイルがない」ことを加え、仮のイメージで同じ失敗が出ることを確かめてから、イメージを作るときに`/opt/atcoder-ruby-ide`を誰でも読めて書けない権限にそろえた。確認のスクリプトは失敗したときにエージェントを止め、CIの手順には10分の上限を付けた。
+- 修正後のCIで、WSL用のディストリビューションの作成と確認（約5分）、WindowsのWSL1での`.tar.gz`の登録・画面テスト・インストール版の確認（アンインストールで登録が消えること）が成功した。ポータブル版のZIPは約48 MBだった。
+- 利用者がWSL2のPCで、そのポータブル版を確かめた。初回の起動は登録を含めて約3秒でRuby 3.4.5を表示し、`wsl -l -v`に`AtCoderRubyIDE`がVERSION 2で出た。最初の補完は約3秒、以降はすぐに出た。アプリを閉じると、エージェントとRubyはWSLから消えた。2回目の起動ではすぐにRubyを表示した。

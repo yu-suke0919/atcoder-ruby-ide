@@ -24,7 +24,8 @@ async function verifyLsp(page) {
   try {
     await editor.fill(snapshot); await editor.press('Control+End'); await editor.press('Control+Space');
     const option = page.getByRole('option').filter({ has: page.locator('.cm-completionLabel', { hasText: /^unique_install_method$/ }) });
-    await option.waitFor();
+    // Ruby LSP starts again for this completion; that takes about 20 s in WSL1 on CI.
+    await option.waitFor({ timeout: 60000 });
     assert.match(await option.textContent(), /LSP/);
     await page.waitForTimeout(100);
     await option.click();

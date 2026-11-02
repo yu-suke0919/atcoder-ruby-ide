@@ -3,48 +3,91 @@
 mod browser;
 
 use atcoder_ruby_ide::{
-    fetch_page, http_client, Contest, Contests, DocumentResult, DocumentStore, HomeWorkspace,
-    LspInfo, RegisteredContest, RubyInfo, RubyLsp, RunEvent, RunRequest, Runner, Samples,
-    TaskWorkspace, Workspaces,
+    fetch_page, http_client, AgentClient, Contest, Contests, DocumentResult, DocumentStore,
+    HomeWorkspace, RegisteredContest, Samples, TaskWorkspace, Workspaces,
 };
 use browser::Browser;
+use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use tauri::{ipc::Channel, Manager};
 
 struct AppState {
-    runner: Arc<Runner>,
+    agent: Arc<AgentClient>,
     documents: Arc<Mutex<DocumentStore>>,
     contest_lock: Arc<Mutex<()>>,
-    lsp: Arc<RubyLsp>,
 }
 
-fn lsp_resources(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+/// Ruby and Ruby LSP run in the agent (docs/architecture.md#wslのエージェント). On Windows the
+/// app's own WSL distribution is registered once per app run; on Linux the agent built next to the
+/// app runs the development Ruby.
+fn agent(app: &tauri::AppHandle) -> AgentClient {
     #[cfg(windows)]
     {
-        app.path()
-            .resolve("ruby-lsp", tauri::path::BaseDirectory::Resource)
-            .map_err(|e| e.to_string())
+        use atcoder_ruby_ide::wsl;
+        use std::time::Duration;
+        let resources = app
+            .path()
+            .resource_dir()
+            .map(|dir| dir.join("wsl"))
+            .map_err(|e| e.to_string());
+        let location = app
+            .path()
+            .app_local_data_dir()
+            .map(|dir| dir.join("wsl"))
+            .map_err(|e| e.to_string());
+        let ready = Mutex::new(false);
+        AgentClient::new(move || {
+            let mut ready = ready.lock().unwrap();
+            if !*ready {
+                let resources = resources.as_ref().map_err(String::clone)?;
+                let location = location.as_ref().map_err(String::clone)?;
+                let manifest: Value = serde_json::from_slice(
+                    &std::fs::read(resources.join("runtime.json"))
+                        .map_err(|e| format!("同梱物の情報を読めません: {e}"))?,
+                )
+                .map_err(|e| e.to_string())?;
+                wsl::ensure_distribution(
+                    wsl::wsl,
+                    &resources.join("atcoder-linux.tar.gz"),
+                    manifest["version"]
+                        .as_str()
+                        .ok_or("同梱物の版がありません。")?,
+                    location,
+                    Duration::from_secs(120),
+                )?;
+                *ready = true;
+            }
+            Ok(wsl::agent_command(wsl::wsl()))
+        })
     }
     #[cfg(not(windows))]
     {
         let _ = app;
-        Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../vendor/ruby-lsp"))
+        AgentClient::new(|| {
+            let agent = std::env::current_exe()
+                .map_err(|e| e.to_string())?
+                .with_file_name("atcoder-ruby-agent");
+            let mut command = std::process::Command::new(agent);
+            command
+                .arg(std::env::var_os("RUBY_PATH").unwrap_or_else(|| "ruby".into()))
+                .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../vendor/ruby-lsp"));
+            Ok(command)
+        })
     }
 }
 
-#[tauri::command]
-async fn lsp_start(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-) -> Result<LspInfo, String> {
-    let lsp = Arc::clone(&state.lsp);
-    let ruby = ruby_path(&app)?;
-    let resources = lsp_resources(&app)?;
-    tauri::async_runtime::spawn_blocking(move || lsp.start(&ruby, &resources))
+/// Runs a blocking agent request off the main thread.
+async fn ask(state: &AppState, command: &'static str, args: Value) -> Result<Value, String> {
+    let agent = Arc::clone(&state.agent);
+    tauri::async_runtime::spawn_blocking(move || agent.request(command, args))
         .await
         .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn lsp_start(state: tauri::State<'_, AppState>) -> Result<Value, String> {
+    ask(&state, "lsp_start", Value::Null).await
 }
 
 #[tauri::command]
@@ -53,90 +96,55 @@ async fn lsp_complete(
     code: String,
     line: u32,
     character: u32,
-) -> Result<serde_json::Value, String> {
-    let lsp = Arc::clone(&state.lsp);
-    tauri::async_runtime::spawn_blocking(move || lsp.complete(&code, line, character))
-        .await
-        .map_err(|e| e.to_string())?
+) -> Result<Value, String> {
+    ask(
+        &state,
+        "lsp_complete",
+        json!({"code": code, "line": line, "character": character}),
+    )
+    .await
 }
 
 #[tauri::command]
-async fn lsp_stop(state: tauri::State<'_, AppState>) -> Result<bool, String> {
-    let lsp = Arc::clone(&state.lsp);
-    tauri::async_runtime::spawn_blocking(move || lsp.stop())
-        .await
-        .map_err(|e| e.to_string())
-}
-
-fn ruby_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    #[cfg(windows)]
-    {
-        app.path()
-            .resolve("ruby/bin/ruby.exe", tauri::path::BaseDirectory::Resource)
-            .map_err(|e| e.to_string())
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = app;
-        Ok(std::env::var_os("RUBY_PATH")
-            .unwrap_or_else(|| "ruby".into())
-            .into())
-    }
+async fn lsp_stop(state: tauri::State<'_, AppState>) -> Result<Value, String> {
+    ask(&state, "lsp_stop", Value::Null).await
 }
 
 #[tauri::command]
-async fn ruby_info(app: tauri::AppHandle) -> Result<RubyInfo, String> {
-    let path = ruby_path(&app)?;
-    tauri::async_runtime::spawn_blocking(move || atcoder_ruby_ide::ruby_info(&path))
-        .await
-        .map_err(|e| e.to_string())?
+async fn ruby_info(state: tauri::State<'_, AppState>) -> Result<Value, String> {
+    ask(&state, "ruby_info", Value::Null).await
 }
 
 #[tauri::command]
-fn run_ruby(
-    app: tauri::AppHandle,
+async fn run_ruby(
     state: tauri::State<'_, AppState>,
     code: String,
     stdin: String,
     expected_output: Option<String>,
     tolerance: Option<f64>,
     problem_time_limit_ms: Option<u32>,
-    on_event: Channel<RunEvent>,
+    on_event: Channel<Value>,
 ) -> Result<(), String> {
-    let prepared = state.runner.prepare(RunRequest {
-        code,
-        stdin,
-        expected_output,
-        tolerance,
-        problem_time_limit_ms,
-    })?;
-    let ruby = ruby_path(&app)?;
-    std::thread::Builder::new()
-        .name("ruby-runner".into())
-        .spawn(move || {
-            let _ = on_event.send(RunEvent::Started {
-                execution_limit_ms: prepared.execution_limit_ms(),
-            });
-            let output = on_event.clone();
-            let result = prepared.execute(&ruby, move |chunk| {
-                let _ = output.send(RunEvent::Output {
-                    stream: chunk.stream,
-                    bytes: chunk.bytes,
-                });
-            });
-            let event = match result {
-                Ok(result) => RunEvent::Completed { result },
-                Err(message) => RunEvent::Failed { message },
-            };
+    let agent = Arc::clone(&state.agent);
+    let args = json!({
+        "code": code,
+        "stdin": stdin,
+        "expectedOutput": expected_output,
+        "tolerance": tolerance,
+        "problemTimeLimitMs": problem_time_limit_ms,
+    });
+    tauri::async_runtime::spawn_blocking(move || {
+        agent.run(args, move |event| {
             let _ = on_event.send(event);
         })
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn stop_ruby(state: tauri::State<'_, AppState>) -> bool {
-    state.runner.stop()
+async fn stop_ruby(state: tauri::State<'_, AppState>) -> Result<Value, String> {
+    ask(&state, "stop_ruby", Value::Null).await
 }
 
 #[tauri::command]
@@ -149,11 +157,14 @@ async fn document_save(state: tauri::State<'_, AppState>, code: String) -> Resul
 
 #[tauri::command]
 async fn session_reset(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let runner = Arc::clone(&state.runner);
+    let agent = Arc::clone(&state.agent);
     let documents = Arc::clone(&state.documents);
     tauri::async_runtime::spawn_blocking(move || {
-        runner.stop();
-        runner.wait_idle();
+        // Nothing to stop when the agent never started or cannot start.
+        if agent.pid().is_some() {
+            let _ = agent.request("stop_ruby", Value::Null);
+        }
+        agent.wait_idle();
         documents.lock().unwrap().reset();
     })
     .await
@@ -357,14 +368,13 @@ fn main() {
     tauri::Builder::default()
         // Restores the window size, position and maximized state of the last run.
         .plugin(tauri_plugin_window_state::Builder::default().build())
-        .manage(AppState {
-            runner: Runner::new(Duration::from_secs(5), 1048576),
-            documents: Arc::new(Mutex::new(DocumentStore::default())),
-            contest_lock: Arc::new(Mutex::new(())),
-            lsp: Arc::new(RubyLsp::default()),
-        })
         .manage(Browser::default())
         .setup(move |app| {
+            app.manage(AppState {
+                agent: Arc::new(agent(app.handle())),
+                documents: Arc::new(Mutex::new(DocumentStore::default())),
+                contest_lock: Arc::new(Mutex::new(())),
+            });
             Browser::create_home(app, browser_args.clone())?;
             Ok(())
         })
@@ -401,10 +411,8 @@ fn main() {
         .expect("アプリを起動できませんでした")
         .run(|app, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
-                let state = app.state::<AppState>();
-                state.runner.stop();
-                state.runner.wait_idle();
-                state.lsp.stop();
+                // The agent stops the run and Ruby LSP when its stdin closes.
+                app.state::<AppState>().agent.shutdown();
             }
         });
 }

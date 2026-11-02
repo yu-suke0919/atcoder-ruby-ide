@@ -6,7 +6,7 @@ cd "${CLAUDE_PROJECT_DIR:-$(git -C "$(dirname "$0")" rev-parse --show-toplevel)}
 
 log=/tmp/atcoder-ruby-ide-session.log
 stamp=node_modules/.cloud-session.sha256
-inputs=(scripts/cloud-session.sh package.json package-lock.json config/atcoder-runtime.json config/ruby-lsp.json config/ruby-windows.json)
+inputs=(scripts/cloud-session.sh package.json package-lock.json config/atcoder-runtime.json config/ruby-lsp.json config/ruby-wsl.json)
 
 if sha256sum --check --status "$stamp" 2>/dev/null; then
   echo "Dependencies are already prepared ($stamp)."

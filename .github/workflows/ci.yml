@@ -21,6 +21,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The runtime the app places in WSL: Ruby 3.4.5 built here, gems, Ruby LSP and the agent.
+  # Ubuntu 22.04 keeps glibc old enough for the Ubuntu that `wsl --install` sets up.
+  wsl-runtime:
+    if: ${{ !inputs.measure_ruby_stack }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@1.99.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          key: wsl-agent
+      - uses: actions/cache@v4
+        with:
+          path: .cache
+          key: wsl-sources-${{ hashFiles('config/ruby-wsl.json', 'config/atcoder-runtime.json', 'config/ruby-lsp.json') }}
+      - name: Install the Ruby build dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev libyaml-dev libffi-dev zlib1g-dev libgmp-dev
+      - run: npm run prepare:wsl
+      - name: Check the distribution through its agent as atcoder
+        timeout-minutes: 10
+        run: npm run check:wsl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wsl-runtime
+          path: vendor/wsl/
+          if-no-files-found: error
+          retention-days: 14
+
   linux:
     if: ${{ !inputs.measure_ruby_stack }}
     runs-on: ubuntu-latest
@@ -39,7 +71,7 @@ jobs:
           key: tauri-desktop
       - name: Read pinned Ruby patch
         id: ruby
-        run: node -e "console.log('version=' + require('./config/ruby-windows.json').rubyVersion)" >> "$GITHUB_OUTPUT"
+        run: node -e "console.log('version=' + require('./config/ruby-wsl.json').rubyVersion)" >> "$GITHUB_OUTPUT"
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: ${{ steps.ruby.outputs.version }}
@@ -58,8 +90,10 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
 
+  # Ruby runs in WSL: GitHub's Windows runners only have WSL1, which runs the same runtime.
   windows:
     if: ${{ !inputs.measure_ruby_stack }}
+    needs: wsl-runtime
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,24 +108,24 @@ jobs:
         with:
           cache-on-failure: true
           key: tauri-desktop
+      - uses: Vampire/setup-wsl@v3
+        with:
+          distribution: Ubuntu-24.04
+          wsl-version: 1
+      - uses: actions/download-artifact@v4
+        with:
+          name: wsl-runtime
+          path: vendor/wsl
       - run: npm ci
-      - run: npm run prepare:ruby
-      - run: npm run prepare:lsp
-      - name: Unit tests with the bundled Ruby
-        shell: pwsh
-        run: |
-          $env:RUBY_PATH = (Resolve-Path vendor/ruby/bin/ruby.exe).Path
-          npm test
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - run: npm run build:win
       - run: node scripts/package-windows.cjs --stage
-      - name: Native GUI tests of the portable app without system Ruby
+      - name: Native GUI tests of the portable app with Ruby in WSL
         shell: pwsh
         run: |
           $env:APP_EXE = (Resolve-Path artifacts/portable/atcoder-ruby-ide.exe).Path
           npm run test:e2e
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Install NSIS and smoke test the app without system Ruby
+      - name: Install NSIS and smoke test the app with Ruby in WSL
         run: node scripts/test-installed-windows.cjs
       - name: Compress portable ZIP and measure distribution sizes
         run: npm run package:win

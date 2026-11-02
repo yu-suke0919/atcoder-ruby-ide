@@ -59,7 +59,6 @@ async function startHost(t, largeOutput = false, env = {}, code = 'sleep 30', st
     completed.then(result => { throw new Error(`Ruby completed before startup output: ${result.stderr}`); }),
     exited.then(() => { throw new Error(`UI test host exited before Ruby output: ${stderr}`); }),
   ]);
-  await access(directory);
   return { host, exited, directory, messages, completed, stderr: () => stderr };
 }
 
@@ -119,6 +118,7 @@ test('stdio host stops Ruby and removes its temp directory when stdin closes or 
   for (const [name, malformed, largeOutput] of [['EOF', false, false], ['EOF with a large final event', false, true], ['malformed input', true, false]]) {
     await t.test(name, async t => {
       const { host, exited, directory, messages } = await startHost(t, largeOutput);
+      await access(directory); // Ruby is still sleeping, so its directory exists until the host stops it.
       host.stdin.end(malformed ? 'invalid JSON\n' : undefined);
       const [code, signal] = await exited;
       assert.equal(signal, null);
@@ -131,6 +131,7 @@ test('stdio host stops Ruby and removes its temp directory when stdin closes or 
 
 test('a disconnected stdout does not panic or prevent host shutdown', { timeout: 15000 }, async t => {
   const { host, exited, directory, stderr } = await startHost(t);
+  await access(directory);
   host.stdout.destroy();
   host.stdin.end(`${JSON.stringify({ id: 2, command: 'shutdown' })}\n`);
   const [code, signal] = await exited;

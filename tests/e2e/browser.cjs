@@ -147,4 +147,6 @@ async function close(app) {
 }
 const requestClose = app => app.page.evaluate(() => window.__TAURI__.window.getCurrentWindow().close());
 
-module.exports = { ...native, requestClose, ensureUiTestHostBinary, launch, close };
+// The test host's Ruby runs on this machine.
+const rubyPath = file => file.replaceAll('\\', '/');
+module.exports = { ...native, requestClose, ensureUiTestHostBinary, launch, close, rubyPath };

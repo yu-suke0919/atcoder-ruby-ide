@@ -19,7 +19,7 @@ claude.ai/code の新規セッション画面で、メッセージ欄の下の�
   - `atcoder.jp`・`img.atcoder.jp`（開催中のコンテストの挙動の確認と、明示実行する実サイトテスト用）
   - Playwrightのブラウザの取得先（`cdn.playwright.dev`、`playwright.download.prss.microsoft.com`、`playwright.azureedge.net`）。取得に失敗した場合は、ログに出た取得先を追加する。
 - **Environment variables**：`LANG=C.UTF-8`。既定ではロケールが未設定で、Rubyが`-e`のコードをUS-ASCIIとして読み、日本語を含むテストが失敗する。
-- **Setup script**：次の内容。バージョンは`rust-toolchain.toml`、`config/ruby-windows.json`の`rubyVersion`、`package.json`の`engines`・`playwright`に合わせる。
+- **Setup script**：次の内容。バージョンは`rust-toolchain.toml`、`config/ruby-wsl.json`の`rubyVersion`、`package.json`の`engines`・`playwright`に合わせる。
 
 ```bash
 #!/bin/bash
@@ -27,7 +27,7 @@ claude.ai/code の新規セッション画面で、メッセージ欄の下の�
 # 失敗してもセッションは開始させ、最後に結果をまとめて表示する。
 set -uo pipefail
 NODE_MAJOR=24
-RUBY_VERSION=3.4.12
+RUBY_VERSION=3.4.5
 RUST_TOOLCHAIN=1.99.1
 PLAYWRIGHT_VERSION=1.64.1
 # セッションのPATHで /opt/node22/bin・/usr/local/bin より前にあるディレクトリ。
@@ -95,7 +95,7 @@ ruby-builderのRubyはビルド時のパス（`/opt/hostedtoolcache/Ruby/<版>/x
 
 ```bash
 node --version          # v24.x
-ruby -v                 # config/ruby-windows.json の rubyVersion
+ruby -v                 # config/ruby-wsl.json の rubyVersion
 ruby -e 'p __ENCODING__' # #<Encoding:UTF-8>
 cargo --version         # rust-toolchain.toml の版
 bash scripts/cloud-session.sh && tail -20 /tmp/atcoder-ruby-ide-session.log
