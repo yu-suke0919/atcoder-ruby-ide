@@ -149,3 +149,37 @@ AtCoderのページからアプリの機能を呼べないよう、次の3つを
 
 - クリップボードは、画面のWebViewの`navigator.clipboard.writeText`で書ける。試作で書いた文字列をPowerShellの`Get-Clipboard`で読めた。プラグインは追加しない。
 - トースト通知は`tauri-plugin-notification`で呼び出せ、権限も許可済みになったが、インストールしていない試作のexeでは利用者の画面にトーストが出なかった。Windowsはスタートメニューのショートカットなどでアプリの識別子（AppUserModelID）が登録されていないアプリのトーストを表示しないためと考えられる。U6でインストール版で表示されるかを確かめ、出なければ通知の方法を決め直す。ZIP版ではトーストを出さない前提とする。
+
+## Rubyの実行環境の調査（C0）
+
+ロードマップのPhase C（Rubyの実行とLSPをWSL内のエージェントへ移す）の前に、2026-11-02にGitHubのCIの試作で確かめた結論。C1以降はこの節に従う。試作は`spike/c0-wsl`ブランチにあり、マージしない（[検証記録](verification.md#rubyの実行環境の調査c0)）。WSL2でしか確かめられない項目は、利用者の手元で確認用のスクリプトを実行して埋める。
+
+### CIで使えるWSL
+
+- GitHubのWindows環境（Windows Server 2025、WSL 3.0.3）では、`Vampire/setup-wsl`でUbuntu 24.04を入れて使えるが、WSL2を指定しても動くのはWSL1（カーネル`4.4.0-26100-Microsoft`）だけだった。入れ子の仮想化がないためと考えられる。
+- そのため、Windows側から`wsl.exe`を通したエージェントとのやり取り（標準入出力・日本語・大量出力・停止）は、WindowsのCIで本物のエージェントとWSL1を使って確かめる。偽のエージェントは使わない。
+- メモリ上限・cgroup・WSLのVMの起動と停止は、WSL1とWSL2で仕組みが違う。WindowsのCIでは確かめず、利用者の手元のWSL2で確かめる。Runner・LSP管理そのものは、LinuxのCIで本物のエージェントを使って確かめる。
+
+### エージェントとのやり取り
+
+- Windowsのアプリが`wsl.exe -e <Ruby> <エージェント>`を1つ起動し、標準入出力で1行1つのJSONをやり取りする。WSL1では、日本語・絵文字・タブ・引用符を含む1000往復で取り違えがなく（120〜180ミリ秒）、6 MB・2万行の連続した出力も順番どおりに届いた（260〜460ミリ秒）。
+- `wsl.exe`を通した起動は、WSLが動いている状態で1回あたり約0.1〜0.15秒かかった。実行のたびに`wsl.exe`を起動せず、常駐するエージェントがWSL内でRubyを起動する。
+- 子へ書く標準入力にBOMを付けない。.NETの`Process`は、コンソールの入力の文字コードがUTF-8のとき、子の標準入力の先頭にBOMを書いた（確認用のスクリプトで起きた。Rustの`std::process`は書かない）。
+
+### 停止
+
+- 利用者のRubyはエージェントが別のプロセスグループで起動し、停止はグループごと`SIGKILL`で止める。WSL1で子・孫を含めて止まった。
+- アプリが終了してエージェントの標準入力が閉じたとき、またはWindows側で`wsl.exe`を強制終了したとき、エージェントは残っているプロセスグループをすべて止めてから終了する。`wsl.exe`を強制終了すると、WSL1ではエージェントに`SIGHUP`が届いた。エージェントが片付けない場合、プロセスグループは`wsl.exe`を止めても残った。
+- エージェント自体が強制終了された場合に備え、利用者のRubyはGNU `timeout`を先頭にして起動し、実行の打ち切り時間を過ぎればエージェントがなくてもグループごと止まるようにする。
+
+### WSLへ置くRuby
+
+- Ruby 3.4.5を`--enable-yjit --enable-load-relative --disable-install-doc`でビルドする（UbuntuのCIで約2〜3分）。別のフォルダーへ移しても動き、`RbConfig`の`prefix`と`Gem.default_dir`は移した先を指す。YJITが有効になり、`json`・`openssl`・`psych`・`zlib`・`fiddle`・`bigdecimal`・`set`・`prime`を読み込めた。
+- 同梱するのは、`lib/libruby-static.a`（151 MB）を除き、実行ファイルと拡張ライブラリのデバッグ情報を`strip`で除いたもの。展開後は53 MB（除く前は255 MB）、`tar.gz`で15 MBになる。除いた後も同じ確認が通った。
+- 古いglibcで動かすため、ビルドはUbuntu 22.04で行う。使う共有ライブラリは`libc`・`libm`・`libgcc_s`・`libcrypt`・`libz`・`libgmp`・`libffi`・`libyaml`・`libssl`・`libcrypto`で、apt版のRubyを入れていないUbuntu 24.04（WSLの標準のイメージ）にすべてあった。
+- 置き場所はWSL内のホームの下（試作は`~/.atcoder-ruby`）とし、PATHには入れない。WSL1では展開に約3〜5秒かかり、展開直後の初回のRubyの起動（標準ライブラリの読み込みを含む）に約11秒かかった。2回目以降は約0.1秒だった。
+
+### 制限
+
+- メモリ：Rubyは何もしていない状態でも仮想メモリを約450 MB（YJIT有効時は約590 MB）確保する（開発環境のLinuxとRuby 3.4.12で測定。使用中のメモリは約13 MB）。YJIT有効時に`setrlimit`の`RLIMIT_AS`を1024 MBにすると、512 MBの文字列も確保できなかった。AtCoderの1024 MBの上限には`RLIMIT_AS`を使わない。WSL1は`RLIMIT_AS`・`RLIMIT_DATA`を無視し、cgroupもない。WSL2でのcgroup v2（`memory.max`）の可否を利用者の手元で確かめ、cgroupか使用中のメモリ（RSS）の監視かをC5で決める。
+- スタック：既定の`ulimit -s`は8 MBで、10万段の再帰は`SystemStackError`になる。起動前に`RLIMIT_STACK`を1 GBへ上げ、`RUBY_THREAD_VM_STACK_SIZE`を1 GBにすると、WSL1でも100万段の再帰ができた（rootで実行）。通常のユーザーでハードリミットまで上げられるかを利用者の手元で確かめる。
