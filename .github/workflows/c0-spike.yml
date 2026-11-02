@@ -92,3 +92,17 @@ jobs:
       - name: Probe stdio, start-up, stopping and limits through wsl.exe
         shell: pwsh
         run: node spike/c0/probe.cjs
+      - name: Try the WSL2 check script for your PC (here on WSL1, with Windows PowerShell)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory kit | Out-Null
+          Copy-Item ruby-linux.tar.gz, spike/c0/agent.rb, spike/c0/checks.rb, spike/c0/wsl2-check.ps1 kit/
+          Copy-Item -Recurse kit "kit with space"
+          powershell -ExecutionPolicy Bypass -File "kit with space/wsl2-check.ps1"
+          Get-Content "kit with space/c0-report.txt" -Encoding UTF8
+      - if: matrix.wsl-version == 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: c0-wsl2-kit
+          path: kit/
+          retention-days: 14
