@@ -527,3 +527,46 @@ Windows CI の初回では、HTML固定データがCRLFでチェックアウト�
 - 明示実行の実サイトテストに、取得し直した（KaTeXのない）11問のページから生成したコードが、各問題の全サンプル入力を読み切ることを加えた。クラウドセッションから実行して成功した（約20秒）。
 - クラウドセッション（Linux、root）で、Rust（rootで失敗する既知の`r02_cleanup_failure_releases_reservation`以外）、Node単体96件、`cargo fmt --all --check`、画面テスト79件（Windows専用3件を除く）が成功した。Windowsのネイティブ画面・NSIS・ZIPはPRのCIで確認する。
 
+
+## Rubyの実行環境の調査（C0）
+
+- main 5dd9736から開始。試作（`spike/c0-wsl`、マージしない）は、UbuntuでRuby 3.4.5をビルドして移した先で動かすジョブと、GitHubのWindows環境で`Vampire/setup-wsl`のUbuntu 24.04を入れ、`wsl.exe`を通して試作のエージェント（`spike/c0/agent.rb`）を動かすジョブからなる。結果は[構成と検証方針](architecture.md#rubyの実行環境の調査c0)のとおり。
+- 最初の実行では、WSL2を指定したジョブもWSL1で動き、aptで入れたRubyが共有ライブラリの確認に混ざっていた。`wsl -l -v`と`/proc/version`でWSLの版を確かめ、apt版のRubyを入れずに、移したRubyだけでエージェントを動かすように直した（[run 41370684029](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/41370684029)）。
+- 停止は、標準入力を閉じたとき・`wsl.exe`を強制終了したとき・`timeout`の下で起動したときを[run 41371701618](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/41371701618)で確かめた。エージェントが片付けない最初の版では、`wsl.exe`を強制終了するとエージェントは止まったが、別のプロセスグループの子は残った。
+- 静的ライブラリとデバッグ情報を除いたRubyの大きさと、WSL2用の確認スクリプト（`spike/c0/wsl2-check.ps1`）のWindows PowerShellでの試運転は[run 41372903726](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/41372903726)にある。最初の試運転では、.NETの`Process`が子の標準入力の先頭にBOMを書き、エージェントがJSONを読めずに終了した。
+- メモリの`RLIMIT_AS`と仮想メモリの大きさは、クラウドセッション（Linux、Ruby 3.4.12）でも測った。
+
+### 利用者の手元での確認（WSL2）
+
+GitHubのWindows環境にはWSL2がないため、次を利用者のPCで確かめる。[run 41372903726](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/41372903726)の`c0-wsl2-kit`（14日間保存）を展開し、そのフォルダーでPowerShellを開いて`powershell -ExecutionPolicy Bypass -File .\wsl2-check.ps1`を実行すると、結果が`c0-report.txt`に保存される。スクリプトは既定のWSLのディストリビューションを使い、`wsl --shutdown`を1回実行し、`~/.c0-check`にRubyを置いて最後に消す。
+
+| 確認 | 見る行 |
+| --- | --- |
+| WSL2で動いているか | `wsl -l -v`のVERSIONが2、`kernel`が`microsoft-standard-WSL2`を含む |
+| WSLの起動時間 | `start after shutdown ms`（VMの起動を含む）と`start again ms` |
+| 同梱するRubyが動くか | `missing libraries`が空、`yjit: true`、`stdlib: ok`、`first ruby run ms` |
+| メモリ上限の手段 | `AS 1024MB …`、`cgroup v2 controllers`に`memory`があるか、`systemd`、`user` |
+| スタックの上限 | `ulimit -s`のハードリミット、`recursion 1000000, 1GB stacks`が`1000000`か |
+| やり取り | `echo 300`の取り違えが0、`flood 20000 lines`が20000、`echo after 75 s idle: ok`（エージェントの動作中はWSLのVMが止まらない） |
+| 停止 | 標準入力を閉じた後と`wsl.exe`を強制終了した後に、エージェントと`sleep`が0 |
+
+WindowsのCI（WSL1）での試運転の結果は次のとおりで、WSL1でもやり取りと停止は期待どおりだった。
+
+```text
+start after shutdown ms: 368
+start again ms: 97
+extract ms: 2953
+first ruby run ms: 149
+missing libraries: end
+yjit: true
+stdlib: ok
+AS 1024MB, 1536MB string: allocated
+cgroup v2 controllers: none
+ulimit -s: 8192 / hard 8192
+recursion 1000000, 1GB stacks: 1000000
+echo 300 (mismatched, ms): 0, 964
+flood 20000 lines (received, ms): 0, 2617
+echo after 75 s idle: ok
+after closing stdin: agents, sleeps: 0, 0
+after killing wsl.exe: agents, sleeps, timeout groups, signal: 0, 0, 0, HUP
+```
