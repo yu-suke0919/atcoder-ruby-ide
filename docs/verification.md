@@ -638,3 +638,4 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 - LSPの固定Gemfileは、競技用gemを既定のグループ、LSP用gemを`development`グループに書き、lockはgemを準備するときにネットワークなしで作るようにした（リポジトリのlockは消した）。初期化の`indexing.excludedPatterns`（`**/ruby-lsp/**`）は、作業場所のファイルにしか効かず、gemの解析には効いていなかった（LSP用gemの566のファイルが解析されていた）ため消した。
 - `npm run prepare:gems`は、numo-narrayなどのC拡張のビルドで約76秒かかった。`make`を並列にして約30秒にした（4コア）。
 - クラウドセッション（Linux、root、Ruby 3.4.5）で、Rust（rootで失敗する既知の`r02_cleanup_failure_releases_reservation`以外）、Node単体97件、`cargo fmt --all --check`、画面テスト80件（Windows専用2件を除く）が成功した。
+- PR #54の最初のCIで、WSL用のディストリビューションの作成がrbtreeのC拡張のビルドで失敗した（`The compiler failed to generate an executable file`）。CIでビルドするRubyは共有ライブラリを作らない構成で、mkmfは拡張を`libruby-static.a`と組み合わせて試すが、スクリプトがgemを入れる前にそれを消していた。開発のRubyで、mkmfが組み合わせるライブラリがない状態にすると同じ失敗になることを確かめ、`libruby-static.a`はgemとLSPを準備した後に消すようにした。

@@ -16,7 +16,7 @@ AtCoderの公開環境はLinux上のCRubyの `Ruby 3.4 (ruby 3.4.5)` で、`ruby
 ## Rubyのビルド（C3a）
 
 - Ruby 3.4.5の公式ソース（`cache.ruby-lang.org`）のSHA-256を`config/ruby-wsl.json`に固定し、`scripts/build-wsl-runtime.sh`がCIのUbuntu 22.04で`--enable-yjit --enable-load-relative --disable-install-doc`を付けてビルドする。配置場所に依存しない形で、アプリ専用のディストリビューションの`/opt/atcoder-ruby-ide/ruby`に置く。
-- 静的ライブラリ（`libruby-static.a`）を除き、実行ファイルと拡張ライブラリのデバッグ情報を`strip`で除く。Rubyの`COPYING`・`LEGAL`はライセンスとして残す。採用gemとLSP用gemもCIで同じRubyへ入れる。
+- 採用gemのC拡張をビルドした後に、静的ライブラリ（`libruby-static.a`）を除き、実行ファイルと拡張ライブラリのデバッグ情報を`strip`で除く。Rubyの`COPYING`・`LEGAL`はライセンスとして残す。採用gemとLSP用gemもCIで同じRubyへ入れる。
 - Ubuntu 22.04でビルドし、同じUbuntu 22.04（Dockerの`ubuntu:22.04`）の最小構成に、使う共有ライブラリ（`libssl3`・`libyaml-0-2`・`libffi8`・`libgmp10`・`zlib1g`）を加えたアプリ専用のディストリビューションに入れる（[WSLのエージェント](architecture.md#wslのエージェント)）。
 - 開発・LinuxのCIのテストも同じ3.4.5を使う。AtCoderの言語アップデートでバージョンが変わったときは、設定の版とハッシュを変えてビルドし直す（Phase Dで手順をまとめる）。最新パッチを自動で探す更新コマンドは持たない。
 
