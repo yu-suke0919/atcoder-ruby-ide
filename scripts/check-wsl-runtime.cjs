@@ -2,7 +2,7 @@
 // its version and default user, the shared libraries, and through the agent running as that user,
 // the Ruby version and YJIT, the AtCoder gems with the standard libraries, and Ruby LSP.
 // Linux with Docker (the CI job that builds it). See docs/architecture.md#wslのエージェント.
-const { execFileSync, spawn } = require('node:child_process');
+const { execFileSync, spawn, spawnSync } = require('node:child_process');
 const { readFileSync } = require('node:fs');
 const path = require('node:path');
 const { createInterface } = require('node:readline');
@@ -13,16 +13,20 @@ const root = path.resolve(__dirname, '..');
 async function checkRuntime(image = path.join(root, 'vendor/wsl/atcoder-linux.tar.gz')) {
   const runtime = JSON.parse(readFileSync(path.join(path.dirname(image), 'runtime.json'), 'utf8'));
   const tag = `atcoder-ruby-ide-check:${runtime.version.slice(0, 12)}`;
+  const container = `atcoder-ruby-ide-check-${process.pid}`;
   execFileSync('docker', ['import', image, tag], { stdio: 'inherit' });
+  let agent;
   try {
     const inside = (user, ...command) => execFileSync('docker', ['run', '--rm', '--user', user, tag, ...command], { encoding: 'utf8' });
     assert.equal(inside('root', 'cat', '/etc/atcoder-ruby-ide-version').trim(), runtime.version, 'the distribution and runtime.json disagree on the version');
     assert.match(inside('root', 'cat', '/etc/wsl.conf'), /^default=atcoder$/m);
+    // find fails on a folder it cannot enter, and lists files atcoder cannot read.
+    assert.equal(inside('atcoder', 'find', '/opt/atcoder-ruby-ide', '!', '-readable'), '', 'atcoderが読めないファイルがあります');
     const missing = inside('atcoder', 'sh', '-c', 'find /opt/atcoder-ruby-ide -name "*.so" -exec ldd {} \\; ; ldd /opt/atcoder-ruby-ide/ruby/bin/ruby')
       .split('\n').filter(line => line.includes('not found'));
     assert.deepEqual(missing, [], '足りない共有ライブラリがあります');
     const home = '/opt/atcoder-ruby-ide';
-    const agent = spawn('docker', ['run', '--rm', '-i', '--user', 'atcoder', tag, `${home}/atcoder-ruby-agent`, `${home}/ruby/bin/ruby`, `${home}/ruby-lsp`], { stdio: ['pipe', 'pipe', 'inherit'] });
+    agent = spawn('docker', ['run', '--rm', '-i', '--name', container, '--user', 'atcoder', tag, `${home}/atcoder-ruby-agent`, `${home}/ruby/bin/ruby`, `${home}/ruby-lsp`], { stdio: ['pipe', 'pipe', 'inherit'] });
     const waiting = new Map();
     const runs = new Map();
     createInterface({ input: agent.stdout }).on('line', line => {
@@ -59,7 +63,10 @@ async function checkRuntime(image = path.join(root, 'vendor/wsl/atcoder-linux.ta
     await ask('shutdown');
     console.log(`WSL distribution ${runtime.version} works as atcoder: ${info.value.version}, YJIT, AtCoder gems and Ruby LSP`);
   } finally {
-    execFileSync('docker', ['rmi', '-f', tag], { stdio: 'ignore' });
+    // After a failed check the agent still runs and would keep Node waiting.
+    agent?.kill('SIGKILL');
+    spawnSync('docker', ['rm', '-f', container], { stdio: 'ignore' });
+    spawnSync('docker', ['rmi', '-f', tag], { stdio: 'ignore' });
   }
 }
 if (require.main === module) checkRuntime(process.argv[2]).catch(error => { console.error(error); process.exitCode = 1; });

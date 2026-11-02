@@ -63,6 +63,8 @@ docker run --name "$container" -e VERSION="$version_id" -v "$payload:/payload:ro
   useradd --create-home --shell /bin/bash atcoder
   cp -a /payload /opt/atcoder-ruby-ide
   chown -R root:root /opt/atcoder-ruby-ide
+  # Readable by atcoder but not writable; mkdtemp left some folders private.
+  chmod -R u=rwX,go=rX /opt/atcoder-ruby-ide
   printf "[user]\ndefault=atcoder\n\n[interop]\nappendWindowsPath=false\n" >/etc/wsl.conf
   echo "$VERSION" >/etc/atcoder-ruby-ide-version'
 docker export "$container" | gzip -9n >"$out/atcoder-linux.tar.gz"

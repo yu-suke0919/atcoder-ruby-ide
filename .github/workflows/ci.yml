@@ -43,7 +43,8 @@ jobs:
       - name: Install the Ruby build dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev libyaml-dev libffi-dev zlib1g-dev libgmp-dev
       - run: npm run prepare:wsl
-      - name: Check the runtime through its agent in a fresh folder
+      - name: Check the distribution through its agent as atcoder
+        timeout-minutes: 10
         run: npm run check:wsl
       - uses: actions/upload-artifact@v4
         with:
