@@ -1,7 +1,7 @@
 # AtCoder Ruby IDE
 
-Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使い、Ruby は配布物に同梱します。
-利用者による Ruby のインストールや PATH 設定は不要です。
+Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使います。Rubyの実行とRuby LSPはWSL2の中で動き、AtCoderと同じRuby 3.4.5（YJIT付き）を配布物に同梱します。
+WSL2の準備は必要ですが、Ruby のインストールや PATH 設定は（WindowsにもWSLにも）不要です。WSLでの実行は[ロードマップ](docs/roadmap.md)のPhase Cで実装中で、それまではWindowsに同梱したRubyで実行します。
 
 - [MVP の仕様と受入条件](docs/mvp.md)
 - [画面の仕様](docs/ui.md)
@@ -21,7 +21,7 @@ Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使
 
 ## 機能
 
-画面は作り直しの途中です。この節は[ロードマップ](docs/roadmap.md)のPhase U（U5〜U6）を終えた後の機能で、[画面の仕様](docs/ui.md)を正とします。
+画面と実行環境は作り直しの途中です。この節は[ロードマップ](docs/roadmap.md)のPhase U（U5〜U6）とPhase C（C2〜C5）を終えた後の機能で、[画面の仕様](docs/ui.md)を正とします。
 
 - 左からコンテスト・問題集のアイコン、問題一覧、エディタとサンプル、AtCoderのページを表示するブラウザの4列で、開催中のコンテストの問題を読む・解く・確かめる・提出するまでを1つの画面で行う
 - 左端の一番上のホームでは、問題に関係なくRubyを書いて実行（起動時に開く）
@@ -34,7 +34,8 @@ Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使
 - Rubyの色分け、行番号、自動インデントと選択行の字下げ・解除、括弧補完、Ruby LSPと標準型のメソッド補完・引数ヒント・定型コード、検索・置換、Undo／Redo
 - 標準入力付き実行、stdout / stderr の逐次表示、実行時間の表示
 - 構文・実行時エラーの行番号表示と、コードの該当行へのジャンプ・強調
-- 停止、問題に応じた5〜30秒の実行制限、合計 1 MiB の出力制限、Windowsの合計コミット1 GiB制限、子プロセスの終了
+- 停止、問題に応じた5〜30秒の実行制限、合計 1 MiB の出力制限、メモリ上限、子プロセスの終了
+- AtCoderと同じRuby 3.4.5を`--jit`（YJIT）で実行
 - 問題ごとの複数サンプルの追加・切替・逐次一括実行と、サンプル別の期待出力比較。判定はタブの色で表示
 - 問題ごとの数値の誤差許容（初期値1e-6）
 - 「不一致」をクリックして、最初に異なる行・列と期待値・実際値を確認
@@ -47,6 +48,12 @@ Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使
 サンプルは問題ごとに最大 100 件です。全件実行は開始時の問題の制限値を各サンプルへ適用し、手動停止で残りも中止します。実行の打ち切りは既定5秒、制限既知なら「問題の制限＋1秒」（最低5秒・最大30秒）です。
 データは Windows の `%LOCALAPPDATA%\io.github.yu-suke0919.atcoder-ruby-ide` に置き、配布フォルダーと分離します。ログイン状態はブラウザ（WebView2）のプロファイルにだけ置きます。ウィンドウの大きさと位置は `%APPDATA%\io.github.yu-suke0919.atcoder-ruby-ide\.window-state.json` に記憶します。
 
+## 必要なもの
+
+- Windows 10（x64は1903・ビルド18362.1049以降）または11。Homeでも使えます。
+- WSL2と、既定のディストリビューションのUbuntu（22.04以降）。管理者のPowerShellで `wsl --install` を実行して再起動し、Ubuntuの初回設定（ユーザー名とパスワード）を済ませてください。BIOS/UEFIでCPUの仮想化機能を有効にする必要があります。
+- アプリは初回起動時に、同梱のRubyとエージェントをWSL内の `~/.atcoder-ruby-ide/` に置きます。PATHやシェルの設定は変えず、sudoも使いません。WSL1でも動きますが、メモリ上限は効きません。
+
 ## Windows 配布版
 
 配布物は次の 2 種類です。
@@ -54,18 +61,19 @@ Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使
 - `AtCoder-Ruby-IDE-<version>-x64-portable.zip`：展開して `atcoder-ruby-ide.exe` を起動
 - `AtCoder-Ruby-IDE-<version>-x64-setup.exe`：ユーザー単位の NSIS インストーラー
 
-どちらも検証済みのRuby 3.4系のパッチに対応するRubyInstaller x64を含み、同梱の `ruby/bin/ruby.exe` を直接起動します。採用パッチは `config/ruby-windows.json` へ固定し、AtCoderの公開環境（3.4.5）とのパッチ差を許容します。
-ac-library-rb 1.2.0、bitarray 1.3.1、faster_prime 1.0.2、rgl 0.6.6、sorted_containers 1.1.0と必要な依存gemも同梱します。対応範囲・未同梱gem・JITやOSの差は[実行環境の資料](docs/atcoder-runtime.md)を参照してください。
+どちらも、WSL内で動かすエージェントと、CIでビルドしたLinux版Ruby 3.4.5（YJIT付き）・採用gem・Ruby LSPを1つのアーカイブにまとめて含みます（SHA-256を固定）。WindowsにはRubyを同梱しません。
+ac-library-rb 1.2.0、bitarray 1.3.1、faster_prime 1.0.2、rgl 0.6.6、sorted_containers 1.1.0と必要な依存gemを同梱し、C拡張のあるgemもC3で加えます。対応範囲・未同梱gem・制限の差は[実行環境の資料](docs/atcoder-runtime.md)を参照してください。
+ZIP はフォルダー全体を保持してください。単体のアプリ exe だけを取り出すと Ruby を実行できません。
 
-Ruby本体を更新するときは `npm run update:ruby` を実行します。公式一覧から最新の安定版3.4.xと対応するWindows版を選び、SHA-256検証・gemの準備後に `config/ruby-windows.json` を更新します。その差分と両OSのテストを確認して採用してください。通常のビルド・CI・アプリ起動時には自動更新しません。
-Ruby の標準ライブラリ・同梱ネイティブ拡張・ライセンスを保持し、オフライン文書と C ヘッダ（share/・include/）は除外します。Ruby の COPYING・LEGAL は ruby/licenses/ruby/ に保存します。ネイティブ gem のビルドは対象外です。ZIP はフォルダー全体を保持してください。
-単体のアプリ exe だけを取り出すと Ruby を実行できません。
+Phase Cの実装（C4）までは、検証済みのRuby 3.4系のパッチに対応するRubyInstaller x64を同梱し、`ruby/bin/ruby.exe` を直接起動する以前の配布物です。
 
 WebView2 Runtime が必要です。Windows で未導入の場合、NSIS インストーラーが取得します（初回はネット接続が必要）。
 オフライン利用する ZIP 版では、あらかじめ WebView2 を用意してください。現時点ではコード署名を設定していません。
 AtCoder 本番の追加 gem や実行環境との完全一致は対象外です。
 
 ## 開発
+
+この節は現在のコードの手順です。Windows同梱Rubyの準備（`prepare:ruby`・`update:ruby`）は、Phase C（C2〜C4）でWSL向けの手順に書き換えます。
 
 Node.js 24、Rust 1.99.1、Windows の Visual Studio C++ Build Tools と WebView2 を使います。
 Rust は `rust-toolchain.toml`、npm と Cargo の依存は各ロックファイルで固定しています。

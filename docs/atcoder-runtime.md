@@ -1,5 +1,7 @@
 # AtCoderとのRuby実行環境の整合
 
+Phase C（Rubyの実行とLSPをWSL内のエージェントへ）を終えた後の仕様を書く。各項目には実装する[ロードマップ](roadmap.md)の項目を付け、その実装までは、Windowsに同梱したRuby（RubyInstaller 3.4.12）で実行する以前の実装・測定スクリプト・テストが残る（C4で削除する）。以前の測定結果は[検証記録](verification.md)とgitの履歴にある。
+
 ## 参照元と対象
 
 2026年10月28日に次の公式資料を確認した。
@@ -7,18 +9,16 @@
 - [AtCoderの使用できる言語とライブラリの一覧](https://img.atcoder.jp/file/language-update/2025-10/language-list.html)（資料に記載された情報時点は2026年6月16日）
 - [Rubyのインストール・実行設定](https://img.atcoder.jp/file/language-update/2025-10/087-3-3_ruby-3-3-6.toml)
 - [新ジャッジシステムの運用開始告知](https://atcoder.jp/posts/1594)
-- [RubyInstaller公式の配布情報とSHA-256](https://github.com/oneclick/rubyinstaller.org-website/blob/master/_data/downloads.yaml)
 
-AtCoderの公開環境はCRubyの `Ruby 3.4 (ruby 3.4.5)`。本アプリは3.4系の最新安定パッチを検証して採用し、Windows同梱版とLinux CIを同じパッチへ揃える。パッチ差による修正・標準ライブラリ・性能の違いは許容し、AtCoderと完全一致する実行環境とは扱わない。TruffleRubyは対象外。
+AtCoderの公開環境はLinux上のCRubyの `Ruby 3.4 (ruby 3.4.5)` で、`ruby --jit Main.rb`で実行する。本アプリはWSL2（Linux）の中で同じ3.4.5を動かし、パッチを合わせる。ビルドの設定・ディストリビューション・制限の測り方は異なるため、AtCoderと完全一致する実行環境とは扱わない。TruffleRubyは対象外。
 公式情報の取得は開発時に行い、参照元・確認日・採用バージョンを設定とこの資料へ残す。アプリの利用時は通信せず、配布物だけでRubyと採用gemを実行する。
 
-## Rubyのパッチ更新
+## Rubyのビルド（C3）
 
-`npm run update:ruby` は[Ruby公式のリリース一覧](https://github.com/ruby/www.ruby-lang.org/blob/master/_data/releases.yml)から最新の安定版3.4.xを選び、RubyInstaller公式の配布一覧から同じパッチのWindows x64・Devkitなし7zを取得する。同じパッチのInstaller再リリースは数値で比較して最新を選ぶ。3.5・4.x・プレビュー版・別アーキテクチャへは更新しない。対応するWindows版や正しいSHA-256がない場合、既存バージョンへ戻る場合はエラーにする。
-
-アーカイブのSHA-256を検証し、gemの準備まで成功してから `config/ruby-windows.json` の採用バージョン・取得元・ハッシュを更新する。取得や検証の失敗時は固定情報と既存ランタイムを維持する。更新後の差分と両OSのテストを確認して採用する。
-
-通常の `prepare:ruby`・ビルド・CIは固定情報だけを使い、最新版の探索や自動更新を行わない。Linux CIも同じ設定からRubyのパッチを読み取る。開発用Rubyもそのパッチへ揃える。AtCoderの公開バージョンと追加gemの固定情報は `config/atcoder-runtime.json` に分けて残し、Ruby本体の更新で追加gemを自動更新しない。
+- Ruby 3.4.5の公式ソース（`cache.ruby-lang.org`）のSHA-256を設定に固定し、CIのUbuntu 22.04で`--enable-yjit --enable-load-relative --disable-install-doc`を付けてビルドする。配置場所に依存しないため、WSL内のどこに置いても動く。
+- 静的ライブラリ（`libruby-static.a`）を除き、実行ファイルと拡張ライブラリのデバッグ情報を`strip`で除く。Rubyの`COPYING`・`LEGAL`はライセンスとして残す。採用gemとLSP用gemもCIで同じRubyへ入れ、エージェントとまとめたアーカイブのSHA-256を固定する。
+- 古いglibcに合わせるためUbuntu 22.04でビルドし、対象は`wsl --install`の既定のUbuntu（22.04以降）とする。使う共有ライブラリ（`libc`・`libm`・`libgcc_s`・`libcrypt`・`libz`・`libgmp`・`libffi`・`libyaml`・`libssl`・`libcrypto`）は、WSLの標準のUbuntuにある。足りない場合はエージェントの起動時に案内する。
+- 開発・LinuxのCIのテストも同じ3.4.5を使う。AtCoderの言語アップデートでバージョンが変わったときは、設定の版とハッシュを変えてビルドし直す（Phase Dで手順をまとめる）。最新パッチを自動で探す更新コマンドは持たない。
 
 ## 実行の打ち切り時間
 
@@ -33,8 +33,10 @@ Rustは実行予約時に問題の制限値から打ち切りを確定し、そ�
 LinuxのUIテストホストだけは、既定上限を従来のATCODER_IDE_UI_TIMEOUT_MSで短縮できる。制限既知の実行は本番と同じ5〜30秒の式を使う。テスト用の短縮を本番へ追加しない。
 
 受入条件は境界値・最大値・不正値と予約解放、8秒の問題で6秒のコードが完了すること、不明時の既定上限、開始・結果の値の一致、手動停止・子孫の終了・次の実行・全件実行の継続とする。両OSの画面で9秒・30秒の表示、過去の結果と読み取り直し後の区別、1280×720の操作を確認する。
-
 ## 再帰スタック
+
+C5で、AtCoderと同じく`RUBY_THREAD_VM_STACK_SIZE`を問題のメモリ制限の値（不明なら既定の値）にし、Rubyの起動前に`RLIMIT_STACK`（ネイティブスタック）を上げる。C0では、`RLIMIT_STACK`とVMスタックを1 GBにすると100万段の再帰ができた。通常のユーザーで上げられる上限（ハードリミット）を利用者の手元で確かめてから値を決める。次の32 MiBの固定と測定は、C5までの現在の仕様。Windowsの測定（PEヘッダーの予約量など）はC4で削除する。
+
 
 実行用RubyのRUBY_THREAD_VM_STACK_SIZEを32 MiB（33,554,432 bytes）に固定する。Runnerで子プロセスごとに設定し、端末の同変数より優先する。LSPが共有するruby_commandには追加せず、LSPの起動設定は維持する。保存形式は変更しない。
 
@@ -58,48 +60,21 @@ LinuxのUIテストホストだけは、既定上限を従来のATCODER_IDE_UI_T
 
 受入条件は通常再帰20万段が実Runnerで完了すること、実際のスタック上限到達後も次の実行ができること、通常コード・手動停止・5秒の時間制限・LSPが正常に動くこと。テストを先に追加し、Linux・Windowsの全テストとWindows配布検証をPRのCIで確認する。
 
-## Windowsの実行メモリ上限
+## メモリ上限
 
-WindowsのRunnerはRubyと子孫のJob全体に1 GiB（1,024 MiB）のコミット上限を設ける。ワーキングセットやAtCoderの計測方法とは異なるため、問題ページのメモリ制限値は表示だけに使い、ローカル上限とは区別する。端末保護の上限1 GiBは維持し、停止理由は「ローカルのメモリ上限で停止（1 GiB）」と表示する。2 GiBへ増やしても計測方法の差は解消しないため、AtCoderの判定を再現する目的では増やさない。既存の32 MiB VM設定の測定では起動時に約85 MiBをコミットしており、問題の64 MiBなどをそのまま適用しない。Windowsの実Runnerで64 MiBの文字列確保と2 GiBのアドレス予約が完了し、1 GiBの文字列確保・2 GiBのコミット要求・子孫2つによる各600 MiBの要求はコミットが拒否され、通知を受けた実行はmemory-limitで停止することを確認して、固定1 GiBを採用した。
+- C5で、Rubyと子孫の合計のメモリ上限をLinuxの仕組みで設定する。`setrlimit`の`RLIMIT_AS`は使わない。Rubyは何もしていない状態でも仮想メモリを約450 MB（YJIT有効時は約590 MB）確保するため、1024 MBの`RLIMIT_AS`では512 MBの文字列も確保できなかった（[調査](architecture.md#rubyの実行環境の調査c0)）。
+- 手段はcgroup v2の`memory.max`か、エージェントによる使用中のメモリ（RSS）の監視のどちらかにする。WSL2でcgroupを通常のユーザーが使えるかを利用者の手元で確かめてから決める。上限の値（端末保護の固定1 GiBか、問題のメモリ制限か）もC5で決める。
+- 上限で止めた実行は`memory-limit`を停止理由にし、出力比較とエラー行ジャンプを付けず、全件実行は次のケースへ進む。最初に確定した手動停止・時間制限・出力上限は上書きしない。
+- WSL1はメモリ上限の仕組み（`RLIMIT_AS`・`RLIMIT_DATA`・cgroup）がなく、上限は効かない。そのことを画面に表示する。
+- C4までは、WindowsのRunnerがRubyと子孫のJob全体に1 GiBのコミット上限を設ける以前の実装が残る。
 
-Jobを設定してから停止状態のRubyを割り当て、再開する。起動直後の子孫生成も管理対象にする。設定・割り当て・再開の失敗時は子を終了し、実行予約を解除する。LSPも同じ起動手順を使うが、メモリ上限は設けない。Linux開発環境にはメモリ上限を実装しない。
+## JIT（C5）
 
-Windowsのハード上限は追加のコミットを拒否するもので、自動終了はしない。Jobの確保拒否通知を受け取ったら`memory-limit`を最初の停止理由として記録し、Job全体を終了する。出力比較とエラー行ジャンプは付けず、全件実行は次のケースへ進む。最初に確定した手動停止・時間制限・出力上限は上書きしない。
-
-[Job通知の配信](https://github.com/MicrosoftDocs/win32/blob/docs/desktop-src/ProcThread/job-objects.md)はハード上限では保証されない。通知が確認できない場合はメモリ超過と推測せず、Rubyの実際の終了状態を返す。確保失敗の例外で終了すればfailed、失敗を捕捉して正常終了すればcompleted、動き続ければその実行の打ち切り時間でtimeoutになる。通知が欠落してもコミット上限は有効。[JobMemoryLimitの定義](https://github.com/MicrosoftDocs/sdk-api/blob/docs/sdk-api-src/content/winnt/ns-winnt-jobobject_extended_limit_information.md)を参照する。
-
-保存形式は変更しない。受入条件は、通常実行・通常例外の維持、上限を超える単独／子孫合計の確保拒否、通知に応じた停止理由、起動直後のJob所属、プロセス群の終了・一時ファイル削除・次の実行、全件実行の継続、最小画面での理由表示とする。Windows CIの実Ruby・配布アプリで確認する。
-
-実OSの受入テストは確保拒否と終了後の復帰を検証し、通知の必着を条件にしない。通知を受けた場合のmemory-limit・Job全体の停止・再実行は、テスト専用コードから実際の完了ポートへ通知を投入して検証する。画面の停止理由と全件実行の継続は、固定した実行結果で検証し、実Rubyの画面テストは通知がないときの時間制限も許容する。連続成功回数をOSの配信保証の代わりにはしない。
-
-再測定は同梱Rubyを`RUBY_PATH`へ指定し、`cargo test --locked --test contract windows_job_memory -- --nocapture`で行う。`test-results/ruby-memory.json`に条件・結果・時間と、Rubyから照会したJobの上限・ピークコミットを保存する。通常CIでも実行し、Windows-verification artifactに含める。
-
-## JIT
-
-Windows同梱RubyInstaller 3.4.12-1 x64はYJIT・RJITとも非対応として扱い、RunnerとLSPはJITフラグを指定しない。実測のビルド設定はYJIT_SUPPORT=no／RJIT_SUPPORT=noで、フラグを付けてもJITは有効にならなかった。実行時の有効化を確認できないため、速度・メモリの比較や本番へのフラグ追加は行わない。
-
-2026年10月31日にAtCoderの公開tomlを再確認し、実行指定が`ruby --jit Main.rb`であることを確認した。ただし、`--jit`だけからYJITの使用を断定しない。[Ruby 3.4.12のオプション処理](https://github.com/ruby/ruby/blob/v3_4_12/ruby.c)は、YJITをビルドした場合はYJITを、それ以外ではRJITを選び、どちらもない場合は警告だけで実行を続ける。AtCoderで実際に有効になったJITの種類は公開tomlだけでは確定しない。
-
-同版の[YJIT公式資料](https://github.com/ruby/ruby/blob/v3_4_12/doc/yjit/yjit.md)と[RJIT公式資料](https://github.com/ruby/ruby/blob/v3_4_12/doc/rjit/rjit.md)の対応OSはLinux・macOS・BSDで、Windowsは含まれない。固定したRubyInstaller x64のビルド設定と実行時状態をWindows CIで確認した。
-
-Windows同梱版の結果（2026年10月31日）：
-
-| 起動条件 | 終了コード | YJIT有効 | RJIT有効 | 警告の要点 |
-| --- | --- | --- | --- | --- |
-| 既定 | 0 | false | false | なし |
-| `--jit` | 0 | false | false | Ruby was built without JIT support |
-| `--yjit` | 0 | false | false | Ruby was built without YJIT support |
-| `--rjit` | 0 | false | false | RJIT support is disabled |
-
-有効状態は各APIで確認し、定数がない場合はfalseと記録する。4条件とも計算結果は5050、VMスタックは32 MiBだった。Linux開発環境はYJITなし・RJITありで--jitがRJITを有効にし、Linux CIのsetup-ruby版は両方ありで--jitがYJITを有効にした。同じRuby 3.4.12でもビルドにより異なるため、Linuxの結果をWindowsやAtCoderへ一般化しない。
-
-検証では既定・`--jit`・`--yjit`・`--rjit`の4条件を別プロセスで起動し、終了コード・警告・Rubyの版と実パス・`RbConfig::CONFIG`のYJIT_SUPPORT／RJIT_SUPPORT・`RubyVM::YJIT.enabled?`／`RubyVM::RJIT.enabled?`を保存する。終了コード0や定数の存在だけで有効と扱わない。外部のRuby／Bundler設定とRUBY_YJIT_ENABLEを除去し、Runnerと同じ32 MiBのVMスタックを設定してから検証する。簡単な計算の実行も確認する。
-
-再現は`RUBY_PATH`に対象Rubyを指定し、`node scripts/probe-ruby-jit.cjs`を実行する。結果は`test-results/ruby-jit.json`に保存し、通常の単体テストでも採用Rubyを検証する。Windows CIでは既存のWindows-verification artifactに含める。これは起動時の対応確認で、速度比較ではない。
+AtCoderと同じく`--jit`で実行する。同梱のRubyはYJIT付きでビルドするため、`--jit`でYJITが有効になる（C0で`RubyVM::YJIT.enabled?`がtrueになることを確かめた）。Runnerで有効になったことをテストで確かめる。LSPはJITを指定しない。時間超過の注意表示の説明をJITありの前提に更新する。C4までは、YJIT・RJIT非対応のWindows同梱Rubyで、JITを指定しない以前の実装が残る。
 
 ## 追加するgem
 
-WindowsでC拡張のビルドや外部DLLの追加が不要な次の5つを、公式と同じバージョンで同梱する。gem内のライセンス資料も保持する。
+C拡張のない次の5つを、公式と同じバージョンで同梱する。C3で、C拡張のある公式gem（rbtree・sorted_set・immutable-ruby・bit_utils・fast_trie・numo-narray・rumaleなど）もCIで同梱のRubyに向けてビルドして加える。どこまで入れるかは理由付きでC3でこの資料に書く。gem内のライセンス資料も保持する。
 
 | gem | バージョン | 用途 |
 | --- | --- | --- |
@@ -112,13 +87,12 @@ WindowsでC拡張のビルドや外部DLLの追加が不要な次の5つを、�
 必要な依存gemも固定する。prime 0.1.3、rexml 3.4.4、pairing_heap 3.1.3、stream 0.5.6を採用する。依存gemの具体的なバージョンはAtCoder資料で保証されていないため、このプロジェクトで動作確認した組合せとして扱う。primeが依存するforwardableとsingletonは採用Rubyの標準同梱版を使う。
 
 `config/atcoder-runtime.json`を取得元・バージョン・SHA-256の固定情報とする。RubyGemsから取得した `.gem` はすべてハッシュ検証してから、ネットワークで依存解決せずに指定先へインストールする。別プラットフォームのgemやC拡張は拒否する。
-WindowsはRubyの展開先へ追加してから配布し、Linuxの開発・CIは `npm run prepare:gems` で実行用Rubyへ同じgemを追加する。標準ライブラリの利用方法は変えない。
+同梱するRubyにはCIのビルドで追加し、Linuxの開発・CIは `npm run prepare:gems` で実行用Rubyへ同じgemを追加する。標準ライブラリの利用方法は変えない。
 アプリはRuby起動前に、子プロセスの環境変数からRUBYOPT・RUBYLIB・BUNDLE_GEMFILE・GEM_HOME・GEM_PATHを除外する。端末のRubyオプション、外部ライブラリ探索先、BundlerのGemfileを引き継がない。起動後もGem.use_paths(Gem.default_dir)により、そのRubyの標準gemディレクトリだけを探索し、ユーザー用gemディレクトリから別バージョンを読み込まない。Rubyの確認とコード実行は同じRunnerを使う。prepare:gemsも選択したRubyの標準gemディレクトリへ追加するため、Linuxでは書き込み可能なRuby環境を用意する。
-Rubyアーカイブまたは採用gemの固定情報が変わったら、管理対象のWindowsランタイムを元アーカイブから作り直す。取得・検証・gem追加の失敗では既存のランタイムを維持する。
-
+Rubyのソースまたは採用gemの固定情報が変わったら、同梱するアーカイブをCIで作り直す。
 ## 残る差
 
-次の15の公式追加gemは、C拡張または外部ネイティブ依存があるため今回の同梱対象に含めない。未同梱のgemを必要とするコードはLoadError等になる。
+C3でC拡張のあるgemを加えるまで、次の15の公式追加gemは同梱しない。未同梱のgemを必要とするコードはLoadError等になる。C3の後も、加えなかったgemはこの表に残す。
 
 | gem | 公式バージョン |
 | --- | --- |
@@ -138,24 +112,23 @@ Rubyアーカイブまたは採用gemの固定情報が変わったら、管理�
 | torch-rb | 0.21.0 |
 | z3 | 0.0.20230311 |
 
-immutable-rubyとsorted_setはgem本体がRubyでも、依存先にrbtreeのC拡張を含む。Linuxの開発・テストでも追加するのは採用した5つとその依存だけとする。
+immutable-rubyとsorted_setはgem本体がRubyでも、依存先にrbtreeのC拡張を含む。
 
-| 項目 | AtCoderの公式設定 | このアプリ |
+| 項目 | AtCoderの公式設定 | このアプリ（Phase Cの後） |
 | --- | --- | --- |
-| Rubyのパッチ | 公開情報は3.4.5 | 検証して固定した3.4系の最新パッチ |
-| OS・ビルド | Linux上のCRuby | WindowsはRubyInstaller、Linux CIはsetup-rubyのCRuby |
-| JIT | `ruby --jit Main.rb`（有効になる種類は公開設定だけでは不明） | Windows同梱版はYJIT・RJIT非対応。JITを指定しない。[確認結果](#jit)を参照 |
-| スタック | `RUBY_THREAD_VM_STACK_SIZE`を問題のメモリ上限に設定 | 実行用VMスタック32 MiB、ネイティブスタックはOS・ビルドの制限が残る |
+| Rubyのパッチ | 3.4.5 | 3.4.5 |
+| OS・ビルド | Linux上のCRuby | WSL2（Linux）上のCRuby。CIでYJIT付きでビルドしたもの |
+| JIT | `ruby --jit Main.rb` | `--jit`（YJIT）。[JIT](#jitc5)を参照 |
+| スタック | `RUBY_THREAD_VM_STACK_SIZE`を問題のメモリ上限に設定 | 同じ値にし、ネイティブスタックの上限も上げる（C5）。[再帰スタック](#再帰スタック)を参照 |
 | 入出力 | ジャッジの標準入出力 | UTF-8・バイナリ改行・逐次出力をアプリ側で設定 |
-| 上限 | 問題ごとの時間・メモリ制限 | 問題の制限値を表示し、時間超過の可能性を注意表示する。実際の打ち切りは[問題に応じて5〜30秒](#実行の打ち切り時間)、合計出力1MiB。WindowsのJob全体はコミット1 GiB。問題ごとのメモリ制限は再現しない |
-| 作業ディレクトリ | ジャッジの提出領域 | 実行ごとの一時ディレクトリ |
+| 上限 | 問題ごとの時間・メモリ制限 | 問題の制限値を表示し、時間超過の可能性を注意表示する。実際の打ち切りは[問題に応じて5〜30秒](#実行の打ち切り時間)、合計出力1MiB。メモリは[メモリ上限](#メモリ上限)のとおり |
+| 作業ディレクトリ | ジャッジの提出領域 | WSL内の実行ごとの一時ディレクトリ |
 
 したがって提出先での実行時間や判定の再現は保証しない。ローカルでの構文・標準入力・アルゴリズムの確認に使う。
 
 ## 検証
 
-- 不正なgemアーカイブ・別プラットフォーム・C拡張を拒否し、既存のWindowsランタイムを壊さないことを確認する。
-- 実Runnerから固定したRubyのパッチと採用gemのバージョン、代表的な処理、標準ライブラリ、日本語を含む入出力を確認する。
+- 実Runnerから固定したRubyのパッチと採用gemのバージョン、代表的な処理、標準ライブラリ、日本語を含む入出力を確認する。LinuxのCIでは本物のエージェントを通して確かめる。
 - 共通GUIで未保存・日本語パスのソースから追加gemを使い、期待出力との比較まで確認する。
-- Windowsのポータブル版とNSIS版で、システムRubyに依存せず追加gemを実行できることを確認する。
-- RUBYOPTによる追加require・RubyGems無効化、RUBYLIBによる標準ライブラリの置換、Bundlerの外部Gemfile、GEM_HOME・GEM_PATHが別環境を指す場合も、実RunnerとWindows配布版が採用gemを同じバージョンで使えることを確認する。
+- Windowsのポータブル版とNSIS版で、WindowsにRubyがなく、WSLのPATHにもRubyがない状態で、同梱のRubyで追加gemを実行できることを確認する（CIはWSL1）。
+- RUBYOPTによる追加require・RubyGems無効化、RUBYLIBによる標準ライブラリの置換、Bundlerの外部Gemfile、GEM_HOME・GEM_PATHが別環境を指す場合も、実Runnerが採用gemを同じバージョンで使えることを確認する。
