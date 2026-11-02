@@ -14,6 +14,8 @@ function Timed([scriptblock]$block) { $sw = [Diagnostics.Stopwatch]::StartNew();
 function Count([string]$pattern) { Wsl "pgrep -f '$pattern' | wc -l" }
 function Sleeps { Count '^sleep 300$' }
 $utf8 = New-Object Text.UTF8Encoding $false
+# Process.Start writes the console's input encoding preamble (a BOM when it is UTF-8) to the child's stdin.
+try { [Console]::InputEncoding = $utf8 } catch { }
 $agentCommand = '-e bash -c "exec ~/.c0-check/ruby/bin/ruby ~/.c0-check/agent.rb"'
 
 function Start-Agent {
