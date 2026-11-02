@@ -196,8 +196,31 @@ impl ProcessTree {
 }
 
 /// Isolate every Ruby process from the caller's Ruby/Bundler environment.
-pub(crate) fn ruby_command(ruby: &std::path::Path) -> std::process::Command {
-    let mut command = std::process::Command::new(ruby);
+/// With `limit`, GNU timeout leads the process group on Linux and kills the whole group 2 seconds
+/// after the limit, which the runner enforces itself, so Ruby stops even if the agent is killed.
+pub(crate) fn ruby_command(
+    ruby: &std::path::Path,
+    limit: Option<std::time::Duration>,
+) -> std::process::Command {
+    // A missing Ruby is left to fail when it is started, as it does without timeout.
+    #[cfg(unix)]
+    let mut command = match limit.zip(executable(ruby)) {
+        Some((limit, ruby)) => {
+            let limit = limit + std::time::Duration::from_secs(2);
+            let mut command = std::process::Command::new("timeout");
+            command
+                .args(["-s", "KILL"])
+                .arg(format!("{}.{:03}", limit.as_secs(), limit.subsec_millis()))
+                .arg(ruby);
+            command
+        }
+        None => std::process::Command::new(ruby),
+    };
+    #[cfg(not(unix))]
+    let mut command = {
+        let _ = limit;
+        std::process::Command::new(ruby)
+    };
     for (key, _) in std::env::vars_os() {
         let name = key.to_string_lossy().to_ascii_uppercase();
         if matches!(
@@ -216,6 +239,22 @@ pub(crate) fn ruby_command(ruby: &std::path::Path) -> std::process::Command {
         command.process_group(0);
     }
     command
+}
+
+/// The executable file `program` runs: a path, or a name looked up in PATH.
+#[cfg(unix)]
+fn executable(program: &std::path::Path) -> Option<std::path::PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+    let runnable = |path: &std::path::Path| {
+        path.metadata()
+            .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+    };
+    if program.components().count() > 1 {
+        return runnable(program).then(|| program.to_path_buf());
+    }
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .map(|directory| directory.join(program))
+        .find(|path| runnable(path))
 }
 
 #[cfg(unix)]
