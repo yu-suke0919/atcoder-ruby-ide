@@ -41,7 +41,7 @@ jobs:
           "$ruby" --yjit -e 'puts RUBY_DESCRIPTION; p RubyVM::YJIT.enabled?; %w[json openssl psych zlib fiddle bigdecimal set prime].each { |lib| require lib }; puts "stdlib ok"; puts RbConfig::CONFIG["prefix"]'
           "$ruby" -e 'puts Gem.default_dir'
           echo "external libraries:"
-          find "$RUNNER_TEMP/moved/ruby" -name '*.so' -exec ldd {} \; "$ruby" | awk '/=>/ { print $1 }' | sort -u
+          { find "$RUNNER_TEMP/moved/ruby" -name '*.so' -exec ldd {} \; ; ldd "$ruby"; } | awk '/=>/ { print $1 }' | sort -u
           du -sh "$RUNNER_TEMP/moved/ruby"
           tar -C "$RUNNER_TEMP/moved" -czf ruby-linux.tar.gz ruby
           ls -l ruby-linux.tar.gz
