@@ -1,0 +1,84 @@
+# C0 spike (not for merge): can the app run Ruby inside WSL? Results go to docs/architecture.md.
+name: C0 WSL spike
+
+on:
+  push:
+    branches: [spike/c0-wsl]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ruby-build:
+    # An older Ubuntu, so the Ruby runs on the newer Ubuntu that `wsl --install` sets up.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Ruby 3.4.5 with YJIT, relocatable
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev libyaml-dev libffi-dev zlib1g-dev libgmp-dev
+          rustc --version
+          curl -fsSLO https://cache.ruby-lang.org/pub/ruby/3.4/ruby-3.4.5.tar.gz
+          sha256sum ruby-3.4.5.tar.gz
+          tar -xzf ruby-3.4.5.tar.gz
+          cd ruby-3.4.5
+          start=$(date +%s)
+          ./configure --prefix=/opt/atcoder-ruby --enable-yjit --enable-load-relative --disable-install-doc
+          make -j"$(nproc)"
+          make install DESTDIR="$RUNNER_TEMP/stage"
+          echo "build seconds: $(( $(date +%s) - start ))"
+      - name: Move the build and run it from elsewhere
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p "$RUNNER_TEMP/moved"
+          mv "$RUNNER_TEMP/stage/opt/atcoder-ruby" "$RUNNER_TEMP/moved/ruby"
+          ruby="$RUNNER_TEMP/moved/ruby/bin/ruby"
+          "$ruby" --yjit -e 'puts RUBY_DESCRIPTION; p RubyVM::YJIT.enabled?; %w[json openssl psych zlib fiddle bigdecimal set prime].each { |lib| require lib }; puts "stdlib ok"; puts RbConfig::CONFIG["prefix"]'
+          "$ruby" -e 'puts Gem.default_dir'
+          echo "external libraries:"
+          find "$RUNNER_TEMP/moved/ruby" -name '*.so' -exec ldd {} \; "$ruby" | awk '/=>/ { print $1 }' | sort -u
+          du -sh "$RUNNER_TEMP/moved/ruby"
+          tar -C "$RUNNER_TEMP/moved" -czf ruby-linux.tar.gz ruby
+          ls -l ruby-linux.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ruby-linux
+          path: ruby-linux.tar.gz
+          retention-days: 7
+
+  wsl:
+    needs: ruby-build
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        wsl-version: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: Vampire/setup-wsl@v3
+        with:
+          distribution: Ubuntu-24.04
+          wsl-version: ${{ matrix.wsl-version }}
+          additional-packages: ruby
+      - uses: actions/download-artifact@v4
+        with:
+          name: ruby-linux
+      - name: Probe stdio, start-up, stopping and limits through wsl.exe
+        shell: pwsh
+        run: node spike/c0/probe.cjs
+      - name: Run the relocatable Ruby inside WSL
+        shell: pwsh
+        run: |
+          $archive = (wsl.exe -e wslpath -a ((Resolve-Path ruby-linux.tar.gz).Path -replace '\\', '/')).Trim()
+          wsl.exe -e bash -c "set -ex; mkdir -p ~/.atcoder-ruby; tar -xzf '$archive' -C ~/.atcoder-ruby; cd /tmp; ~/.atcoder-ruby/ruby/bin/ruby --yjit -e 'puts RUBY_DESCRIPTION; p RubyVM::YJIT.enabled?; %w[json openssl psych zlib fiddle bigdecimal].each { |lib| require lib }; puts %q(stdlib ok)'; ldd ~/.atcoder-ruby/ruby/bin/ruby | grep -c 'not found' || true; cat /etc/os-release | head -2"
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          wsl.exe -e bash -c "echo 'p gets.to_i * 2' > /tmp/a.rb; echo 21 | ~/.atcoder-ruby/ruby/bin/ruby /tmp/a.rb"
+          "one run through wsl.exe: $($sw.ElapsedMilliseconds) ms"
