@@ -380,7 +380,7 @@ Windows CI の初回では、HTML固定データがCRLFでチェックアウト�
 - [CI #129](https://github.com/yu-suke0919/atcoder-ruby-ide/actions/runs/41186846797)のWindows単体テストで、64 MiBのRuby文字列確保と2 GiBのアドレス予約の完了、1 GiBのRuby文字列確保・2 GiBのコミット要求・子孫2つの各600 MiBの要求に対するmemory-limitを確認した。子孫の要求は1つ目の600 MiB確保を待ってから2つ目を開始し、合計で制限されることを確認する。各条件の後に実行予約の解放と一時ソースの削除を確認し、再実行と通常例外の行番号取得も成功した。
 - ハード上限はOSがコミットを拒否し、通知を受けたRunnerがJob全体を終了する。通知の配信が保証されない制約を資料へ残し、stderrの文言からメモリ上限を推測しない。停止状態での起動・Job割り当て後の再開はRunnerとLSPで共有し、LSPの単体テストも成功した。
 - ローカルLinuxはRust 89件・Node 86件・GUI 89件が成功した（Windows専用のGUI 1件は除外）。全件実行の継続、判定なし・エラー件数・ジャンプなし、900×650での停止理由表示と再実行をWindows配布アプリのテストへ追加した。確保拒否を捕捉して即座に正常終了する場合も追加し、最終コミットの両OS・Windows配布検証はPRのCIで確認する。
-- 測定結果はtest-results/ruby-memory.jsonへ保存する。配布準備がartifacts/を置き換えるため、測定結果はそこへ置かず、既存のWindows-verification artifactに含める。再測定手順は[実行環境](atcoder-runtime.md#windowsの実行メモリ上限)を参照する。
+- 測定結果はtest-results/ruby-memory.jsonへ保存する。配布準備がartifacts/を置き換えるため、測定結果はそこへ置かず、既存のWindows-verification artifactに含める。再測定は`cargo test --locked --test contract windows_job_memory -- --nocapture`で行う（C4で削除する。現在のメモリ上限の仕様は[実行環境](atcoder-runtime.md#メモリ上限)を参照する）。
 
 ### PR #32レビュー後の通知と表示の検証
 
@@ -570,3 +570,10 @@ echo after 75 s idle: ok
 after closing stdin: agents, sleeps: 0, 0
 after killing wsl.exe: agents, sleeps, timeout groups, signal: 0, 0, 0, HUP
 ```
+
+## 資料の書き換え（C1）
+
+- main 07c9cf6から開始。利用者の判断で、U5・U6より先にPhase Cを進めることにし、ロードマップの順番を変えた。
+- MVP（目的、M06〜M08・M10・M12・M19、実行環境）、構成と検証方針（最小構成、実行・出力・停止、コマンドとRuby起動の共通処理、検証の方針、[WSLのエージェント](architecture.md#wslのエージェント)を追加）、実行環境の資料（Rubyのビルド、メモリ上限、JIT、gem、残る差）、Ruby LSP、READMEを、Phase Cを終えた後の構成に書き直した。実装する項目（C2〜C5）を付け、それまでは以前の実装が残ることを明記した。
+- Windows同梱Rubyの測定結果（JIT非対応、Job Objectのメモリ上限、PEヘッダーのスタック）は実行環境の資料から外し、この検証記録とgitの履歴に残した。
+- 資料内の相対リンクと見出しへのリンクがすべて解決することを確認した。資料だけの変更のためCIは実行されない。
