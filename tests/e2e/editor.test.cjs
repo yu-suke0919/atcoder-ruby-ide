@@ -149,6 +149,26 @@ test('E05: opening a different problem clears undo and a 1 MiB solution roundtri
   assert.equal(await editorText(page), 'puts "previous secret"');
   await code().press('Control+z'); assert.equal(await editorText(page), 'puts "previous secret"');
 });
+test('E05: each file keeps its undo history across tab switches and LSP still completes', async () => {
+  const tab = name => page.locator('#file-tabs [role="tab"]', { hasText: new RegExp(`^${name}$`) });
+  const selected = name => page.waitForFunction(name => document.querySelector('#file-tabs [aria-selected="true"]').textContent === name, name);
+  await code().fill('pu');
+  await page.locator('#file-add').click();
+  await selected('editor_2');
+  await code().fill('second');
+  await tab('editor_1').click(); await selected('editor_1');
+  assert.equal(await editorText(page), 'pu');
+  await code().press('Control+z'); assert.notEqual(await editorText(page), 'pu');
+  await code().press('Control+y'); assert.equal(await editorText(page), 'pu');
+  await tab('editor_2').click(); await selected('editor_2');
+  await code().press('Control+z'); assert.notEqual(await editorText(page), 'second');
+  await code().press('Control+y'); assert.equal(await editorText(page), 'second');
+  // A restored file still takes Ruby LSP's candidates, which are not discarded as stale.
+  await tab('editor_1').click(); await selected('editor_1');
+  await code().press('End');
+  await code().press('Control+Space'); await completions(60000);
+  await page.locator('.cm-tooltip-autocomplete [role="option"]', { hasText: 'LSP' }).first().waitFor();
+});
 test('E06: a pending save never blocks typing and the latest edit is saved afterwards', async () => {
   await code().fill('puts "first"');
   await page.evaluate(async () => {
