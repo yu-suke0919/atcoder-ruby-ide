@@ -3,6 +3,11 @@
 require 'json'
 $stdout.sync = true
 groups = []
+cleanup = -> { groups.each { |pid| Process.kill(:KILL, -pid) rescue nil } }
+# Which signal (if any) reaches the agent when Windows kills wsl.exe.
+%w[HUP TERM INT PIPE].each do |name|
+  Signal.trap(name) { File.write('/tmp/c0-agent-signal', name); cleanup.call; exit!(1) }
+end
 STDIN.each_line do |line|
   request = JSON.parse(line)
   case request['type']
@@ -14,7 +19,11 @@ STDIN.each_line do |line|
     puts JSON.generate(type: 'flood-done', id: request['id'])
   when 'spawn'
     # A process group like a user's Ruby with children, killed on request.
-    pid = Process.spawn('bash', '-c', 'sleep 300 & sleep 300 & wait', pgroup: true, in: File::NULL, out: File::NULL, err: File::NULL)
+    # With timeout: GNU timeout leads its own process group and kills the whole group when the time is up,
+    # even if the agent is gone by then.
+    command = ['bash', '-c', 'sleep 300 & sleep 300 & wait']
+    command = ['timeout', '-s', 'KILL', request['timeout'].to_s, *command] if request['timeout']
+    pid = Process.spawn(*command, pgroup: true, in: File::NULL, out: File::NULL, err: File::NULL)
     groups << pid
     puts JSON.generate(type: 'spawned', id: request['id'], pid: pid)
   when 'kill'
@@ -43,4 +52,4 @@ STDIN.each_line do |line|
   end
 end
 # Windows closed the pipe (the app quit or killed wsl.exe): stop what is still running.
-groups.each { |pid| Process.kill(:KILL, -pid) rescue nil }
+cleanup.call

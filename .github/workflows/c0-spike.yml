@@ -44,6 +44,15 @@ jobs:
           { find "$RUNNER_TEMP/moved/ruby" -name '*.so' -exec ldd {} \; ; ldd "$ruby"; } | awk '/=>/ { print $1 }' | sort -u
           du -sh "$RUNNER_TEMP/moved/ruby"
           du -sh "$RUNNER_TEMP/moved/ruby"/* "$RUNNER_TEMP/moved/ruby"/lib/* "$RUNNER_TEMP/moved/ruby"/lib/ruby/*
+          du -sh "$RUNNER_TEMP/moved/ruby"/lib/ruby/* "$RUNNER_TEMP/moved/ruby"/lib/libruby-static.a "$RUNNER_TEMP/moved/ruby"/bin/ruby
+          # A smaller candidate for shipping: no static library, no debug symbols.
+          rm "$RUNNER_TEMP/moved/ruby/lib/libruby-static.a"
+          strip "$ruby"
+          find "$RUNNER_TEMP/moved/ruby" -name '*.so' -exec strip --strip-unneeded {} +
+          "$ruby" --yjit -e 'p RubyVM::YJIT.enabled?; %w[json openssl psych zlib fiddle bigdecimal set prime].each { |lib| require lib }; puts "stripped ok"'
+          echo 'require "json"; puts JSON.generate(a: 1)' > "$RUNNER_TEMP/a.rb"
+          "$ruby" "$RUNNER_TEMP/a.rb"
+          du -sh "$RUNNER_TEMP/moved/ruby" "$ruby"
           tar -C "$RUNNER_TEMP/moved" -czf ruby-linux.tar.gz ruby
           ls -l ruby-linux.tar.gz
       - uses: actions/upload-artifact@v4
