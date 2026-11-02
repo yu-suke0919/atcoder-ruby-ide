@@ -51,7 +51,8 @@ impl RubyLsp {
                 },
                 "initializationOptions": {
                     "enabledFeatures": ["completion", "documentSymbols"], "formatter": "none", "linters": [],
-                    "indexing": {"excludedPatterns": ["**/ruby-lsp/**"]}
+                    // bit_utils' backports redefines core methods for old Rubies (600 files).
+                    "indexing": {"excludedGems": ["backports"]}
                 }
             }),
             deadline,

@@ -10,25 +10,31 @@ const { prepareGems } = require('../../scripts/prepare-gems.cjs');
 const execute = promisify(execFile);
 const ruby = process.env.RUBY_PATH || 'ruby';
 
-async function fixture(root, name, kind = 'pure') {
+async function fixture(root, name, kind = 'pure', dependency = null) {
   const { stdout } = await execute(ruby, ['-EUTF-8:UTF-8', '-rrubygems/package', '-e', `
-    name = ARGV[0]
+    name, kind, dependency = ARGV
     Dir.mkdir(name)
     Dir.chdir(name) do
       Dir.mkdir('lib')
-      File.write("lib/#{name}.rb", "module RuntimeFixture; VALUE = '日本語'; end")
+      File.write("lib/#{name}.rb", kind == 'native' ? "require '#{name}/#{name}'" : "module RuntimeFixture; VALUE = '日本語'; end")
       File.write('LICENSE', 'fixture license')
-      Dir.mkdir('ext')
-      File.write('ext/extconf.rb', 'raise "must not build"')
+      files = ["lib/#{name}.rb", 'LICENSE']
+      if kind == 'native'
+        Dir.mkdir('ext')
+        File.write('ext/extconf.rb', ["require 'mkmf'", "create_makefile('#{name}/#{name}')", ''].join(10.chr))
+        File.write("ext/#{name}.c", ['#include <ruby.h>', "void Init_#{name}(void) { rb_define_const(rb_cObject, #{'NativeFixture'.dump}, INT2FIX(42)); }", ''].join(10.chr))
+        files += ['ext/extconf.rb', "ext/#{name}.c"]
+      end
       spec = Gem::Specification.new do |s|
         s.name = name; s.version = '1.0.0'; s.summary = 'runtime fixture'
-        s.authors = ['test']; s.license = 'MIT'; s.files = ["lib/#{name}.rb", 'LICENSE']
-        s.extensions = ['ext/extconf.rb'] if ARGV[1] == 'native'
-        s.platform = 'java' if ARGV[1] == 'java'
+        s.authors = ['test']; s.license = 'MIT'; s.files = files
+        s.extensions = ['ext/extconf.rb'] if kind == 'native'
+        s.platform = 'java' if kind == 'java'
+        s.add_dependency(dependency) unless dependency.to_s.empty?
       end
       puts Gem::Package.build(spec)
     end
-  `, name, kind], { cwd: root });
+  `, name, kind, dependency ?? ''], { cwd: root });
   const archive = `${name}-1.0.0.gem`;
   assert.ok(stdout.includes(name));
   const data = await readFile(path.join(root, name, stdout.trim().split('\n').at(-1)));
@@ -61,13 +67,23 @@ test('M19: a corrupt cached gem is rejected before modifying the installation', 
   assert.equal(await readFile(path.join(options.directory, 'preserve'), 'utf8'), 'keep');
 }));
 
-test('M19: all packages are inspected before installing; native extensions and wrong identities are rejected', () => withRoot(async (root, options) => {
-  const pure = await fixture(root, 'ide_pure');
+test('M19: C extensions are built for the Ruby that installs them', () => withRoot(async (root, options) => {
   const native = await fixture(root, 'ide_native', 'native');
-  await assert.rejects(prepareGems({ ...options, gems: [pure, native] }), /native|C拡張/);
-  await assert.rejects(readFile(path.join(options.directory, 'specifications/ide_pure-1.0.0.gemspec')), { code: 'ENOENT' });
+  await prepareGems({ ...options, gems: [native] });
+  const { stdout } = await execute(ruby, ['-rrubygems', '-e', 'Gem.use_paths(ARGV[0]); require "ide_native"; p NativeFixture', options.directory]);
+  assert.equal(stdout.trim(), '42');
+}));
+
+test('M19: all packages are inspected before installing; other platforms, wrong identities and dependencies listed later are rejected', () => withRoot(async (root, options) => {
+  const pure = await fixture(root, 'ide_pure');
   const platform = await fixture(root, 'ide_platform', 'java');
-  await assert.rejects(prepareGems({ ...options, gems: [platform] }), /native|platform/);
+  await assert.rejects(prepareGems({ ...options, gems: [pure, platform] }), /platform/);
+  await assert.rejects(readFile(path.join(options.directory, 'specifications/ide_pure-1.0.0.gemspec')), { code: 'ENOENT' });
+  // A C extension may need its dependency's headers, so the dependency is installed first.
+  const dependent = await fixture(root, 'ide_dependent', 'pure', 'ide_pure');
+  await assert.rejects(prepareGems({ ...options, gems: [dependent, pure] }), /ide_pure.*先/);
+  await assert.rejects(readFile(path.join(options.directory, 'specifications/ide_dependent-1.0.0.gemspec')), { code: 'ENOENT' });
+  await prepareGems({ ...options, gems: [pure, dependent] });
   const wrong = { ...pure, name: 'wrong_name' };
   await writeFile(path.join(options.cache, 'wrong_name-1.0.0.gem'), await readFile(path.join(options.cache, 'ide_pure-1.0.0.gem')));
   await assert.rejects(prepareGems({ ...options, gems: [wrong] }), /identity|一致/);

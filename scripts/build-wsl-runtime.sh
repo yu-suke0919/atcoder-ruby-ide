@@ -35,13 +35,14 @@ mv "$work/stage/opt/atcoder-ruby" "$payload/ruby"
 # Not needed to run Ruby or load extensions; 151 MB of the 255 MB.
 rm "$payload/ruby/lib/libruby-static.a"
 strip "$payload/ruby/bin/ruby"
-find "$payload/ruby" -name '*.so' -exec strip --strip-unneeded {} +
 cp "$source"/{BSDL,COPYING,COPYING.ja,GPL,LEGAL} "$payload/licenses/ruby/"
 
 ruby="$payload/ruby/bin/ruby"
 RUBY_PATH="$ruby" node "$root/scripts/prepare-gems.cjs"
 node -e "require('$root/scripts/prepare-lsp.cjs').prepareLsp({ root: process.argv[1], ruby: process.argv[2] }).catch(error => { console.error(error); process.exit(1); })" "$work/lsp" "$ruby"
 mv "$work/lsp/vendor/ruby-lsp" "$payload/ruby-lsp"
+# Ruby's extension libraries and the C extensions of the gems built above.
+find "$payload/ruby" -name '*.so' -exec strip --strip-unneeded {} +
 
 (cd "$root" && cargo build --release --locked --bin atcoder-ruby-agent)
 cp "$root/target/release/atcoder-ruby-agent" "$payload/"

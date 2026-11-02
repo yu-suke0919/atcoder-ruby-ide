@@ -629,3 +629,12 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 - 専用のディストリビューションにした最初のCIで、Dockerでの確認が失敗し、そのまま50分止まった。Ruby LSPの準備物のフォルダーが`mkdtemp`で作った権限（0700）のまま置かれ、ユーザー`atcoder`のエージェントがLSPを起動できなかった。確認のスクリプトは、失敗してもエージェントが動いたままのため終了しなかった。確認に「`atcoder`が読めないファイルがない」ことを加え、仮のイメージで同じ失敗が出ることを確かめてから、イメージを作るときに`/opt/atcoder-ruby-ide`を誰でも読めて書けない権限にそろえた。確認のスクリプトは失敗したときにエージェントを止め、CIの手順には10分の上限を付けた。
 - 修正後のCIで、WSL用のディストリビューションの作成と確認（約5分）、WindowsのWSL1での`.tar.gz`の登録・画面テスト・インストール版の確認（アンインストールで登録が消えること）が成功した。ポータブル版のZIPは約48 MBだった。
 - 利用者がWSL2のPCで、そのポータブル版を確かめた。初回の起動は登録を含めて約3秒でRuby 3.4.5を表示し、`wsl -l -v`に`AtCoderRubyIDE`がVERSION 2で出た。最初の補完は約3秒、以降はすぐに出た。アプリを閉じると、エージェントとRubyはWSLから消えた。2回目の起動ではすぐにRubyを表示した。
+
+## C拡張のあるgemとLSPの解析対象（C3b）
+
+- main aea28e5から開始。AtCoderのRubyのインストール設定（toml）を2026-11-02に取得し直し、公式追加gem 20個のバージョンを確かめた。C拡張のある7つ（rbtree・sorted_set・immutable-ruby・bit_utils・fast_trie・numo-narray・rumale）と依存gemをRuby 3.4.5へ入れて動くことを先に試し、入れる12個と入れない8個とその理由を[実行環境の資料](atcoder-runtime.md#追加するgem)に書いた。依存gemはRubyGemsのAPIで、要求を満たす2025年10月までの最新版を選び、SHA-256をRubyGemsの値と照合した。
+- 試しに入れたとき、名前順ではlbfgsbのC拡張がnumo-narrayのヘッダーを見つけられずに失敗した。インストールは固定情報の順に行い、依存先が後にある並びを入れる前に拒否する。
+- 失敗するテストを先に用意した。採用gemのfixture（`tests/fixtures/runtime-gems.rb`）に新しいgemの読み込みと動作を加え、実Runnerのテストが`rbtree`のLoadErrorで失敗することを確かめた。gemの準備の単体テストは、C拡張を持つgemがビルドされて読み込めること、依存先を後に並べると何も入れずに拒否することを、C拡張の拒否・順番を確かめないことによる失敗で確かめた。Ruby LSPのテスト（`tests/ruby_lsp.rs`）は、`AcLibraryRb::Fenwick`の補完に`AcLibraryRb::FenwickTree`が出ること、`RubyLsp::GlobalState`・`Backports::VERSION`が出ないことを、候補が空であることによる失敗で確かめた。
+- LSPの固定Gemfileは、競技用gemを既定のグループ、LSP用gemを`development`グループに書き、lockはgemを準備するときにネットワークなしで作るようにした（リポジトリのlockは消した）。初期化の`indexing.excludedPatterns`（`**/ruby-lsp/**`）は、作業場所のファイルにしか効かず、gemの解析には効いていなかった（LSP用gemの566のファイルが解析されていた）ため消した。
+- `npm run prepare:gems`は、numo-narrayなどのC拡張のビルドで約76秒かかった。`make`を並列にして約30秒にした（4コア）。
+- クラウドセッション（Linux、root、Ruby 3.4.5）で、Rust（rootで失敗する既知の`r02_cleanup_failure_releases_reservation`以外）、Node単体97件、`cargo fmt --all --check`、画面テスト80件（Windows専用2件を除く）が成功した。

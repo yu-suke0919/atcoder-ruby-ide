@@ -102,3 +102,25 @@ fn missing_lsp_resources_fail_cleanly_and_can_retry() {
     assert!(!lsp.stop());
     assert!(lsp.start(&ruby(), &resources()).is_ok());
 }
+
+#[test]
+fn real_lsp_completes_competition_gem_apis_but_not_its_own() {
+    let lsp = RubyLsp::default();
+    lsp.start(&ruby(), &resources()).unwrap();
+    let complete = |code: &str| {
+        let line = code.lines().count() as u32 - 1;
+        let character = code.lines().last().unwrap().encode_utf16().count() as u32;
+        lsp.complete(code, line, character).unwrap()
+    };
+    let result = complete("require 'ac-library-rb/fenwick_tree'\nAcLibraryRb::Fenwick");
+    assert!(has_label(&result, "AcLibraryRb::FenwickTree"), "{result}");
+    let result = complete("require 'ac-library-rb/dsu'\nAcLibraryRb::DSU.new(4).merg");
+    assert!(has_label(&result, "merge"), "{result}");
+    // Ruby LSP and its dependencies only serve the editor; their APIs are not candidates.
+    let result = complete("RubyLsp::GlobalSt");
+    assert!(!has_label(&result, "RubyLsp::GlobalState"), "{result}");
+    // Nor bit_utils' backports, which redefines core methods for old Rubies.
+    let result = complete("Backports::VERSI");
+    assert!(!has_label(&result, "Backports::VERSION"), "{result}");
+    assert!(lsp.stop());
+}
