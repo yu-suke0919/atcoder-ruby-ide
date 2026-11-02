@@ -12,6 +12,11 @@ name = "atcoder-ruby-ide"
 path = "main.rs"
 required-features = ["desktop"]
 
+# Runs Ruby and Ruby LSP inside WSL for the app (docs/architecture.md#wslのエージェント).
+[[bin]]
+name = "atcoder-ruby-agent"
+path = "agent_main.rs"
+
 [features]
 desktop = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-window-state"]
 
@@ -41,6 +46,9 @@ path = "../tests/contract.rs"
 [[test]]
 name = "library"
 path = "../tests/library.rs"
+[[test]]
+name = "agent"
+path = "../tests/agent.rs"
 [[test]]
 name = "ruby_lsp"
 path = "../tests/ruby_lsp.rs"

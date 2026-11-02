@@ -62,7 +62,7 @@ WSL2の準備は必要ですが、Ruby のインストールや PATH 設定は�
 - `AtCoder-Ruby-IDE-<version>-x64-setup.exe`：ユーザー単位の NSIS インストーラー
 
 どちらも、WSL内で動かすエージェントと、CIでビルドしたLinux版Ruby 3.4.5（YJIT付き）・採用gem・Ruby LSPを1つのアーカイブにまとめて含みます（SHA-256を固定）。WindowsにはRubyを同梱しません。
-ac-library-rb 1.2.0、bitarray 1.3.1、faster_prime 1.0.2、rgl 0.6.6、sorted_containers 1.1.0と必要な依存gemを同梱し、C拡張のあるgemもC3で加えます。対応範囲・未同梱gem・制限の差は[実行環境の資料](docs/atcoder-runtime.md)を参照してください。
+ac-library-rb 1.2.0、bitarray 1.3.1、faster_prime 1.0.2、rgl 0.6.6、sorted_containers 1.1.0と必要な依存gemを同梱し、C拡張のあるgemもC3bで加えます。対応範囲・未同梱gem・制限の差は[実行環境の資料](docs/atcoder-runtime.md)を参照してください。
 ZIP はフォルダー全体を保持してください。単体のアプリ exe だけを取り出すと Ruby を実行できません。
 
 Phase Cの実装（C4）までは、検証済みのRuby 3.4系のパッチに対応するRubyInstaller x64を同梱し、`ruby/bin/ruby.exe` を直接起動する以前の配布物です。

@@ -13,7 +13,7 @@ Phase C（Rubyの実行とLSPをWSL内のエージェントへ）を終えた後
 AtCoderの公開環境はLinux上のCRubyの `Ruby 3.4 (ruby 3.4.5)` で、`ruby --jit Main.rb`で実行する。本アプリはWSL2（Linux）の中で同じ3.4.5を動かし、パッチを合わせる。ビルドの設定・ディストリビューション・制限の測り方は異なるため、AtCoderと完全一致する実行環境とは扱わない。TruffleRubyは対象外。
 公式情報の取得は開発時に行い、参照元・確認日・採用バージョンを設定とこの資料へ残す。アプリの利用時は通信せず、配布物だけでRubyと採用gemを実行する。
 
-## Rubyのビルド（C3）
+## Rubyのビルド（C3a）
 
 - Ruby 3.4.5の公式ソース（`cache.ruby-lang.org`）のSHA-256を設定に固定し、CIのUbuntu 22.04で`--enable-yjit --enable-load-relative --disable-install-doc`を付けてビルドする。配置場所に依存しないため、WSL内のどこに置いても動く。
 - 静的ライブラリ（`libruby-static.a`）を除き、実行ファイルと拡張ライブラリのデバッグ情報を`strip`で除く。Rubyの`COPYING`・`LEGAL`はライセンスとして残す。採用gemとLSP用gemもCIで同じRubyへ入れ、エージェントとまとめたアーカイブのSHA-256を固定する。
@@ -74,7 +74,7 @@ AtCoderと同じく`--jit`で実行する。同梱のRubyはYJIT付きでビル�
 
 ## 追加するgem
 
-C拡張のない次の5つを、公式と同じバージョンで同梱する。C3で、C拡張のある公式gem（rbtree・sorted_set・immutable-ruby・bit_utils・fast_trie・numo-narray・rumaleなど）もCIで同梱のRubyに向けてビルドして加える。どこまで入れるかは理由付きでC3でこの資料に書く。gem内のライセンス資料も保持する。
+C拡張のない次の5つを、公式と同じバージョンで同梱する。C3bで、C拡張のある公式gem（rbtree・sorted_set・immutable-ruby・bit_utils・fast_trie・numo-narray・rumaleなど）もCIで同梱のRubyに向けてビルドして加える。どこまで入れるかは理由付きでC3bでこの資料に書く。gem内のライセンス資料も保持する。
 
 | gem | バージョン | 用途 |
 | --- | --- | --- |
@@ -92,7 +92,7 @@ C拡張のない次の5つを、公式と同じバージョンで同梱する。
 Rubyのソースまたは採用gemの固定情報が変わったら、同梱するアーカイブをCIで作り直す。
 ## 残る差
 
-C3でC拡張のあるgemを加えるまで、次の15の公式追加gemは同梱しない。未同梱のgemを必要とするコードはLoadError等になる。C3の後も、加えなかったgemはこの表に残す。
+C3bでC拡張のあるgemを加えるまで、次の15の公式追加gemは同梱しない。未同梱のgemを必要とするコードはLoadError等になる。C3bの後も、加えなかったgemはこの表に残す。
 
 | gem | 公式バージョン |
 | --- | --- |
