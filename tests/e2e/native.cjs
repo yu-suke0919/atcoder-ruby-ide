@@ -64,7 +64,8 @@ async function launch(root, { hostEnv = {} } = {}) {
     }
     page.setDefaultTimeout(15000);
     page.on('pageerror', error => console.error('WebView error:', error));
-    await page.getByTestId('ruby-version').filter({ hasText: /ruby \d+\.\d+\.\d+\b/i }).waitFor();
+    // The first start places the runtime in WSL, which the app allows 60 seconds (slow on CI's WSL1).
+    await page.getByTestId('ruby-version').filter({ hasText: /ruby \d+\.\d+\.\d+\b/i }).waitFor({ timeout: 90000 });
     const ruby = await page.evaluate(() => window.__TAURI__.core.invoke('ruby_info'));
     assert.equal(ruby.version.match(/^ruby (\d+\.\d+\.\d+)\b/i)?.[1], require('../../config/ruby-wsl.json').rubyVersion);
     const rubyExecutable = await page.evaluate(async () => {
