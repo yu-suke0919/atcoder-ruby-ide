@@ -102,13 +102,15 @@ U2dまでの作業領域は解答を`solution.rb`の1つだけに持っていた
 | `N M`（整数のみ） | `n, m = gets.split.map(&:to_i)` |
 | 文字列を含む複数の値 | `n, s = gets.split` の後に整数だけ`n = n.to_i` |
 | `A_1 A_2 … A_N` | `a = gets.split.map(&:to_i)`（文字列なら`gets.split`） |
-| `d_1`〜`⋮`〜`d_N`（縦に1つずつ） | `d = Array.new(n) { gets.to_i }`（文字列なら`gets.chomp`） |
-| `t_i x_i y_i`の縦の並び | `txy = Array.new(n) { gets.split.map(&:to_i) }`（文字列を含むなら各値を変換） |
-| `A_{1,1} … A_{1,W}`〜`⋮`〜`A_{H,1} … A_{H,W}` | `a = Array.new(h) { gets.split.map(&:to_i) }` |
-| `S_{1,1}…S_{1,W}`（空白なし）・`S_i`（文字列）の縦の並び | `s = Array.new(h) { gets.chomp }` |
-| `c_{1,1} c_{1,2} c_{1,3}`のように行を書き並べた表 | `c = Array.new(3) { gets.split.map(&:to_i) }` |
-| `Q`の後の`query_1`〜`query_Q` | `queries = Array.new(q) { gets.split.map(&:to_i) }`（入力がすべて整数でなければ`gets.split`） |
+| `d_1`〜`⋮`〜`d_N`（縦に1つずつ） | `n.times do` の中で `d = gets.to_i`（文字列なら`gets.chomp`） |
+| `t_i x_i y_i`の縦の並び | `n.times do` の中で `t, x, y = gets.split.map(&:to_i)`（文字列を含むなら整数だけ変換） |
+| `A_{1,1} … A_{1,W}`〜`⋮`〜`A_{H,1} … A_{H,W}` | `h.times do` の中で `a = gets.split.map(&:to_i)` |
+| `S_{1,1}…S_{1,W}`（空白なし）・`S_i`（文字列）の縦の並び | `h.times do` の中で `s = gets.chomp` |
+| `c_{1,1} c_{1,2} c_{1,3}`のように行を書き並べた表 | `3.times do` の中で `c = gets.split.map(&:to_i)` |
+| `Q`の後の`query_1`〜`query_Q` | `q.times do` の中で `query = gets.split.map(&:to_i)`（入力がすべて整数でなければ`gets.split`） |
 
+- 縦に並ぶ入力（上の表の`times`の行）は、値を配列に入れずにループで1行ずつ読む形で入れる。読みながら使う問題（ABC482 Cのように行・列ごとに数えるなど）でそのまま書けるようにするため。
+- 縦に並ぶ入力には、配列に入れる形（`rc = Array.new(n) { gets.split.map(&:to_i) }`。名前は変数名をつなげたもの、クエリは`queries`）も用意する。エディタの右端の切り替えボタンで、ループの形と配列の形を入れ替えられる（U4b）。ボタンは、生成したときの形のまま残っている部分にだけ出し、利用者が書き換えた部分には出さない。入れ替えは元に戻す（Ctrl+Z）で戻せる。
 - テストケースが複数ある形式（`\mathrm{case}_i`など）や、上の形に当てはまらない行が1つでもある場合は、何も入れない。
 - 実際の問題のページ（ブラウザが表示した形）を固定データにし、読み取りと生成したコードを回帰テストする。生成したコードは実Rubyでサンプル入力を読めることも確かめる。
 

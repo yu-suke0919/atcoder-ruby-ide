@@ -161,6 +161,10 @@ h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 .editor-area .editor-container { flex: 1; }
 /* The run buttons float over the bottom of the code; the code scrolls past them. */
 .editor-area .cm-content { padding-bottom: 56px; }
+/* The reading switch sits at the right edge of the code, on the first line of its rows. */
+.editor-area .cm-line { position: relative; }
+.cm-reading-toggle { position: absolute; right: 10px; top: 0; padding: 0 7px; border: 1px solid var(--border); border-radius: 5px; background: var(--panel); color: var(--accent); font: 12px/1.5 "Segoe UI", sans-serif; }
+.cm-reading-toggle:hover { border-color: var(--accent); }
 .run-actions { position: absolute; right: 14px; bottom: 10px; z-index: 5; box-shadow: 0 6px 18px #0009; border-radius: 8px; background: #181d27e6; padding: 4px; }
 .run-actions .stop-button { padding: 7px 12px; }
 .run-actions .run-button { padding: 8px 20px; }
