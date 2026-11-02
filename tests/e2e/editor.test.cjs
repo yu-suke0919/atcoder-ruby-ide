@@ -166,8 +166,8 @@ test('E06: a pending save never blocks typing and the latest edit is saved after
   await waitSaved();
   assert.equal(await readFile(starter.solution, 'utf8'), 'puts "first"\nputs "second"');
 });
-async function completions() {
-  await page.locator('.cm-tooltip-autocomplete').waitFor();
+async function completions(timeout) {
+  await page.locator('.cm-tooltip-autocomplete').waitFor({ timeout });
   // CodeMirror ignores acceptance keys during its initial interaction delay.
   await page.waitForTimeout(100);
 }
@@ -180,7 +180,8 @@ test('E07: explicit completion navigates, cancels, inserts and preserves Tab and
   const file = starter.solution;
   await code().press('Control+s'); await waitSaved();
   assert.equal(await page.locator('.cm-tooltip-autocomplete').count(), 0);
-  await code().press('Control+Space'); await completions();
+  // The first completion waits for Ruby LSP to start and index; that took over 15 s in WSL1 on CI.
+  await code().press('Control+Space'); await completions(60000);
   await option('puts').waitFor();
   assert.equal(await page.locator('#save-state').textContent(), '保存済み');
   const selectedOption = page.locator('.cm-tooltip-autocomplete').getByRole('option', { selected: true });

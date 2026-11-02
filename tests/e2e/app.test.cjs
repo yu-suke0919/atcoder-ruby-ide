@@ -5,7 +5,7 @@ const { mkdtemp, mkdir, readFile, writeFile, rm, access, realpath, cp, readdir }
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 const { once } = require('node:events');
-const { runner, launch, close, requestClose, pause, memoryUse } = require('./support.cjs');
+const { runner, launch, close, requestClose, pause, memoryUse, rubyPath } = require('./support.cjs');
 const { taskPage } = require('./atcoder-fixture.cjs');
 const { sampleCode, seedProblem: seedWorkspaceProblem, openProblem, selectTask, removeContest, waitInitialized } = require('./workspace.cjs');
 
@@ -681,7 +681,7 @@ test('R06: saving keeps comparison results, including a save during execution', 
     assert.equal(await readFile(starterProblem.solution, 'utf8'), 'puts "same"');
     assert.equal(await page.getByTestId('comparison-status').textContent(), label);
   }
-  await page.getByTestId('code-editor').fill(`puts "ready"; sleep 0.01 until File.exist?(${JSON.stringify(gate.replaceAll('\\', '/'))})`);
+  await page.getByTestId('code-editor').fill(`puts "ready"; sleep 0.01 until File.exist?(${JSON.stringify(rubyPath(gate))})`);
   await page.getByTestId('expected-output').fill('ready');
   try {
     await page.getByRole('button', { name: '実行', exact: true }).click();
@@ -790,7 +790,7 @@ test('M13: a timeout does not prevent the next case from running', async () => {
 
 test('M13: a batch uses starting code and inputs without restoring stale comparisons', async () => {
   const gate = path.join(root, 'batch-gate.txt');
-  await page.getByTestId('code-editor').fill(`puts "ready"; sleep 0.01 until File.exist?(${JSON.stringify(gate.replaceAll('\\', '/'))}); puts STDIN.read.upcase`);
+  await page.getByTestId('code-editor').fill(`puts "ready"; sleep 0.01 until File.exist?(${JSON.stringify(rubyPath(gate))}); puts STDIN.read.upcase`);
   await page.getByTestId('stdin').fill('one');
   await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
   await page.getByTestId('expected-output').fill('wrong first');
@@ -817,7 +817,7 @@ test('M13: a batch uses starting code and inputs without restoring stale compari
 
 test('M13: stopping a batch skips remaining cases and allows another run', async () => {
   const marker = path.join(root, 'batch-should-not-run.txt');
-  await page.getByTestId('code-editor').fill(`s = STDIN.read; puts "ready"; sleep 30 if s == "wait"; File.write(${JSON.stringify(marker.replaceAll('\\', '/'))}, s)`);
+  await page.getByTestId('code-editor').fill(`s = STDIN.read; puts "ready"; sleep 30 if s == "wait"; File.write(${JSON.stringify(rubyPath(marker))}, s)`);
   await page.getByTestId('stdin').fill('wait');
   await addCase('next', 'ready');
   await selectCase(1);
@@ -1359,8 +1359,8 @@ test('T02: the problem tolerance applies to every compared sample, is restored a
   assert.equal(Number(await page.locator('#tolerance').inputValue()), 1e-6);
 });
 test('M06/M09: accepting close stops Ruby descendants and exits', async () => {
-  const marker = path.join(root, 'orphan.txt').replaceAll('\\', '/');
-  await page.getByTestId('code-editor').fill(`require 'rbconfig'; spawn(RbConfig.ruby, '-e', 'sleep 2; File.write(${JSON.stringify(marker)}, "survived")'); puts 'ready'; sleep 30`);
+  const marker = path.join(root, 'orphan.txt');
+  await page.getByTestId('code-editor').fill(`require 'rbconfig'; spawn(RbConfig.ruby, '-e', 'sleep 2; File.write(${JSON.stringify(rubyPath(marker))}, "survived")'); puts 'ready'; sleep 30`);
   await page.getByRole('button', { name: '実行', exact: true }).click();
   await page.getByTestId('stdout').filter({ hasText: 'ready' }).waitFor();
   const exited = once(app.child, 'exit', { signal: AbortSignal.timeout(30000) });

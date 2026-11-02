@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { spawn, execFile } = require('node:child_process');
+const { spawn, execFile, execFileSync } = require('node:child_process');
 const { promisify } = require('node:util');
 const { writeFile, mkdir, readFile } = require('node:fs/promises');
 const net = require('node:net');
@@ -116,4 +116,6 @@ async function memoryUse(app) {
   return JSON.parse(stdout);
 }
 
-module.exports = { requestClose, launch, close, pause, memoryUse, moveWindow };
+// A file path for code the app runs: the app's Ruby runs inside WSL (docs/architecture.md#wslのエージェント).
+const rubyPath = file => execFileSync(system('wsl.exe'), ['-e', 'wslpath', '-a', file], { encoding: 'utf8' }).trim();
+module.exports = { requestClose, launch, close, pause, memoryUse, moveWindow, rubyPath };
