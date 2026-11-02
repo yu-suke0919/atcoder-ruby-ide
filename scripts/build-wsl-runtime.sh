@@ -1,6 +1,6 @@
 #!/bin/bash
-# Builds the runtime the app places in WSL: vendor/wsl/atcoder-runtime.tar.gz and runtime.json.
-# Runs on Ubuntu 22.04 (CI) with the Ruby build dependencies, Node.js and Rust installed.
+# Builds the app's own WSL distribution: vendor/wsl/atcoder-linux.tar.gz and runtime.json.
+# Runs on Ubuntu 22.04 (CI) with the Ruby build dependencies, Node.js, Rust and Docker installed.
 # See docs/architecture.md#wslのエージェント and docs/atcoder-runtime.md#rubyのビルドc3a.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -47,11 +47,26 @@ mv "$work/lsp/vendor/ruby-lsp" "$payload/ruby-lsp"
 cp "$root/target/release/atcoder-ruby-agent" "$payload/"
 strip "$payload/atcoder-ruby-agent"
 
+# The app's own distribution: Ubuntu 22.04 with only the libraries Ruby needs, a user that runs
+# Ruby, and the payload in /opt/atcoder-ruby-ide. The version is a hash of the payload, so a new
+# build is imported again while the same build is kept.
+version_id=$(tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -C "$payload" -cf - . | sha256sum | cut -c1-64)
 out="$root/vendor/wsl"
 rm -rf "$out"
 mkdir -p "$out"
-tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -C "$payload" -cf - . | gzip -9n >"$out/atcoder-runtime.tar.gz"
-hash=$(sha256sum "$out/atcoder-runtime.tar.gz" | cut -c1-64)
-printf '{\n  "rubyVersion": "%s",\n  "sha256": "%s"\n}\n' "$version" "$hash" >"$out/runtime.json"
-du -sh "$payload" "$out/atcoder-runtime.tar.gz"
+container="atcoder-ruby-ide-linux-$$"
+docker rm -f "$container" >/dev/null 2>&1 || true
+docker run --name "$container" -e VERSION="$version_id" -v "$payload:/payload:ro" ubuntu:22.04 sh -euc '
+  apt-get update
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libssl3 libyaml-0-2 libffi8 libgmp10 zlib1g
+  rm -rf /var/lib/apt/lists/*
+  useradd --create-home --shell /bin/bash atcoder
+  cp -a /payload /opt/atcoder-ruby-ide
+  chown -R root:root /opt/atcoder-ruby-ide
+  printf "[user]\ndefault=atcoder\n\n[interop]\nappendWindowsPath=false\n" >/etc/wsl.conf
+  echo "$VERSION" >/etc/atcoder-ruby-ide-version'
+docker export "$container" | gzip -9n >"$out/atcoder-linux.tar.gz"
+docker rm "$container" >/dev/null
+printf '{\n  "rubyVersion": "%s",\n  "version": "%s"\n}\n' "$version" "$version_id" >"$out/runtime.json"
+du -sh "$payload" "$out/atcoder-linux.tar.gz"
 cat "$out/runtime.json"

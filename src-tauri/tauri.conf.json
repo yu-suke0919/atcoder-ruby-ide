@@ -15,6 +15,6 @@
     "targets": ["nsis"],
     "icon": ["icons/32x32.png", "icons/icon.ico"],
     "resources": { "../vendor/wsl/": "wsl/" },
-    "windows": { "webviewInstallMode": { "type": "downloadBootstrapper" }, "nsis": { "installMode": "currentUser", "compression": "lzma" } }
+    "windows": { "webviewInstallMode": { "type": "downloadBootstrapper" }, "nsis": { "installMode": "currentUser", "compression": "lzma", "installerHooks": "./windows/hooks.nsh" } }
   }
 }

@@ -51,8 +51,9 @@ WSL2の準備は必要ですが、Ruby のインストールや PATH 設定は�
 ## 必要なもの
 
 - Windows 10（x64は1903・ビルド18362.1049以降）または11。Homeでも使えます。
-- WSL2と、既定のディストリビューションのUbuntu（22.04以降）。管理者のPowerShellで `wsl --install` を実行して再起動し、Ubuntuの初回設定（ユーザー名とパスワード）を済ませてください。BIOS/UEFIでCPUの仮想化機能を有効にする必要があります。
-- アプリは初回起動時に、同梱のRubyとエージェントをWSL内の `~/.atcoder-ruby-ide/` に置きます。PATHやシェルの設定は変えず、sudoも使いません。WSL1でも動きますが、メモリ上限は効きません。
+- WSL2の本体。管理者のPowerShellで `wsl --install --no-distribution` を実行して再起動してください（Ubuntuなどのディストリビューションは要りません。入っていても使いません）。BIOS/UEFIでCPUの仮想化機能を有効にする必要があります。
+- アプリは初回起動時に、同梱のアプリ専用のLinux（Ubuntu 22.04の最小構成に Ruby・gem・エージェントを入れたもの）を、ディストリビューション `AtCoderRubyIDE` として登録します。利用者のディストリビューション・PATH・シェルの設定は変えません。WSL1でも動きますが、メモリ上限は効きません。
+- インストール版はアンインストールのときに登録を解除します。ポータブル版をやめるときは `wsl --unregister AtCoderRubyIDE` を実行してください。
 
 ## Windows 配布版
 
@@ -61,7 +62,7 @@ WSL2の準備は必要ですが、Ruby のインストールや PATH 設定は�
 - `AtCoder-Ruby-IDE-<version>-x64-portable.zip`：展開して `atcoder-ruby-ide.exe` を起動
 - `AtCoder-Ruby-IDE-<version>-x64-setup.exe`：ユーザー単位の NSIS インストーラー
 
-どちらも、WSL内で動かすエージェントと、CIでビルドしたLinux版Ruby 3.4.5（YJIT付き）・採用gem・Ruby LSPを1つのアーカイブにまとめて含みます（SHA-256を固定）。WindowsにはRubyを同梱しません。
+どちらも、アプリ専用のLinux（Ubuntu 22.04の最小構成に、CIでビルドしたRuby 3.4.5（YJIT付き）・採用gem・Ruby LSP・エージェントを入れたもの）を含みます。WindowsにはRubyを同梱しません。
 ac-library-rb 1.2.0、bitarray 1.3.1、faster_prime 1.0.2、rgl 0.6.6、sorted_containers 1.1.0と必要な依存gemを同梱し、C拡張のあるgemもC3bで加えます。対応範囲・未同梱gem・制限の差は[実行環境の資料](docs/atcoder-runtime.md)を参照してください。
 ZIP はフォルダー全体を保持してください。単体のアプリ exe だけを取り出すと Ruby を実行できません。
 
@@ -86,7 +87,7 @@ cargo fmt --all --check
 
 共通テスト（`npm test`）とブラウザー用テストホストは `RUBY_PATH`、未指定なら PATH の `ruby` を使い、テストホストは自分自身をエージェントとして起動して Ruby を実行します。`npm run prepare:gems` で、その Ruby の標準gemディレクトリへ固定gemを追加します。実行時も同じディレクトリだけを探索し、GEM_HOME・GEM_PATHやユーザー用gemの影響を受けません。
 
-WSL へ置く同梱物（`vendor/wsl/`）は、Ubuntu 22.04 などの Linux（WSL の中でもよい）で、Ruby のビルドに必要なパッケージ（`build-essential libssl-dev libyaml-dev libffi-dev zlib1g-dev libgmp-dev`）を入れてから `npm run prepare:wsl` で作り、`npm run check:wsl` で確かめます。CI の `wsl-runtime` Artifact を `vendor/wsl/` に置いても使えます。Windows で `npm start` するときも、この同梱物を WSL へ置いて Ruby を実行します。
+アプリ専用の Linux（`vendor/wsl/`）は、Docker が使える Ubuntu 22.04 などの Linux で、Ruby のビルドに必要なパッケージ（`build-essential libssl-dev libyaml-dev libffi-dev zlib1g-dev libgmp-dev`）を入れてから `npm run prepare:wsl` で作り、`npm run check:wsl` で確かめます。CI の `wsl-runtime` Artifact を `vendor/wsl/` に置いても使えます。Windows で `npm start` するときも、これを WSL に登録して Ruby を実行します。
 
 初回導入・コンパイルと、準備後の画面テスト時間は分けて測定します。
 

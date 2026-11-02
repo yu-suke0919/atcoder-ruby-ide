@@ -1,26 +1,28 @@
-// Extracts vendor/wsl/atcoder-runtime.tar.gz into a new folder and checks it through its agent:
+// Loads the app's WSL distribution (vendor/wsl/atcoder-linux.tar.gz) into Docker and checks it:
+// its version and default user, the shared libraries, and through the agent running as that user,
 // the Ruby version and YJIT, the AtCoder gems with the standard libraries, and Ruby LSP.
-// Linux only (the CI job that builds the runtime). See docs/architecture.md#wslのエージェント.
+// Linux with Docker (the CI job that builds it). See docs/architecture.md#wslのエージェント.
 const { execFileSync, spawn } = require('node:child_process');
-const { createHash } = require('node:crypto');
-const { mkdtempSync, readFileSync, rmSync } = require('node:fs');
-const { tmpdir } = require('node:os');
+const { readFileSync } = require('node:fs');
 const path = require('node:path');
 const { createInterface } = require('node:readline');
 const assert = require('node:assert/strict');
 
 const root = path.resolve(__dirname, '..');
 
-async function checkRuntime(archive = path.join(root, 'vendor/wsl/atcoder-runtime.tar.gz')) {
-  const runtime = JSON.parse(readFileSync(path.join(path.dirname(archive), 'runtime.json'), 'utf8'));
-  assert.equal(createHash('sha256').update(readFileSync(archive)).digest('hex'), runtime.sha256, 'runtime.json の SHA-256 がアーカイブと一致しません');
-  const folder = mkdtempSync(path.join(tmpdir(), 'atcoder-runtime-'));
+async function checkRuntime(image = path.join(root, 'vendor/wsl/atcoder-linux.tar.gz')) {
+  const runtime = JSON.parse(readFileSync(path.join(path.dirname(image), 'runtime.json'), 'utf8'));
+  const tag = `atcoder-ruby-ide-check:${runtime.version.slice(0, 12)}`;
+  execFileSync('docker', ['import', image, tag], { stdio: 'inherit' });
   try {
-    execFileSync('tar', ['-xzf', archive, '-C', folder]);
-    const missing = execFileSync('sh', ['-c', 'find "$1" -name "*.so" -exec ldd {} \\; ; ldd "$1/ruby/bin/ruby"', 'sh', folder], { encoding: 'utf8' })
+    const inside = (user, ...command) => execFileSync('docker', ['run', '--rm', '--user', user, tag, ...command], { encoding: 'utf8' });
+    assert.equal(inside('root', 'cat', '/etc/atcoder-ruby-ide-version').trim(), runtime.version, 'the distribution and runtime.json disagree on the version');
+    assert.match(inside('root', 'cat', '/etc/wsl.conf'), /^default=atcoder$/m);
+    const missing = inside('atcoder', 'sh', '-c', 'find /opt/atcoder-ruby-ide -name "*.so" -exec ldd {} \\; ; ldd /opt/atcoder-ruby-ide/ruby/bin/ruby')
       .split('\n').filter(line => line.includes('not found'));
     assert.deepEqual(missing, [], '足りない共有ライブラリがあります');
-    const agent = spawn(path.join(folder, 'atcoder-ruby-agent'), [path.join(folder, 'ruby/bin/ruby'), path.join(folder, 'ruby-lsp')], { stdio: ['pipe', 'pipe', 'inherit'] });
+    const home = '/opt/atcoder-ruby-ide';
+    const agent = spawn('docker', ['run', '--rm', '-i', '--user', 'atcoder', tag, `${home}/atcoder-ruby-agent`, `${home}/ruby/bin/ruby`, `${home}/ruby-lsp`], { stdio: ['pipe', 'pipe', 'inherit'] });
     const waiting = new Map();
     const runs = new Map();
     createInterface({ input: agent.stdout }).on('line', line => {
@@ -55,9 +57,9 @@ async function checkRuntime(archive = path.join(root, 'vendor/wsl/atcoder-runtim
     const items = completion.value?.items ?? completion.value;
     assert.ok(items?.some(item => item.label === 'runtime_only_method'), JSON.stringify(completion));
     await ask('shutdown');
-    console.log(`WSL runtime ${runtime.sha256} works: ${info.value.version}, YJIT, AtCoder gems and Ruby LSP`);
+    console.log(`WSL distribution ${runtime.version} works as atcoder: ${info.value.version}, YJIT, AtCoder gems and Ruby LSP`);
   } finally {
-    rmSync(folder, { recursive: true, force: true });
+    execFileSync('docker', ['rmi', '-f', tag], { stdio: 'ignore' });
   }
 }
 if (require.main === module) checkRuntime(process.argv[2]).catch(error => { console.error(error); process.exitCode = 1; });

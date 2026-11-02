@@ -19,40 +19,46 @@ struct AppState {
 }
 
 /// Ruby and Ruby LSP run in the agent (docs/architecture.md#wslのエージェント). On Windows the
-/// bundled runtime is placed in WSL once per app run; on Linux the agent built next to the app runs
-/// the development Ruby.
+/// app's own WSL distribution is registered once per app run; on Linux the agent built next to the
+/// app runs the development Ruby.
 fn agent(app: &tauri::AppHandle) -> AgentClient {
     #[cfg(windows)]
     {
+        use atcoder_ruby_ide::wsl;
         use std::time::Duration;
-        let resources = app.path().resource_dir().ok();
-        let placed = Mutex::new(None::<String>);
+        let resources = app
+            .path()
+            .resource_dir()
+            .map(|dir| dir.join("wsl"))
+            .map_err(|e| e.to_string());
+        let location = app
+            .path()
+            .app_local_data_dir()
+            .map(|dir| dir.join("wsl"))
+            .map_err(|e| e.to_string());
+        let ready = Mutex::new(false);
         AgentClient::new(move || {
-            let mut placed = placed.lock().unwrap();
-            if placed.is_none() {
-                let wsl = resources
-                    .as_ref()
-                    .ok_or("アプリのリソースが見つかりません。")?
-                    .join("wsl");
+            let mut ready = ready.lock().unwrap();
+            if !*ready {
+                let resources = resources.as_ref().map_err(String::clone)?;
+                let location = location.as_ref().map_err(String::clone)?;
                 let manifest: Value = serde_json::from_slice(
-                    &std::fs::read(wsl.join("runtime.json"))
+                    &std::fs::read(resources.join("runtime.json"))
                         .map_err(|e| format!("同梱物の情報を読めません: {e}"))?,
                 )
                 .map_err(|e| e.to_string())?;
-                let archive = wsl.join("atcoder-runtime.tar.gz");
-                *placed = Some(atcoder_ruby_ide::wsl::place(
-                    atcoder_ruby_ide::wsl::wsl(),
-                    archive.to_str().ok_or("同梱物のパスを扱えません。")?,
-                    manifest["sha256"]
+                wsl::ensure_distribution(
+                    wsl::wsl,
+                    &resources.join("atcoder-linux.tar.gz"),
+                    manifest["version"]
                         .as_str()
-                        .ok_or("同梱物のSHA-256がありません。")?,
-                    Duration::from_secs(60),
-                )?);
+                        .ok_or("同梱物の版がありません。")?,
+                    location,
+                    Duration::from_secs(120),
+                )?;
+                *ready = true;
             }
-            Ok(atcoder_ruby_ide::wsl::agent_command(
-                atcoder_ruby_ide::wsl::wsl(),
-                placed.as_deref().unwrap(),
-            ))
+            Ok(wsl::agent_command(wsl::wsl()))
         })
     }
     #[cfg(not(windows))]

@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { spawn, execFile, execFileSync } = require('node:child_process');
 const { promisify } = require('node:util');
-const { writeFile, mkdir, readFile } = require('node:fs/promises');
+const { writeFile, mkdir } = require('node:fs/promises');
 const net = require('node:net');
 const path = require('node:path');
 const { chromium } = require('playwright');
@@ -74,9 +74,8 @@ async function launch(root, { hostEnv = {} } = {}) {
       if (result.status !== 'completed') throw new Error(`Bundled Ruby probe failed: ${result.stderr}`);
       return result.stdout.trim();
     });
-    // Ruby runs in WSL, from the bundled runtime placed under its SHA-256 (docs/architecture.md#wslのエージェント).
-    const { sha256 } = JSON.parse(await readFile(path.join(path.dirname(executable), 'wsl', 'runtime.json'), 'utf8'));
-    assert.match(rubyExecutable, new RegExp(`^/.+/\\.atcoder-ruby-ide/${sha256}/ruby/bin/ruby$`));
+    // Ruby runs in the app's own WSL distribution (docs/architecture.md#wslのエージェント).
+    assert.equal(rubyExecutable, '/opt/atcoder-ruby-ide/ruby/bin/ruby');
     console.log(JSON.stringify({ executable, ruby, rubyExecutable, systemRubyAvailable: false }));
     return { child, browser, page, root, atcoder, dataDir: path.join(process.env.LOCALAPPDATA, require('../../src-tauri/tauri.conf.json').identifier) };
   } catch (error) {

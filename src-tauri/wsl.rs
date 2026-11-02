@@ -1,108 +1,112 @@
-//! Places the bundled runtime (agent, Ruby, gems, Ruby LSP) inside WSL and builds the command
-//! that starts the agent. See docs/architecture.md#wslのエージェント.
+//! The app's own WSL distribution: registers the bundled Linux (Ruby, gems, Ruby LSP and the agent)
+//! with `wsl --import` and builds the command that starts the agent in it.
+//! See docs/architecture.md#wslのエージェント.
 use std::io::Read;
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-/// How to prepare WSL, appended to every failure to start or place the runtime.
-pub const GUIDANCE: &str = "WSL2とUbuntuを準備してください：管理者のPowerShellで「wsl --install」を実行して再起動し、Ubuntuの初回設定（ユーザー名とパスワード）を済ませます。CPUの仮想化機能が無効な場合は、BIOS/UEFIで有効にしてください。";
+pub const DISTRIBUTION: &str = "AtCoderRubyIDE";
+const HOME: &str = "/opt/atcoder-ruby-ide";
+const VERSION_FILE: &str = "/etc/atcoder-ruby-ide-version";
 
-/// `sh` script: `$1` the archive (a Windows path is converted with wslpath), `$2` its SHA-256.
-/// Prints the folder that holds the runtime.
-const PLACE: &str = r#"set -eu
-archive=$1
-if command -v wslpath >/dev/null 2>&1; then archive=$(wslpath -a "$1"); fi
-root="$HOME/.atcoder-ruby-ide"
-target="$root/$2"
-mkdir -p "$root"
-if [ ! -x "$target/atcoder-ruby-agent" ]; then
-  temporary=$(mktemp -d "$root/.tmp-XXXXXX")
-  trap 'rm -rf "$temporary"' EXIT
-  echo "$2  $archive" | sha256sum -c --status - || { echo "同梱物のSHA-256が一致しません: $archive" >&2; exit 1; }
-  tar -xzf "$archive" -C "$temporary"
-  rm -rf "$target"
-  mv "$temporary" "$target"
-  trap - EXIT
-fi
-for old in "$root"/* "$root"/.tmp-*; do
-  if [ -e "$old" ] && [ "$old" != "$target" ]; then rm -rf "$old"; fi
-done
-printf '%s\n' "$target""#;
+/// How to prepare WSL, appended to every failure to start or register the distribution.
+pub const GUIDANCE: &str = "WSL2を準備してください：管理者のPowerShellで「wsl --install --no-distribution」を実行して再起動します。CPUの仮想化機能が無効な場合は、BIOS/UEFIで有効にしてください。";
 
-/// Runs the placement through `prefix` (`wsl.exe -e` on Windows) and returns the folder.
-pub fn place(
-    mut prefix: Command,
-    archive: &str,
-    sha256: &str,
+/// Makes sure the app's distribution is registered with `version`, importing `image` into
+/// `location` when it is missing or another version. `wsl` builds a fresh `wsl.exe` command.
+pub fn ensure_distribution(
+    wsl: impl Fn() -> Command,
+    image: &Path,
+    version: &str,
+    location: &Path,
     limit: Duration,
-) -> Result<String, String> {
-    let fail = |reason: String| format!("WSLにRubyを配置できません: {reason}\n{GUIDANCE}");
-    let mut child = prefix
-        .args(["sh", "-c", PLACE, "sh", archive, sha256])
+) -> Result<(), String> {
+    let fail = |reason: String| format!("WSLを準備できません: {reason}\n{GUIDANCE}");
+    let deadline = Instant::now() + limit;
+    let run = |mut command: Command| run(&mut command, deadline).map_err(fail);
+    let mut list = wsl();
+    list.args(["-l", "-q"]);
+    // With no distribution at all wsl.exe fails; that only means ours is missing too.
+    let registered = run(list).map_or(false, |(_, output)| {
+        output.lines().any(|name| name.trim() == DISTRIBUTION)
+    });
+    if registered {
+        let mut read = wsl();
+        read.args(["-d", DISTRIBUTION, "-e", "cat", VERSION_FILE]);
+        let (success, output) = run(read)?;
+        if success && output.trim() == version {
+            return Ok(());
+        }
+        let mut unregister = wsl();
+        unregister.args(["--unregister", DISTRIBUTION]);
+        expect_success(run(unregister)?).map_err(fail)?;
+    }
+    std::fs::create_dir_all(location).map_err(|e| fail(e.to_string()))?;
+    let mut import = wsl();
+    import
+        .args(["--import", DISTRIBUTION])
+        .arg(location)
+        .arg(image);
+    expect_success(run(import)?).map_err(fail)
+}
+
+fn expect_success((success, output): (bool, String)) -> Result<(), String> {
+    if success {
+        Ok(())
+    } else {
+        Err(output.trim().to_string())
+    }
+}
+
+/// Runs `command` until `deadline`; wsl.exe reports its own failures on stdout.
+fn run(command: &mut Command, deadline: Instant) -> Result<(bool, String), String> {
+    let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| fail(e.to_string()))?;
-    let (mut stdout, mut stderr) = (child.stdout.take().unwrap(), child.stderr.take().unwrap());
-    let output = std::thread::spawn(move || {
-        let mut text = String::new();
-        let _ = stdout.read_to_string(&mut text);
-        text
-    });
-    let errors = std::thread::spawn(move || {
-        let mut text = String::new();
-        let _ = stderr.read_to_string(&mut text);
-        text
-    });
-    let deadline = Instant::now() + limit;
+        .map_err(|e| e.to_string())?;
+    let read = |mut stream: Box<dyn Read + Send>| {
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let _ = stream.read_to_end(&mut bytes);
+            String::from_utf8_lossy(&bytes).replace('\0', "")
+        })
+    };
+    let stdout = read(Box::new(child.stdout.take().unwrap()));
+    let stderr = read(Box::new(child.stderr.take().unwrap()));
     let status = loop {
-        if let Some(status) = child.try_wait().map_err(|e| fail(e.to_string()))? {
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
             break status;
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(fail(format!(
-                "{}秒以内に終わりませんでした。",
-                limit.as_secs()
-            )));
+            return Err("時間内に終わりませんでした。".into());
         }
         std::thread::sleep(Duration::from_millis(20));
     };
-    let (output, errors) = (
-        output.join().unwrap_or_default(),
-        errors.join().unwrap_or_default(),
-    );
-    // wsl.exe reports its own failures (no distribution, virtualization off) on stdout.
-    if !status.success() {
-        return Err(fail(format!("{}{}", errors.trim(), output.trim())));
-    }
-    output
-        .lines()
-        .last()
-        .map(str::to_string)
-        .filter(|folder| folder.starts_with('/'))
-        .ok_or_else(|| fail(format!("配置先を読み取れません: {output}")))
+    let output = stdout.join().unwrap_or_default() + &stderr.join().unwrap_or_default();
+    Ok((status.success(), output))
 }
 
-/// The agent in `folder`, started through `prefix`, with the Ruby and Ruby LSP next to it.
-pub fn agent_command(mut prefix: Command, folder: &str) -> Command {
-    prefix
-        .arg(format!("{folder}/atcoder-ruby-agent"))
-        .arg(format!("{folder}/ruby/bin/ruby"))
-        .arg(format!("{folder}/ruby-lsp"));
-    prefix
+/// The agent in the app's distribution, with the Ruby and Ruby LSP next to it.
+pub fn agent_command(mut wsl: Command) -> Command {
+    wsl.args(["-d", DISTRIBUTION, "-e"])
+        .arg(format!("{HOME}/atcoder-ruby-agent"))
+        .arg(format!("{HOME}/ruby/bin/ruby"))
+        .arg(format!("{HOME}/ruby-lsp"));
+    wsl
 }
 
-/// `wsl.exe -e` for the default distribution, without a console window and with UTF-8 output.
+/// `wsl.exe` without a console window and with UTF-8 output.
 #[cfg(windows)]
 pub fn wsl() -> Command {
     use std::os::windows::process::CommandExt;
     let mut command = Command::new("wsl.exe");
     command
         .env("WSL_UTF8", "1")
-        .creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW)
-        .arg("-e");
+        .creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
     command
 }

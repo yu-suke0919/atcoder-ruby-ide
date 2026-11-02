@@ -1,143 +1,171 @@
-//! Placing the bundled runtime inside WSL. The placement script is plain `sh`, so Linux runs
-//! it directly; Windows runs the same script through `wsl.exe -e`.
+//! Registering the app's own WSL distribution. A shell script stands in for wsl.exe and records
+//! each call, so Linux checks the same steps that Windows runs (docs/architecture.md#wslのエージェント).
 #![cfg(unix)]
-use atcoder_ruby_ide::wsl::{agent_command, place};
+use atcoder_ruby_ide::wsl::{agent_command, ensure_distribution, DISTRIBUTION};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
 const LIMIT: Duration = Duration::from_secs(20);
 
-struct Fixture {
-    _directory: tempfile::TempDir,
-    home: PathBuf,
-    archive: String,
-    sha256: String,
+/// Lists AtCoderRubyIDE when `registered` exists, prints its version for `cat`, and imports by
+/// copying the image (a text file holding its version) into `registered`.
+const FAKE_WSL: &str = r#"#!/bin/sh
+echo "$*" >>"$STATE/calls"
+case "$1" in
+  -l) [ -f "$STATE/registered" ] && echo AtCoderRubyIDE; echo Ubuntu; exit 0 ;;
+  -d) [ -f "$STATE/registered" ] || { echo "There is no distribution with the supplied name."; exit 1; }
+      shift 3; [ "$1 $2" = "cat /etc/atcoder-ruby-ide-version" ] && cat "$STATE/registered"; exit 0 ;;
+  --unregister) rm -f "$STATE/registered"; exit 0 ;;
+  --import) [ -f "$STATE/fail-import" ] && { echo "The operation could not be started because a required feature is not installed."; exit 1; }
+      [ -d "$3" ] || exit 2; cp "$4" "$STATE/registered"; exit 0 ;;
+esac
+exit 3
+"#;
+
+struct Fake {
+    directory: tempfile::TempDir,
+    image: PathBuf,
+    location: PathBuf,
 }
 
-/// A runtime archive with an agent script and a Ruby folder, like the real one.
-fn fixture() -> Fixture {
-    let directory = tempfile::tempdir().unwrap();
-    let source = directory.path().join("source");
-    std::fs::create_dir_all(source.join("ruby/bin")).unwrap();
-    std::fs::write(
-        source.join("atcoder-ruby-agent"),
-        "#!/bin/sh\necho agent \"$@\"\n",
-    )
-    .unwrap();
-    std::fs::write(source.join("ruby/bin/ruby"), "#!/bin/sh\n").unwrap();
-    for file in ["atcoder-ruby-agent", "ruby/bin/ruby"] {
-        let status = Command::new("chmod")
+impl Fake {
+    fn new(registered: Option<&str>) -> Self {
+        let directory = tempfile::tempdir().unwrap();
+        let script = directory.path().join("wsl");
+        std::fs::write(&script, FAKE_WSL).unwrap();
+        assert!(Command::new("chmod")
             .arg("+x")
-            .arg(source.join(file))
+            .arg(&script)
             .status()
-            .unwrap();
-        assert!(status.success());
+            .unwrap()
+            .success());
+        // A Japanese folder name and a space, like a Windows user folder.
+        let image = directory
+            .path()
+            .join("配布 物")
+            .join("atcoder-linux.tar.gz");
+        std::fs::create_dir_all(image.parent().unwrap()).unwrap();
+        std::fs::write(&image, "v2\n").unwrap();
+        if let Some(version) = registered {
+            std::fs::write(directory.path().join("registered"), format!("{version}\n")).unwrap();
+        }
+        let location = directory.path().join("データ").join("wsl");
+        Self {
+            directory,
+            image,
+            location,
+        }
     }
-    // A Japanese folder name and a space, like a Windows user folder.
-    let archive = directory
-        .path()
-        .join("配布 物")
-        .join("atcoder-runtime.tar.gz");
-    std::fs::create_dir_all(archive.parent().unwrap()).unwrap();
-    let status = Command::new("tar")
-        .arg("-czf")
-        .arg(&archive)
-        .arg("-C")
-        .arg(&source)
-        .args(["atcoder-ruby-agent", "ruby"])
-        .status()
-        .unwrap();
-    assert!(status.success());
-    let output = Command::new("sha256sum").arg(&archive).output().unwrap();
-    let sha256 = String::from_utf8(output.stdout).unwrap()[..64].to_string();
-    let home = directory.path().join("home");
-    std::fs::create_dir_all(&home).unwrap();
-    Fixture {
-        archive: archive.to_str().unwrap().into(),
-        _directory: directory,
-        home,
-        sha256,
+    fn wsl(&self) -> impl Fn() -> Command + '_ {
+        move || {
+            let mut command = Command::new(self.directory.path().join("wsl"));
+            command.env("STATE", self.directory.path());
+            command
+        }
+    }
+    fn ensure(&self) -> Result<(), String> {
+        ensure_distribution(self.wsl(), &self.image, "v2", &self.location, LIMIT)
+    }
+    fn calls(&self) -> Vec<String> {
+        std::fs::read_to_string(self.directory.path().join("calls"))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_string)
+            .collect()
+    }
+    fn registered(&self) -> Option<String> {
+        std::fs::read_to_string(self.directory.path().join("registered")).ok()
     }
 }
 
-fn shell(home: &Path) -> Command {
-    let mut command = Command::new("env");
-    command.env("HOME", home);
-    command
-}
-
-fn entries(folder: &Path) -> Vec<String> {
-    let mut names: Vec<String> = std::fs::read_dir(folder)
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
-        .collect();
-    names.sort();
-    names
+fn path(path: &Path) -> &str {
+    path.to_str().unwrap()
 }
 
 #[test]
-fn the_runtime_is_placed_once_under_its_hash_and_reused() {
-    let f = fixture();
-    let placed = place(shell(&f.home), &f.archive, &f.sha256, LIMIT).unwrap();
-    let root = f.home.join(".atcoder-ruby-ide");
-    assert_eq!(PathBuf::from(&placed), root.join(&f.sha256));
-    assert!(root.join(&f.sha256).join("atcoder-ruby-agent").is_file());
-    std::fs::write(root.join(&f.sha256).join("marker"), "").unwrap();
+fn a_missing_distribution_is_imported_into_the_app_data_folder() {
+    let fake = Fake::new(None);
+    fake.ensure().unwrap();
+    assert_eq!(fake.registered().as_deref(), Some("v2\n"));
     assert_eq!(
-        place(shell(&f.home), &f.archive, &f.sha256, LIMIT).unwrap(),
-        placed
+        fake.calls(),
+        [
+            "-l -q".to_string(),
+            format!(
+                "--import {DISTRIBUTION} {} {}",
+                path(&fake.location),
+                path(&fake.image)
+            ),
+        ]
     );
+}
+
+#[test]
+fn the_registered_distribution_of_the_same_version_is_used_as_it_is() {
+    let fake = Fake::new(Some("v2"));
+    fake.ensure().unwrap();
+    assert_eq!(
+        fake.calls(),
+        [
+            "-l -q".to_string(),
+            format!("-d {DISTRIBUTION} -e cat /etc/atcoder-ruby-ide-version"),
+        ]
+    );
+}
+
+#[test]
+fn another_version_is_unregistered_and_imported_again() {
+    let fake = Fake::new(Some("v1"));
+    fake.ensure().unwrap();
+    assert_eq!(fake.registered().as_deref(), Some("v2\n"));
+    let calls = fake.calls();
+    assert_eq!(calls[2], format!("--unregister {DISTRIBUTION}"));
+    assert!(calls[3].starts_with(&format!("--import {DISTRIBUTION} ")));
+}
+
+#[test]
+fn a_failed_import_shows_wsl_s_message_and_how_to_prepare_wsl() {
+    let fake = Fake::new(None);
+    std::fs::write(fake.directory.path().join("fail-import"), "").unwrap();
+    let error = fake.ensure().unwrap_err();
     assert!(
-        root.join(&f.sha256).join("marker").exists(),
-        "reused, not extracted again"
+        error.contains("required feature is not installed"),
+        "{error}"
     );
-    assert_eq!(entries(&root), [f.sha256.clone()]);
-}
-
-#[test]
-fn other_versions_and_left_over_temporary_folders_are_removed() {
-    let f = fixture();
-    let root = f.home.join(".atcoder-ruby-ide");
-    for old in ["0".repeat(64), ".tmp-left".into()] {
-        std::fs::create_dir_all(root.join(old).join("ruby")).unwrap();
-    }
-    place(shell(&f.home), &f.archive, &f.sha256, LIMIT).unwrap();
-    assert_eq!(entries(&root), [f.sha256.clone()]);
-}
-
-#[test]
-fn a_damaged_archive_is_not_placed() {
-    let f = fixture();
-    let wrong = "f".repeat(64);
-    let error = place(shell(&f.home), &f.archive, &wrong, LIMIT).unwrap_err();
-    assert!(error.contains("配置"), "{error}");
-    let root = f.home.join(".atcoder-ruby-ide");
-    assert!(entries(&root).is_empty(), "{:?}", entries(&root));
+    assert!(error.contains("wsl --install --no-distribution"), "{error}");
 }
 
 #[test]
 fn a_missing_wsl_explains_how_to_prepare_it() {
-    let f = fixture();
-    let error = place(
-        Command::new("/nonexistent/wsl.exe"),
-        &f.archive,
-        &f.sha256,
+    let fake = Fake::new(None);
+    let error = ensure_distribution(
+        || Command::new("/nonexistent/wsl.exe"),
+        &fake.image,
+        "v2",
+        &fake.location,
         LIMIT,
     )
     .unwrap_err();
-    assert!(error.contains("wsl --install"), "{error}");
+    assert!(error.contains("wsl --install --no-distribution"), "{error}");
 }
 
 #[test]
-fn the_agent_runs_from_the_placed_folder_with_its_ruby_and_lsp() {
-    let f = fixture();
-    let placed = place(shell(&f.home), &f.archive, &f.sha256, LIMIT).unwrap();
-    let output = agent_command(Command::new("env"), &placed)
-        .output()
-        .unwrap();
+fn the_agent_runs_in_the_app_distribution_with_its_ruby_and_lsp() {
+    let command = agent_command(Command::new("wsl.exe"));
+    let args: Vec<_> = command
+        .get_args()
+        .map(|arg| arg.to_str().unwrap())
+        .collect();
     assert_eq!(
-        String::from_utf8(output.stdout).unwrap(),
-        format!("agent {placed}/ruby/bin/ruby {placed}/ruby-lsp\n")
+        args,
+        [
+            "-d",
+            DISTRIBUTION,
+            "-e",
+            "/opt/atcoder-ruby-ide/atcoder-ruby-agent",
+            "/opt/atcoder-ruby-ide/ruby/bin/ruby",
+            "/opt/atcoder-ruby-ide/ruby-lsp",
+        ]
     );
 }

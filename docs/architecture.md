@@ -33,7 +33,7 @@ Windows の一時的な共有違反・ロック・削除競合は短い待機で
 異常終了時は確定したstderrから実行ソースの絶対パスに一致する最初の有効な行番号を抽出し、RunResult.errorLineで返す。ケースモデルは比較結果と同じリビジョンで位置を失効させる。editor.mjsは専用のStateFieldでエラー行を強調し、コード変更時はそのトランザクション内で強調を解除する。行番号の抽出とジャンプの仕様は[実行エラー](run-errors.md)を参照する。
 
 エージェントは、WSL内に置いた同梱のRubyを絶対パスで使い、WSLのPATHやシステムのRubyに依存しない。Linuxのデスクトップアプリ・共通テスト・ブラウザー用テストホストは、`RUBY_PATH`または PATH の Ruby を使う（開発とCIでは同梱と同じRubyを用意する）。
-起動時のRuby確認は問題に関係なく5秒を上限とする。WSLとエージェントの起動・初回の配置はこれに含めず、別に上限を設ける（[WSLのエージェント](#wslのエージェント)）。確認失敗時は「Ruby を再確認」から再試行でき、確認中は重複確認と実行を抑止する。編集・保存は確認の成否に依存しない。
+起動時のRuby確認は問題に関係なく5秒を上限とする。WSLとエージェントの起動・アプリ専用のディストリビューションの登録はこれに含めず、別に上限を設ける（[WSLのエージェント](#wslのエージェント)）。確認失敗時は「Ruby を再確認」から再試行でき、確認中は重複確認と実行を抑止する。編集・保存は確認の成否に依存しない。
 RubyはAtCoderと同じ3.4.5を、CIでYJIT付き・配置場所に依存しない形でビルドし、静的ライブラリとデバッグ情報を除いて、SHA-256を固定して同梱する。採用gemもCIで同じRubyへ入れる。[AtCoderとの比較](atcoder-runtime.md)を参照する。
 RunnerはCommandのenv_removeでRUBYOPT・RUBYLIB・BUNDLE_GEMFILE・GEM_HOME・GEM_PATHを子プロセスの環境から除外してからRubyを起動する。bootstrapもGem.use_paths(Gem.default_dir)で、そのRubyの標準gemディレクトリだけを探索先にし、ユーザー用gemを含めない。prepare:gemsの既定の追加先もGem.default_dirとする。
 
@@ -90,16 +90,18 @@ Windows E2E の CDP 接続は検査ポートのブラウザー引数で有効に
 
 ## WSLのエージェント
 
-Phase C（C2〜C5）で実装する構成。エージェントとクライアントはC2、配置とWindowsのアプリからの中継はC3aで作る。調査の結論は[Rubyの実行環境の調査](#rubyの実行環境の調査c0)にある。
+Phase C（C2〜C5）で実装する構成。エージェントとクライアントはC2、アプリ専用のディストリビューションとWindowsのアプリからの中継はC3aで作る。調査の結論は[Rubyの実行環境の調査](#rubyの実行環境の調査c0)にある。
 
-- エージェント（`atcoder-ruby-agent`）は、本番のRunner・Ruby LSP管理・比較を含む同じRustのライブラリを、Linux（x86_64）向けにビルドしたバイナリ。引数でRubyのパスとLSP用gemのフォルダーを受け取り、環境変数は読まない。CIのUbuntu 22.04で`scripts/build-wsl-runtime.sh`がRuby 3.4.5のソース（`config/ruby-wsl.json`でSHA-256を固定）からRubyをビルドし、採用gem・LSP用gem・エージェント・ライセンスとともに`vendor/wsl/atcoder-runtime.tar.gz`にまとめる。アーカイブの中は`atcoder-ruby-agent`・`ruby/`・`ruby-lsp/`・`licenses/`。アーカイブのSHA-256は同じ場所の`runtime.json`に書き、アプリのリソース（`wsl/`）として同梱する。
-- 配置：アプリは`wsl.exe`で既定のディストリビューションを使い、1回の`sh`で次を行う（ライブラリの`wsl`モジュールの配置スクリプト）。Windowsのアーカイブのパスを`wslpath`で読み替え、WSL内の`~/.atcoder-ruby-ide/<アーカイブのSHA-256>/`に`atcoder-ruby-agent`があればそれを使う。なければアーカイブのSHA-256を確かめてから、同じ場所の一時フォルダー（`.tmp-…`）に展開し、名前を変えて置く。別のハッシュのフォルダーと残った一時フォルダーは消す。PATH・シェルの設定ファイルは変えず、sudoは使わない。配置はアプリの起動ごとに1回行い、成功した場所を覚える。
-- 起動：アプリの起動時に`wsl.exe -e <置いた場所>/atcoder-ruby-agent <Ruby> <LSP用gem>`を1つ起動する。ライブラリの`AgentClient`が起動・中継・再起動・終了を受け持ち、最初の要求のときに起動する。`wsl.exe`はコンソールのウィンドウを出さずに起動し、出力をUTF-8にする（`WSL_UTF8=1`）。WSLの起動と配置の上限は60秒とし、その後にRuby確認（5秒）を行う。WSL2のVMは、エージェントが動いている間は止まらない。
+- エージェント（`atcoder-ruby-agent`）は、本番のRunner・Ruby LSP管理・比較を含む同じRustのライブラリを、Linux（x86_64）向けにビルドしたバイナリ。引数でRubyのパスとLSP用gemのフォルダーを受け取り、環境変数は読まない。CIのUbuntu 22.04で`scripts/build-wsl-runtime.sh`がRuby 3.4.5のソース（`config/ruby-wsl.json`でSHA-256を固定）からRubyをビルドし、採用gem・LSP用gem・エージェント・ライセンスとともに`/opt/atcoder-ruby-ide/`（`atcoder-ruby-agent`・`ruby/`・`ruby-lsp/`・`licenses/`）に置く。
+- アプリ専用のディストリビューション：利用者のUbuntuなどは使わず、アプリ専用のLinux（ディストリビューション名`AtCoderRubyIDE`）を同梱する。同じスクリプトが、Dockerの`ubuntu:22.04`にRubyが使う共有ライブラリ（`libssl3`・`libyaml-0-2`・`libffi8`・`libgmp10`・`zlib1g`）と、Rubyを動かす一般のユーザー`atcoder`を加え、上の`/opt/atcoder-ruby-ide/`を入れて、ファイルシステム全体を`vendor/wsl/atcoder-linux.tar.gz`に書き出す。`/etc/wsl.conf`で既定のユーザーを`atcoder`にし、WindowsのPATHを加えない。中身の版（Ruby・gem・エージェントの`/opt/atcoder-ruby-ide/`のハッシュ）を`/etc/atcoder-ruby-ide-version`と同梱の`vendor/wsl/runtime.json`に書き、アプリのリソース（`wsl/`）として同梱する。
+- 登録：アプリは起動ごとに1回、`wsl.exe -d AtCoderRubyIDE -e cat /etc/atcoder-ruby-ide-version`で登録済みの版を読む。登録がなければ、またはアプリの版と違えば、`wsl.exe --unregister AtCoderRubyIDE`（版が違う場合）の後に`wsl.exe --import AtCoderRubyIDE <アプリのデータフォルダー>\wsl <同梱のtar.gz>`で登録し直す。作業領域はWindows側にあり、ディストリビューションには利用者のデータを置かないため、登録し直しても失うものはない。WSLの版（1か2）はWindowsの既定に従う。利用者のディストリビューション・PATH・シェルの設定ファイルは変えず、sudoは使わない。
+- 登録の解除：インストール版はアンインストールのときに`wsl.exe --unregister AtCoderRubyIDE`を実行する（NSISのフック）。ポータブル版は、利用者が同じコマンドを実行する（README）。
+- 起動：`wsl.exe -d AtCoderRubyIDE -e /opt/atcoder-ruby-ide/atcoder-ruby-agent /opt/atcoder-ruby-ide/ruby/bin/ruby /opt/atcoder-ruby-ide/ruby-lsp`を1つ起動する（ユーザーは`atcoder`）。ライブラリの`AgentClient`が起動・中継・再起動・終了を受け持ち、最初の要求のときに起動する。`wsl.exe`はコンソールのウィンドウを出さずに起動し、出力をUTF-8にする（`WSL_UTF8=1`）。WSLの起動と登録の上限は120秒とし、その後にRuby確認（5秒）を行う。WSL2のVMは、エージェントが動いている間は止まらない。
 - 通信：エージェントの標準入出力で、1行に1つのJSONをUTF-8（BOMなし）で送る。要求は`{"id", "command", "args"}`で、コマンドは`ruby_info`・`run_ruby`・`stop_ruby`・`lsp_start`・`lsp_complete`・`lsp_stop`・`shutdown`。引数と結果は今のTauriコマンドと同じで、応答は`{"id", "value"}`か`{"id", "error"}`。実行のイベントは`{"run": <run_rubyの番号>, "event": <RunEvent>}`で、画面へのChannelと同じJSON（出力のバイト列は数値の配列）と順番（started → 出力 → 完了またはエラー）のまま送る。エージェントの標準エラーは、そのままアプリの標準エラーへ流す。
 - 作業領域はWindowsに置き、コードとサンプルは本文として送る。実行時の作業フォルダーはWSL内の一時フォルダーで、Windowsのパスとの読み替えはしない。エラー行は、エージェントが実行したファイルのWSL内のパスで抽出する。
 - 停止：エージェントは、標準入力が閉じたとき、またはSIGHUP・SIGTERMを受けたときに、実行中のRubyとLSPのプロセスグループを止めてから終了する。`wsl.exe`を強制終了すると、エージェントにはSIGHUPが届く。アプリはウィンドウを閉じるときにエージェントの標準入力を閉じ、2秒で終わらなければ`wsl.exe`を終了する。
-- 異常：エージェントが途中で終了したら、待っている要求と実行中の実行はエラーにし、次の要求で起動し直す。WSLがない（`wsl.exe`がない・インストールしていない）、ディストリビューションがない、起動・配置に失敗した、共有ライブラリが足りない場合は、`wsl.exe`やエージェントの出力と、準備の手順（管理者のPowerShellで`wsl --install`、再起動、仮想化の有効化）をRuby確認の失敗として表示する。WSL1でも実行する。WSL1ではメモリ上限が効かないことの表示は、メモリ上限を作るC5で加える。
-- テスト：Linuxでは、Rustのテストがエージェントのバイナリを直接起動し（`wsl.exe`を通さない）、本番と同じ要求で確かめる。画面テスト用ホストは、`AgentClient`で自分自身を`--agent`で起動し、エージェントと同じ処理（`agent::serve`）で実行・停止・補完を受け持たせる。テスト用の短い打ち切り時間（`ATCODER_IDE_UI_TIMEOUT_MS`）は画面テスト用ホストだけが読み、本番のエージェントには入れない。WindowsのCIは、Ubuntuのジョブで作ったアーカイブを受け取り、WSL1（`Vampire/setup-wsl`のUbuntu 24.04）を入れて、配布物の画面テストとインストール版の確認を`wsl.exe`を通して行う。アーカイブそのものは、作ったジョブで別のフォルダーへ展開し、エージェントでRuby確認・採用gem・LSPの補完を確かめる。
+- 異常：エージェントが途中で終了したら、待っている要求と実行中の実行はエラーにし、次の要求で起動し直す。WSLがない（`wsl.exe`がない・インストールしていない）、起動・登録に失敗した場合は、`wsl.exe`やエージェントの出力と、準備の手順（管理者のPowerShellで`wsl --install --no-distribution`、再起動、仮想化の有効化）をRuby確認の失敗として表示する。WSL1でも実行する。WSL1ではメモリ上限が効かないことの表示は、メモリ上限を作るC5で加える。
+- テスト：Linuxでは、Rustのテストがエージェントのバイナリを直接起動し（`wsl.exe`を通さない）、本番と同じ要求で確かめる。画面テスト用ホストは、`AgentClient`で自分自身を`--agent`で起動し、エージェントと同じ処理（`agent::serve`）で実行・停止・補完を受け持たせる。テスト用の短い打ち切り時間（`ATCODER_IDE_UI_TIMEOUT_MS`）は画面テスト用ホストだけが読み、本番のエージェントには入れない。WindowsのCIは、Ubuntuのジョブで作ったディストリビューションを受け取り、WSL1（`Vampire/setup-wsl`で有効にする）を入れて、配布物の画面テストとインストール版の確認を`wsl.exe`を通して行う。ディストリビューションそのものは、作ったジョブでDockerに読み込み、ユーザー`atcoder`としてエージェントを動かし、Ruby確認・YJIT・採用gem・LSPの補完と、共有ライブラリが足りることを確かめる。登録・登録し直し・解除の手順は、`wsl.exe`の代わりのスクリプトを使うRustのテストで確かめる。
 
 ## 右端のブラウザと問題の読み取り
 
