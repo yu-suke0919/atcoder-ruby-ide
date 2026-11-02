@@ -1,7 +1,9 @@
 //! Test-only stdio transport. All execution and document behavior comes from the app library.
+//! Ruby requests go through AgentClient to this program started again with `--agent`, which
+//! serves them like the real agent (docs/architecture.md#wslのエージェント).
 use atcoder_ruby_ide::{
-    browser_target, fetch_page, http_client, read_task_page, ruby_info, Contests, DocumentStore,
-    RubyLsp, RunEvent, RunRequest, Runner, Workspaces,
+    agent::Agent, browser_target, fetch_page, http_client, read_task_page, AgentClient, Contests,
+    DocumentStore, Workspaces,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -18,26 +20,6 @@ fn send(sink: &Sink, value: Value) {
     }
 }
 
-struct RunnerCleanup<'a> {
-    runner: &'a Runner,
-    worker: Option<std::thread::JoinHandle<()>>,
-}
-
-impl RunnerCleanup<'_> {
-    fn stop_and_wait(&mut self) {
-        self.runner.stop();
-        self.runner.wait_idle();
-        // The reservation is released before the terminal event is sent.
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
-        }
-    }
-}
-impl Drop for RunnerCleanup<'_> {
-    fn drop(&mut self) {
-        self.stop_and_wait();
-    }
-}
 #[derive(Deserialize)]
 struct Request {
     id: u64,
@@ -45,37 +27,18 @@ struct Request {
     #[serde(default)]
     args: Value,
 }
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RunArgs {
-    code: String,
-    stdin: String,
-    expected_output: Option<String>,
-    tolerance: Option<f64>,
-    problem_time_limit_ms: Option<u32>,
-    on_event: u64,
-}
-
 fn main() {
-    let ruby: PathBuf = std::env::var_os("RUBY_PATH")
-        .unwrap_or_else(|| "ruby".into())
-        .into();
-    let timeout_ms = std::env::var("ATCODER_IDE_UI_TIMEOUT_MS")
-        .map(|value| {
-            value
-                .parse::<u64>()
-                .expect("ATCODER_IDE_UI_TIMEOUT_MS must be 1..=5000")
-        })
-        .unwrap_or(5000);
-    assert!(
-        (1..=5000).contains(&timeout_ms),
-        "ATCODER_IDE_UI_TIMEOUT_MS must be 1..=5000"
-    );
-    let runner = Runner::new(Duration::from_millis(timeout_ms), 1048576);
-    let lsp = RubyLsp::default();
-    let mut cleanup = RunnerCleanup {
-        runner: &runner,
-        worker: None,
+    if std::env::args().nth(1).as_deref() == Some("--agent") {
+        return serve_agent();
+    }
+    let agent = AgentClient::new(|| {
+        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        command.arg("--agent");
+        command
+    });
+    let stop_and_wait = || {
+        let _ = agent.request("stop_ruby", Value::Null);
+        agent.wait_idle();
     };
     let documents = Mutex::new(DocumentStore::default());
     let data = std::env::current_dir().unwrap().join("user-data");
@@ -93,50 +56,17 @@ fn main() {
         let request: Request = serde_json::from_str(&line.unwrap()).unwrap();
         let args = request.args;
         let result: Result<Value, String> = (|| match request.command.as_str() {
-            "lsp_start" => Ok(json!(lsp.start(
-                &ruby,
-                &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../vendor/ruby-lsp")
-            )?)),
-            "lsp_complete" => Ok(lsp.complete(
-                args["code"].as_str().ok_or("コードがありません")?,
-                serde_json::from_value(args["line"].clone()).map_err(|e| e.to_string())?,
-                serde_json::from_value(args["character"].clone()).map_err(|e| e.to_string())?,
-            )?),
-            "lsp_stop" => Ok(json!(lsp.stop())),
-            "ruby_info" => Ok(json!(ruby_info(&ruby)?)),
+            "lsp_start" | "lsp_complete" | "lsp_stop" | "ruby_info" | "stop_ruby" => {
+                agent.request(&request.command, args)
+            }
             "run_ruby" => {
-                let args: RunArgs = serde_json::from_value(args).map_err(|e| e.to_string())?;
-                let prepared = runner.prepare(RunRequest {
-                    code: args.code,
-                    stdin: args.stdin,
-                    expected_output: args.expected_output,
-                    tolerance: args.tolerance,
-                    problem_time_limit_ms: args.problem_time_limit_ms,
-                })?;
-                let ruby = ruby.clone();
+                let channel = args["onEvent"].clone();
                 let output = Arc::clone(&sink);
-                if let Some(worker) = cleanup.worker.take() {
-                    let _ = worker.join();
-                }
-                cleanup.worker = Some(std::thread::spawn(move || {
-                    send(
-                        &output,
-                        json!({ "channel": args.on_event, "event": RunEvent::Started { execution_limit_ms: prepared.execution_limit_ms() } }),
-                    );
-                    let chunks = Arc::clone(&output);
-                    let result = prepared.execute(&ruby, move |chunk| send(&chunks, json!({
-                            "channel": args.on_event,
-                            "event": RunEvent::Output { stream: chunk.stream, bytes: chunk.bytes }
-                        })));
-                    let event = match result {
-                        Ok(result) => RunEvent::Completed { result },
-                        Err(message) => RunEvent::Failed { message },
-                    };
-                    send(&output, json!({"channel": args.on_event, "event": event}));
-                }));
+                agent.run(args, move |event| {
+                    send(&output, json!({"channel": channel, "event": event}))
+                })?;
                 Ok(Value::Null)
             }
-            "stop_ruby" => Ok(json!(runner.stop())),
             "document_save" => {
                 documents
                     .lock()
@@ -145,7 +75,7 @@ fn main() {
                 Ok(Value::Null)
             }
             "session_reset" => {
-                cleanup.stop_and_wait();
+                stop_and_wait();
                 documents.lock().unwrap().reset();
                 Ok(Value::Null)
             }
@@ -251,8 +181,8 @@ fn main() {
             | "browser_history"
             | "browser_reload" => Ok(Value::Null),
             "shutdown" => {
-                lsp.stop();
-                cleanup.stop_and_wait();
+                stop_and_wait();
+                agent.shutdown();
                 Ok(Value::Null)
             }
             other => Err(format!("Unknown test command: {other}")),
@@ -265,4 +195,28 @@ fn main() {
             break;
         }
     }
+}
+
+/// The agent side, with the shorter default time limit the UI tests ask for.
+fn serve_agent() {
+    let ruby: PathBuf = std::env::var_os("RUBY_PATH")
+        .unwrap_or_else(|| "ruby".into())
+        .into();
+    let timeout_ms = std::env::var("ATCODER_IDE_UI_TIMEOUT_MS")
+        .map(|value| {
+            value
+                .parse::<u64>()
+                .expect("ATCODER_IDE_UI_TIMEOUT_MS must be 1..=5000")
+        })
+        .unwrap_or(5000);
+    assert!(
+        (1..=5000).contains(&timeout_ms),
+        "ATCODER_IDE_UI_TIMEOUT_MS must be 1..=5000"
+    );
+    Agent::new(
+        ruby,
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../vendor/ruby-lsp"),
+        Duration::from_millis(timeout_ms),
+    )
+    .serve(io::stdin().lock(), io::stdout());
 }

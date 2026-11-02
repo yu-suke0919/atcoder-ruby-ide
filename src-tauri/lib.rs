@@ -1,3 +1,5 @@
+pub mod agent;
+mod agent_client;
 mod commands;
 mod comparison;
 mod contests;
@@ -12,6 +14,7 @@ mod samples;
 mod solutions;
 mod task;
 
+pub use agent_client::AgentClient;
 pub use commands::{ruby_info, RubyInfo};
 pub use comparison::{decode_output, first_difference, OutputDifference};
 pub use contests::{
