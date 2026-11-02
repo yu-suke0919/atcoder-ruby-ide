@@ -1259,6 +1259,44 @@ test('M16/U4: the files of a new problem start with code that reads its input', 
   assert.equal(await editorText(page), 'n = gets.to_i\na = gets.split.map(&:to_i)\n');
 });
 
+test('U4b: rows start as a loop and a button at the right edge switches them to an array and back', async () => {
+  const problem = await seedWorkspaceProblem(app, testContest, 'switch', { task: null, code: null, cases: null, label: 'S', page: {
+    samples: [['2\n1 2\n3 4\n', '10\n']],
+    input: '<var>N</var>\n<var>R_1</var> <var>C_1</var>\n<var>\\vdots</var>\n<var>R_N</var> <var>C_N</var>',
+    constraints: ['入力はすべて整数']
+  } });
+  await openProblem(page, problem);
+  const loop = 'n = gets.to_i\nn.times do\n  r, c = gets.split.map(&:to_i)\nend\n';
+  const array = 'n = gets.to_i\nrc = Array.new(n) { gets.split.map(&:to_i) }\n';
+  assert.equal(await editorText(page), loop);
+  const toggle = page.locator('.cm-reading-toggle');
+  assert.equal(await toggle.count(), 1);
+  // The button sits at the right edge of the code, on the first line of the rows.
+  const [button, line, content] = await Promise.all([toggle.boundingBox(), page.locator('.cm-line').nth(1).boundingBox(), page.locator('.cm-content').boundingBox()]);
+  assert.ok(button.y >= line.y - 1 && button.y < line.y + line.height && button.x + button.width > content.x + content.width - 40, JSON.stringify({ button, line, content }));
+  await toggle.click();
+  await page.waitForFunction(() => !document.querySelector('.cm-content').textContent.includes('times'));
+  assert.equal(await editorText(page), array);
+  assert.equal(await toggle.getAttribute('title'), 'ループで読む形にする');
+  await page.locator('#code-editor').press('Control+z');
+  assert.equal(await editorText(page), loop);
+  // Once the rows are edited, the button is gone and the user's code is left alone.
+  await page.locator('#code-editor').press('Control+End');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('End');
+  await page.keyboard.insertText(' # edited');
+  await page.waitForFunction(() => document.querySelectorAll('.cm-reading-toggle').length === 0);
+  await page.locator('#code-editor').fill(loop);
+  await toggle.waitFor();
+  await page.locator('#code-editor').press('Control+End');
+  await page.keyboard.insertText('total = 0\n');
+  await toggle.click();
+  await page.locator('#code-editor').press('Control+End');
+  await page.keyboard.insertText('puts rc.sum(&:sum)');
+  await runAndWait();
+  assert.equal(await page.locator('#comparison-status').textContent(), '一致');
+});
+
 test('M16: a page that needs login asks to log in and opens once the page can be read', async () => {
   const problem = await seedWorkspaceProblem(app, testContest, 'needs_login', { task: null, code: null, cases: null });
   await page.locator('#contest-add').click();
