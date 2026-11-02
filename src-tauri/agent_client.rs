@@ -22,6 +22,7 @@ struct Connection {
     pid: u32,
     stdin: Mutex<Option<ChildStdin>>,
     pending: Mutex<HashMap<u64, Answer>>,
+    reader: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 #[derive(Default)]
@@ -111,21 +112,24 @@ impl AgentClient {
     }
 
     /// Closes the agent's stdin so that it stops its runs and exits; kills it after 2 seconds.
+    /// Returns after everything the agent wrote has been delivered.
     pub fn shutdown(&self) {
         let Some(connection) = self.connection.lock().unwrap().take() else {
             return;
         };
         drop(connection.stdin.lock().unwrap().take());
         let deadline = Instant::now() + EXIT_LIMIT;
-        let mut child = connection.child.lock().unwrap();
-        while Instant::now() < deadline {
-            if !matches!(child.try_wait(), Ok(None)) {
-                return;
+        while matches!(connection.child.lock().unwrap().try_wait(), Ok(None)) {
+            if Instant::now() >= deadline {
+                let _ = connection.child.lock().unwrap().kill();
+                break;
             }
             std::thread::sleep(Duration::from_millis(20));
         }
-        let _ = child.kill();
-        let _ = child.wait();
+        let reader = connection.reader.lock().unwrap().take();
+        if let Some(reader) = reader {
+            let _ = reader.join();
+        }
     }
 
     fn call(&self, id: u64, command: &str, args: Value) -> Result<Value, String> {
@@ -168,13 +172,14 @@ impl AgentClient {
             stdin: Mutex::new(child.stdin.take()),
             child: Mutex::new(child),
             pending: Mutex::default(),
+            reader: Mutex::default(),
         });
         let (reader, slot_ref, runs) = (
             Arc::clone(&connection),
             Arc::clone(&self.connection),
             Arc::clone(&self.runs),
         );
-        std::thread::spawn(move || {
+        let reader_thread = std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines() {
                 let Ok(line) = line else { break };
                 let Ok(message) = serde_json::from_str::<Value>(&line) else {
@@ -206,6 +211,7 @@ impl AgentClient {
             runs.fail_all(DIED);
             let _ = reader.child.lock().unwrap().wait();
         });
+        *connection.reader.lock().unwrap() = Some(reader_thread);
         *slot = Some(Arc::clone(&connection));
         Ok(connection)
     }

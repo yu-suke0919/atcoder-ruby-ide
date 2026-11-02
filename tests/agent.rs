@@ -351,7 +351,17 @@ fn client_fails_waiting_work_when_the_agent_dies_and_starts_it_again() {
 #[test]
 fn client_shutdown_ends_the_agent_and_its_runs() {
     let client = client();
-    let events = run_events(&client, json!({"code": SPAWNING, "stdin": ""}));
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&events);
+    client
+        .run(json!({"code": SPAWNING, "stdin": ""}), move |event| {
+            // A slow consumer, like a host writing a large final event.
+            if event["type"] == "completed" {
+                std::thread::sleep(Duration::from_millis(300));
+            }
+            sink.lock().unwrap().push(event);
+        })
+        .unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
     let pids: Vec<i32> = loop {
         let text = output_text(&events.lock().unwrap(), "stdout");
@@ -366,6 +376,10 @@ fn client_shutdown_ends_the_agent_and_its_runs() {
     };
     let agent = client.pid().unwrap() as i32;
     client.shutdown();
+    // Everything the agent wrote before exiting has been relayed when shutdown returns.
+    let last = events.lock().unwrap().last().unwrap().clone();
+    assert_eq!(last["type"], "completed", "{last}");
+    assert_eq!(last["result"]["status"], "stopped");
     assert!(gone_within(&[agent], Duration::from_secs(3)));
     assert!(gone_within(&pids, Duration::from_secs(2)));
     assert_eq!(client.pid(), None);
