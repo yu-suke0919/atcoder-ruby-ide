@@ -4,16 +4,19 @@ const http = require('node:http');
 
 async function startAtCoder() {
   const pages = new Map();
+  // Milliseconds to wait before answering a path, for pages that arrive late.
+  const delays = new Map();
   const requests = [];
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     const pathname = new URL(req.url, 'http://localhost').pathname;
     requests.push(pathname);
+    if (delays.has(pathname)) await new Promise(resolve => setTimeout(resolve, delays.get(pathname)));
     const html = pages.get(pathname);
     res.writeHead(html === undefined ? 404 : 200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(html ?? '<div class="alert alert-danger">Permission denied.</div>');
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  return { pages, requests, server, origin: `http://127.0.0.1:${server.address().port}` };
+  return { pages, delays, requests, server, origin: `http://127.0.0.1:${server.address().port}` };
 }
 
 const escape = text => text.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);

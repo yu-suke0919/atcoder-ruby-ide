@@ -725,7 +725,6 @@ async function openTask(task) {
     await ide.browserTask(task.url).catch(error => taskMessage(error.message, true));
     return;
   }
-  if (!await leaveProblem()) return;
   pendingTask = task;
   try {
     await ide.browserTask(task.url);
@@ -738,10 +737,22 @@ function openPendingTask() {
   opening = opening.then(openPendingTaskNow);
   return opening;
 }
+// The open problem stays editable while the page is read, so it is saved (and checked not to be
+// running) every time just before the workspace may change, also when the page-read event opens it.
 async function openPendingTaskNow() {
   const task = pendingTask;
   if (!task) return;
   await fileAction(async () => {
+    if (running) {
+      pendingTask = null;
+      taskMessage(`実行中のため${task.label}を開きませんでした。実行が終わってから、もう一度選んでください。`, true);
+      return;
+    }
+    if (!await leaveProblem()) {
+      if (pendingTask === task) pendingTask = null;
+      return;
+    }
+    if (pendingTask !== task) return;
     const result = await ide.openTask(task.url, task.label);
     if (pendingTask !== task) return;
     if (!result) {
