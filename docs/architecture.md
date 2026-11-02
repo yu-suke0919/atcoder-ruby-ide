@@ -165,7 +165,7 @@ AtCoderのページからアプリの機能を呼べないよう、次の3つを
 
 ## Rubyの実行環境の調査（C0）
 
-ロードマップのPhase C（Rubyの実行とLSPをWSL内のエージェントへ移す）の前に、2026-11-02にGitHubのCIの試作で確かめた結論。C1以降はこの節に従う。試作は`spike/c0-wsl`ブランチにあり、マージしない（[検証記録](verification.md#rubyの実行環境の調査c0)）。WSL2でしか確かめられない項目は、利用者の手元で確認用のスクリプトを実行して埋める。
+ロードマップのPhase C（Rubyの実行とLSPをWSL内のエージェントへ移す）の前に、2026-11-02にGitHubのCIの試作で確かめた結論。C1以降はこの節に従う。試作は`spike/c0-wsl`ブランチにあり、マージしない（[検証記録](verification.md#rubyの実行環境の調査c0)）。WSL2でしか確かめられない項目は、利用者の手元で確認用のスクリプトを実行して埋めた（[WSL2での確認](#wsl2での確認)）。
 
 ### CIで使えるWSL
 
@@ -194,5 +194,16 @@ AtCoderのページからアプリの機能を呼べないよう、次の3つを
 
 ### 制限
 
-- メモリ：Rubyは何もしていない状態でも仮想メモリを約450 MB（YJIT有効時は約590 MB）確保する（開発環境のLinuxとRuby 3.4.12で測定。使用中のメモリは約13 MB）。YJIT有効時に`setrlimit`の`RLIMIT_AS`を1024 MBにすると、512 MBの文字列も確保できなかった。AtCoderの1024 MBの上限には`RLIMIT_AS`を使わない。WSL1は`RLIMIT_AS`・`RLIMIT_DATA`を無視し、cgroupもない。WSL2でのcgroup v2（`memory.max`）の可否を利用者の手元で確かめ、cgroupか使用中のメモリ（RSS）の監視かをC5で決める。
-- スタック：既定の`ulimit -s`は8 MBで、10万段の再帰は`SystemStackError`になる。起動前に`RLIMIT_STACK`を1 GBへ上げ、`RUBY_THREAD_VM_STACK_SIZE`を1 GBにすると、WSL1でも100万段の再帰ができた（rootで実行）。通常のユーザーでハードリミットまで上げられるかを利用者の手元で確かめる。
+- メモリ：Rubyは何もしていない状態でも仮想メモリを約450 MB（YJIT有効時は約590 MB）確保する（開発環境のLinuxとRuby 3.4.12で測定。使用中のメモリは約13 MB）。YJIT有効時に`setrlimit`の`RLIMIT_AS`を1024 MBにすると、512 MBの文字列も確保できなかった。AtCoderの1024 MBの上限には`RLIMIT_AS`を使わない。WSL1は`RLIMIT_AS`・`RLIMIT_DATA`を無視し、cgroupもない。WSL2ではcgroup v2の`memory`コントローラーがあるが、通常のユーザーは`/sys/fs/cgroup`へ書けなかった（[WSL2での確認](#wsl2での確認)）。cgroupか使用中のメモリ（RSS）の監視かをC5で決める。
+- スタック：既定の`ulimit -s`は8 MBで、10万段の再帰は`SystemStackError`になる。起動前に`RLIMIT_STACK`を1 GBへ上げ、`RUBY_THREAD_VM_STACK_SIZE`を1 GBにすると、WSL1でも100万段の再帰ができた（rootで実行）。WSL2では`RLIMIT_STACK`のハードリミットが無制限で、通常のユーザーでも同じ設定で100万段の再帰ができた。
+
+### WSL2での確認
+
+2026-11-02に、利用者のPC（Windows 11 Home、WSL 3.0.3、カーネル`6.18.54.1-microsoft-standard-WSL2`、既定のディストリビューションはUbuntu 26.04、systemdあり）で確認用のスクリプトを実行した結果。
+
+- WSLの起動：`wsl --shutdown`の後の最初の起動（VMの起動を含む）は約3.0秒、2回目は約0.09秒だった。エージェントを動かしたまま75秒何もしなくても、VMは止まらずに応答した。
+- Ruby：足りない共有ライブラリはなく、YJITと標準ライブラリが動いた。置いた直後の初回の起動も約0.09秒だった（WSL1の約11秒とは異なる）。
+- メモリ：`RLIMIT_AS`を1024 MBにすると512 MBの文字列も確保できず、WSL2でも使えない。`RLIMIT_DATA`を1024 MBにすると1.5 GBの文字列は確保できなかった（1024 MB未満の確保ができるかは確かめていない）。cgroup v2の`memory`コントローラーはあるが、通常のユーザーは`/sys/fs/cgroup`へ書けなかった。
+- スタック：`ulimit -s`は8 MB、ハードリミットは無制限で、通常のユーザーでも`RLIMIT_STACK`とVMスタックを1 GBにして100万段の再帰ができた。
+- 停止：標準入力を閉じた後も`wsl.exe`を強制終了した後も、エージェントと子のプロセスは残らなかった。強制終了ではエージェントに`SIGHUP`が届いた。`timeout`の下で起動したグループは、打ち切り時間の後に止まった。
+- 確認用のスクリプトの`echo 300`の取り違えと`flood 20000 lines`の受け取った行数は、PowerShellのスクリプトブロックの中で数えたため外へ伝わらず、常に0と表示された（CIのWSL1でも同じ）。時間（それぞれ約0.2秒、約0.7秒）は、すべての応答と終わりの印を読むまでの時間として有効。取り違えと大量出力は、本物のエージェントでLinuxのCIとWindowsのCI（WSL1）の画面テストが確かめている。

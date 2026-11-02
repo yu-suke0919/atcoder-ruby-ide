@@ -550,7 +550,7 @@ GitHubのWindows環境にはWSL2がないため、次を利用者のPCで確か�
 | 同梱するRubyが動くか | `missing libraries`が空、`yjit: true`、`stdlib: ok`、`first ruby run ms` |
 | メモリ上限の手段 | `AS 1024MB …`、`cgroup v2 controllers`に`memory`があるか、`systemd`、`user` |
 | スタックの上限 | `ulimit -s`のハードリミット、`recursion 1000000, 1GB stacks`が`1000000`か |
-| やり取り | `echo 300`の取り違えが0、`flood 20000 lines`が20000、`echo after 75 s idle: ok`（エージェントの動作中はWSLのVMが止まらない） |
+| やり取り | `echo 300`と`flood 20000 lines`の時間（数は下記の理由で常に0）、`echo after 75 s idle: ok`（エージェントの動作中はWSLのVMが止まらない） |
 | 停止 | 標準入力を閉じた後と`wsl.exe`を強制終了した後に、エージェントと`sleep`が0 |
 
 WindowsのCI（WSL1）での試運転の結果は次のとおりで、WSL1でもやり取りと停止は期待どおりだった。
@@ -572,6 +572,33 @@ flood 20000 lines (received, ms): 0, 2617
 echo after 75 s idle: ok
 after closing stdin: agents, sleeps: 0, 0
 after killing wsl.exe: agents, sleeps, timeout groups, signal: 0, 0, 0, HUP
+```
+
+利用者のWSL2での結果（2026-11-02、Windows 11 Home、WSL 3.0.3）は次のとおりで、まとめは[構成と検証方針](architecture.md#wsl2での確認)にある。`echo 300`と`flood 20000 lines`の最初の数は、スクリプトがPowerShellのスクリプトブロックの中で数えていて外へ伝わらないため、どちらの環境でも常に0になる。取り違えと大量出力は、本物のエージェントの画面テストで確かめている。
+
+```text
+start after shutdown ms: 2952
+start again ms: 89
+kernel: 6.18.54.1-microsoft-standard-WSL2
+first ruby run ms: 92
+missing libraries: end
+yjit: true
+stdlib: ok
+AS 1024MB, 512MB string: NoMemoryError
+AS 1024MB, 1536MB string: NoMemoryError
+DATA 1024MB, 1536MB string: NoMemoryError
+cgroup v2 controllers: cpuset cpu io memory hugetlb pids rdma
+cgroup writable: false
+systemd: systemd
+ulimit -s: 8192 / hard unlimited
+recursion 100000, default stack: SystemStackError
+recursion 1000000, 1GB stacks: 1000000
+echo 300 (mismatched, ms): 0, 203
+flood 20000 lines (received, ms): 0, 722
+echo after 75 s idle: ok
+after closing stdin: agents, sleeps: 0, 0
+after killing wsl.exe: agents, sleeps, timeout groups, signal: 0, 0, 0, HUP
+after 8 s timeout: sleeps, timeout groups: 0, 0
 ```
 
 ## 資料の書き換え（C1）
