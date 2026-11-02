@@ -43,6 +43,7 @@ jobs:
           echo "external libraries:"
           { find "$RUNNER_TEMP/moved/ruby" -name '*.so' -exec ldd {} \; ; ldd "$ruby"; } | awk '/=>/ { print $1 }' | sort -u
           du -sh "$RUNNER_TEMP/moved/ruby"
+          du -sh "$RUNNER_TEMP/moved/ruby"/* "$RUNNER_TEMP/moved/ruby"/lib/* "$RUNNER_TEMP/moved/ruby"/lib/ruby/*
           tar -C "$RUNNER_TEMP/moved" -czf ruby-linux.tar.gz ruby
           ls -l ruby-linux.tar.gz
       - uses: actions/upload-artifact@v4
@@ -67,18 +68,18 @@ jobs:
         with:
           distribution: Ubuntu-24.04
           wsl-version: ${{ matrix.wsl-version }}
-          additional-packages: ruby
       - uses: actions/download-artifact@v4
         with:
           name: ruby-linux
-      - name: Probe stdio, start-up, stopping and limits through wsl.exe
-        shell: pwsh
-        run: node spike/c0/probe.cjs
-      - name: Run the relocatable Ruby inside WSL
+      - name: Put the relocatable Ruby inside WSL (no Ruby from apt)
         shell: pwsh
         run: |
           $archive = (wsl.exe -e wslpath -a ((Resolve-Path ruby-linux.tar.gz).Path -replace '\\', '/')).Trim()
-          wsl.exe -e bash -c "set -ex; mkdir -p ~/.atcoder-ruby; tar -xzf '$archive' -C ~/.atcoder-ruby; cd /tmp; ~/.atcoder-ruby/ruby/bin/ruby --yjit -e 'puts RUBY_DESCRIPTION; p RubyVM::YJIT.enabled?; %w[json openssl psych zlib fiddle bigdecimal].each { |lib| require lib }; puts %q(stdlib ok)'; ldd ~/.atcoder-ruby/ruby/bin/ruby | grep -c 'not found' || true; cat /etc/os-release | head -2"
           $sw = [Diagnostics.Stopwatch]::StartNew()
-          wsl.exe -e bash -c "echo 'p gets.to_i * 2' > /tmp/a.rb; echo 21 | ~/.atcoder-ruby/ruby/bin/ruby /tmp/a.rb"
-          "one run through wsl.exe: $($sw.ElapsedMilliseconds) ms"
+          wsl.exe -e bash -c "set -e; which ruby || echo 'no system ruby'; mkdir -p ~/.atcoder-ruby; tar -xzf '$archive' -C ~/.atcoder-ruby"
+          "extract: $($sw.ElapsedMilliseconds) ms"
+          wsl.exe -e bash -c "uname -r; cat /proc/version; head -2 /etc/os-release; echo missing libraries:; { find ~/.atcoder-ruby/ruby -name '*.so' -exec ldd {} \; ; ldd ~/.atcoder-ruby/ruby/bin/ruby; } | grep 'not found' | sort -u; echo end"
+          wsl.exe -e bash -c "cd /tmp; ~/.atcoder-ruby/ruby/bin/ruby --yjit -e 'puts RUBY_DESCRIPTION; p RubyVM::YJIT.enabled?; %w[json openssl psych zlib fiddle bigdecimal set prime].each { |lib| require lib }; puts %q(stdlib ok)'"
+      - name: Probe stdio, start-up, stopping and limits through wsl.exe
+        shell: pwsh
+        run: node spike/c0/probe.cjs

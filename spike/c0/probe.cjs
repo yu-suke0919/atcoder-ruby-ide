@@ -10,10 +10,14 @@ const wsl = args => execFileSync('wsl.exe', args, { encoding: 'utf8' });
   report.version = wsl(['--version']).replace(/\0/g, '').trim().split('\n').slice(0, 3);
   time('firstTrueMs', () => wsl(['-e', 'true']));
   time('secondTrueMs', () => wsl(['-e', 'true']));
-  report.ruby = wsl(['-e', 'ruby', '-v']).trim();
+  report.distributions = wsl(['-l', '-v']).replace(/\0/g, '').trim().split('\n').map(line => line.trim());
+  const ruby = '/root/.atcoder-ruby/ruby/bin/ruby';
+  report.ruby = wsl(['-e', ruby, '-v']).trim();
+  // Three short runs of the moved Ruby in a row: the first one after extracting it reads the files cold.
+  report.rubyRunsMs = [0, 1, 2].map(() => { const start = performance.now(); wsl(['-e', ruby, '-e', '0']); return Math.round(performance.now() - start); });
   const agentPath = wsl(['-e', 'wslpath', '-a', path.join(__dirname, 'agent.rb').replaceAll('\\', '/')]).trim();
   const started = performance.now();
-  const agent = spawn('wsl.exe', ['-e', 'ruby', agentPath], { stdio: ['pipe', 'pipe', 'inherit'] });
+  const agent = spawn('wsl.exe', ['-e', ruby, agentPath], { stdio: ['pipe', 'pipe', 'inherit'] });
   const lines = readline.createInterface({ input: agent.stdout });
   const waiting = [];
   const chunks = [];
@@ -44,7 +48,7 @@ const wsl = args => execFileSync('wsl.exe', args, { encoding: 'utf8' });
   execFileSync('taskkill.exe', ['/PID', String(agent.pid), '/T', '/F']);
   await new Promise(resolve => setTimeout(resolve, 3000));
   report.afterTaskkill = {
-    agent: Number(wsl(['-e', 'bash', '-c', `pgrep -f '${agentPath}' | wc -l`]).trim()),
+    agent: Number(wsl(['-e', 'bash', '-c', `pgrep -f '[a]gent.rb' | wc -l`]).trim()),
     sleeping: Number(wsl(['-e', 'bash', '-c', 'pgrep -x sleep | wc -l']).trim())
   };
   console.log(JSON.stringify(report, null, 2));
