@@ -481,7 +481,8 @@ test('E19: LSP failure keeps basic completion and execution available and retry 
   await page.locator('#run-status').filter({ hasText: /^正常終了$/ }).waitFor();
   assert.equal(await page.locator('#stdout').textContent(), 'still works\n');
   await page.locator('#completion-retry').click();
-  await page.locator('#completion-state[data-state="ready"]').waitFor();
+  // The retry starts Ruby LSP again and waits for its index, which took over 15 s in WSL1 on CI.
+  await page.locator('#completion-state[data-state="ready"]').waitFor({ timeout: 60000 });
   const next = await page.evaluate(() => window.__TAURI__.core.invoke('lsp_start'));
   assert.notEqual(next.pid, first.pid);
   await code().fill('class Recovered; def recovered_method; end; end\nRecovered.new.recovered_');

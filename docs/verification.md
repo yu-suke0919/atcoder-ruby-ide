@@ -641,3 +641,4 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 - クラウドセッション（Linux、root、Ruby 3.4.5）で、Rust（rootで失敗する既知の`r02_cleanup_failure_releases_reservation`以外）、Node単体96件、`cargo fmt --all --check`、画面テスト83件（Windows専用2件を除く）が成功した。
 
 - 利用者がWSL2のPCで、このPRのCIのポータブル版を確かめた。実行中に届いたページで問題が切り替わらないこと、日本語・絵文字のファイル名を拒否した後も保存と切り替えができること、エージェントを`SIGKILL`で止めた後にRubyが残らず、次の実行でエージェントが起動し直すこと、タブを往復した後のUndo・Redoと、戻ったファイルでRuby LSPの候補（「LSP · Kernel」）が出ることを確かめ、問題はなかった。
+- 確認結果を書き足した後のCIで、WindowsのE19（LSPの失敗からの再試行）が、Ruby LSPの起動し直しを15秒待って失敗した。WSL1ではLSPの起動とインデックス作成に15秒を超えることがあり（同じCIのインストール版のLSPのテストは起動2回で49秒）、以前の実行では15秒以内に収まっていた。最初の補完（E07）と同じく60秒まで待つようにした。
