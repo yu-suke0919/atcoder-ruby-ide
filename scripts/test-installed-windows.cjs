@@ -20,7 +20,7 @@ async function main() {
   const executable = path.join(directory, 'atcoder-ruby-ide.exe');
   await access(executable);
   const runtime = JSON.parse(await readFile(path.join(root, 'artifacts/reports/wsl-manifest.json'), 'utf8'));
-  assert.deepEqual(Object.keys(runtime).sort(), ['atcoder-linux.tar.gz', 'runtime.json']);
+  assert.deepEqual(Object.keys(runtime), ['runtime.json']); // The image is downloaded, not installed.
   for (const name of Object.keys(runtime)) await access(path.join(directory, 'wsl', name));
   let app;
   try {

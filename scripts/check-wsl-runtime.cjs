@@ -1,5 +1,6 @@
-// Loads the app's WSL distribution (vendor/wsl/atcoder-linux.tar.gz) into Docker and checks it:
-// its version and default user, the shared libraries, and through the agent running as that user,
+// Loads the app's WSL distribution (vendor/wsl-image/atcoder-linux.tar.gz) into Docker and checks it:
+// that vendor/wsl/runtime.json describes it, its version and default user, the shared libraries,
+// and through the agent running as that user,
 // the Ruby version and YJIT, the AtCoder gems with the standard libraries, and Ruby LSP.
 // Linux with Docker (the CI job that builds it). See docs/architecture.md#wslのエージェント.
 const { execFileSync, spawn, spawnSync } = require('node:child_process');
@@ -10,8 +11,12 @@ const assert = require('node:assert/strict');
 
 const root = path.resolve(__dirname, '..');
 
-async function checkRuntime(image = path.join(root, 'vendor/wsl/atcoder-linux.tar.gz')) {
-  const runtime = JSON.parse(readFileSync(path.join(path.dirname(image), 'runtime.json'), 'utf8'));
+async function checkRuntime(image = path.join(root, 'vendor/wsl-image/atcoder-linux.tar.gz'), manifest = path.join(root, 'vendor/wsl/runtime.json')) {
+  const runtime = JSON.parse(readFileSync(manifest, 'utf8'));
+  const bytes = readFileSync(image);
+  assert.equal(require('node:crypto').createHash('sha256').update(bytes).digest('hex'), runtime.sha256, 'runtime.json has another SHA-256');
+  assert.equal(bytes.length, runtime.bytes);
+  assert.ok(runtime.url.endsWith(`/releases/download/wsl-images/atcoder-linux-${runtime.sha256}.tar.gz`), runtime.url);
   const tag = `atcoder-ruby-ide-check:${runtime.version.slice(0, 12)}`;
   const container = `atcoder-ruby-ide-check-${process.pid}`;
   execFileSync('docker', ['import', image, tag], { stdio: 'inherit' });
@@ -71,5 +76,5 @@ async function checkRuntime(image = path.join(root, 'vendor/wsl/atcoder-linux.ta
     spawnSync('docker', ['rmi', '-f', tag], { stdio: 'ignore' });
   }
 }
-if (require.main === module) checkRuntime(process.argv[2]).catch(error => { console.error(error); process.exitCode = 1; });
+if (require.main === module) checkRuntime(process.argv[2], process.argv[3]).catch(error => { console.error(error); process.exitCode = 1; });
 module.exports = { checkRuntime };

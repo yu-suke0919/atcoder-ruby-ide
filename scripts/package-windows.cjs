@@ -19,7 +19,7 @@ async function main() {
     await rm(artifacts, { recursive: true, force: true });
     await mkdir(portable, { recursive: true });
     await cp(path.join(root, 'target/release/atcoder-ruby-ide.exe'), path.join(portable, 'atcoder-ruby-ide.exe'));
-    // The runtime the app places in WSL (scripts/build-wsl-runtime.sh, or the CI's wsl-runtime artifact).
+    // What the app downloads into WSL (runtime.json from scripts/build-wsl-runtime.sh or the CI's wsl-runtime artifact).
     await cp(path.join(root, 'vendor/wsl'), path.join(portable, 'wsl'), { recursive: true });
     const runtime = await createManifest(path.join(root, 'vendor/wsl'));
     const { productName } = require('../src-tauri/tauri.conf.json');
@@ -38,8 +38,8 @@ async function main() {
     version,
     ruby: require('../config/ruby-wsl.json'),
     lsp: require('../config/ruby-lsp.json'),
+    // The image itself is downloaded on the first start; its size is in wslRuntime.bytes.
     wslRuntime: JSON.parse(await readFile(path.join(portable, 'wsl/runtime.json'), 'utf8')),
-    wslRuntimeBytes: bytes(runtime),
     expandedBytes: bytes(runtime) + (await stat(path.join(portable, 'atcoder-ruby-ide.exe'))).size,
     executableBytes: (await stat(path.join(portable, 'atcoder-ruby-ide.exe'))).size,
     portableZipBytes: (await stat(zip)).size,

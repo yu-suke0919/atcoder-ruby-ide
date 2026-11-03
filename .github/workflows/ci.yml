@@ -26,6 +26,9 @@ jobs:
   wsl-runtime:
     if: ${{ !inputs.measure_ruby_stack }}
     runs-on: ubuntu-22.04
+    # Puts the image on the wsl-images release, where the app downloads it from.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -46,6 +49,12 @@ jobs:
       - name: Check the distribution through its agent as atcoder
         timeout-minutes: 10
         run: npm run check:wsl
+      - name: Put the image on the wsl-images release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node scripts/publish-wsl-image.cjs
+      # Only runtime.json: the Windows app downloads the image from the release.
       - uses: actions/upload-artifact@v4
         with:
           name: wsl-runtime

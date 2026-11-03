@@ -1335,6 +1335,13 @@ test('M09: a page read while the problem runs does not replace it', async () => 
   assert.equal(await page.locator('#stdout').textContent(), 'done\n');
 });
 
+test('M12: the download of the Linux image is shown while Ruby is checked', { skip: runner === 'native' && 'the native app downloads the real image only once' }, async () => {
+  await page.evaluate(() => window.__testEvent('runtime-download', { received: 5 * 1024 * 1024, total: 45 * 1024 * 1024 }));
+  assert.equal(await page.getByTestId('ruby-version').textContent(), 'Linux をダウンロード中… 5 / 45 MB');
+  await page.locator('#ruby-recheck').click();
+  await page.getByTestId('ruby-version').filter({ hasText: /^ruby 3\.4\./ }).waitFor();
+});
+
 test('M17: contest icons can be hidden and restored from the rail', async () => {
   const icon = railIcon(testContest);
   await icon.click({ button: 'right' });

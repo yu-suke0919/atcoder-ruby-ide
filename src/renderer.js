@@ -851,6 +851,11 @@ async function checkRuby() {
   }
 }
 $('ruby-recheck').addEventListener('click', checkRuby);
+// The first start (and a new version of the app's Linux) downloads it before Ruby can be checked.
+ide.onRuntimeDownload(({ received, total }) => {
+  const mb = bytes => Math.round(bytes / (1024 * 1024));
+  $('ruby-version').textContent = `Linux をダウンロード中… ${mb(received)}${total ? ` / ${mb(total)}` : ''} MB`;
+}).catch(error => message(String(error), true));
 async function initialize() {
   try {
     await ide.resetSession();

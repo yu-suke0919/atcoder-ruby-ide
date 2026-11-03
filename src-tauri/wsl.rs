@@ -1,7 +1,8 @@
-//! The app's own WSL distribution: registers the bundled Linux (Ruby, gems, Ruby LSP and the agent)
-//! with `wsl --import` and builds the command that starts the agent in it.
+//! The app's own WSL distribution: downloads the Linux image (Ruby, gems, Ruby LSP and the agent),
+//! registers it with `wsl --import` and builds the command that starts the agent in it.
 //! See docs/architecture.md#wslのエージェント.
-use std::io::Read;
+use sha2::{Digest, Sha256};
+use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -13,18 +14,18 @@ const VERSION_FILE: &str = "/etc/atcoder-ruby-ide-version";
 /// How to prepare WSL, appended to every failure to start or register the distribution.
 pub const GUIDANCE: &str = "WSL2を準備してください：管理者のPowerShellで「wsl --install --no-distribution」を実行して再起動します。CPUの仮想化機能が無効な場合は、BIOS/UEFIで有効にしてください。";
 
-/// Makes sure the app's distribution is registered with `version`, importing `image` into
-/// `location` when it is missing or another version. `wsl` builds a fresh `wsl.exe` command.
+/// Makes sure the app's distribution is registered with `version`. When it is missing or another
+/// version, `fetch` writes the image into `location`, which is imported there and then removed.
+/// `wsl` builds a fresh `wsl.exe` command; each command may take `limit`.
 pub fn ensure_distribution(
     wsl: impl Fn() -> Command,
-    image: &Path,
+    fetch: impl FnOnce(&Path) -> Result<(), String>,
     version: &str,
     location: &Path,
     limit: Duration,
 ) -> Result<(), String> {
     let fail = |reason: String| format!("WSLを準備できません: {reason}\n{GUIDANCE}");
-    let deadline = Instant::now() + limit;
-    let run = |mut command: Command| run(&mut command, deadline).map_err(fail);
+    let run = |mut command: Command| run(&mut command, limit).map_err(fail);
     let mut list = wsl();
     list.args(["-l", "-q"]);
     // With no distribution at all wsl.exe fails; that only means ours is missing too.
@@ -38,17 +39,83 @@ pub fn ensure_distribution(
         if success && output.trim() == version {
             return Ok(());
         }
-        let mut unregister = wsl();
-        unregister.args(["--unregister", DISTRIBUTION]);
-        expect_success(run(unregister)?).map_err(fail)?;
     }
     std::fs::create_dir_all(location).map_err(|e| fail(e.to_string()))?;
-    let mut import = wsl();
-    import
-        .args(["--import", DISTRIBUTION])
-        .arg(location)
-        .arg(image);
-    expect_success(run(import)?).map_err(fail)
+    let image = location.join(IMAGE);
+    // Downloaded first, so a failed download keeps the registered distribution.
+    fetch(&image)?;
+    let imported = (|| {
+        if registered {
+            let mut unregister = wsl();
+            unregister.args(["--unregister", DISTRIBUTION]);
+            expect_success(run(unregister)?).map_err(fail)?;
+        }
+        let mut import = wsl();
+        import
+            .args(["--import", DISTRIBUTION])
+            .arg(location)
+            .arg(&image);
+        expect_success(run(import)?).map_err(fail)
+    })();
+    let _ = std::fs::remove_file(&image);
+    imported
+}
+
+const IMAGE: &str = "atcoder-linux.tar.gz";
+
+/// Downloads `url` into `file` and checks its SHA-256, following redirects and the system's proxy.
+/// While receiving it writes `file`.part and reports the bytes received and the total; it fails
+/// when nothing arrives for `stall`, and then leaves no file.
+pub fn download(
+    url: &str,
+    sha256: &str,
+    file: &Path,
+    stall: Duration,
+    mut progress: impl FnMut(u64, Option<u64>),
+) -> Result<(), String> {
+    let mut part = file.as_os_str().to_owned();
+    part.push(".part");
+    let part = std::path::PathBuf::from(part);
+    let received = (|| {
+        let client = reqwest::blocking::Client::builder()
+            .use_native_tls()
+            .connect_timeout(Duration::from_secs(15))
+            .timeout(stall)
+            .user_agent(concat!("AtCoder-Ruby-IDE/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let mut response = client.get(url).send().map_err(|e| e.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("HTTP {}", response.status().as_u16()));
+        }
+        let total = response.content_length();
+        let mut output = std::fs::File::create(&part).map_err(|e| e.to_string())?;
+        let mut hash = Sha256::new();
+        let mut buffer = vec![0; 1 << 16];
+        let mut received = 0;
+        loop {
+            let count = response.read(&mut buffer).map_err(|e| e.to_string())?;
+            if count == 0 {
+                break;
+            }
+            hash.update(&buffer[..count]);
+            output
+                .write_all(&buffer[..count])
+                .map_err(|e| e.to_string())?;
+            received += count as u64;
+            progress(received, total);
+        }
+        output.sync_all().map_err(|e| e.to_string())?;
+        let actual: String = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        if !actual.eq_ignore_ascii_case(sha256) {
+            return Err("取得したイメージのSHA-256が一致しません。".into());
+        }
+        std::fs::rename(&part, file).map_err(|e| e.to_string())
+    })();
+    if received.is_err() {
+        let _ = std::fs::remove_file(&part);
+    }
+    received.map_err(|e| format!("Linuxのイメージを取得できません: {e}"))
 }
 
 fn expect_success((success, output): (bool, String)) -> Result<(), String> {
@@ -59,8 +126,9 @@ fn expect_success((success, output): (bool, String)) -> Result<(), String> {
     }
 }
 
-/// Runs `command` until `deadline`; wsl.exe reports its own failures on stdout.
-fn run(command: &mut Command, deadline: Instant) -> Result<(bool, String), String> {
+/// Runs `command` for up to `limit`; wsl.exe reports its own failures on stdout.
+fn run(command: &mut Command, limit: Duration) -> Result<(bool, String), String> {
+    let deadline = Instant::now() + limit;
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

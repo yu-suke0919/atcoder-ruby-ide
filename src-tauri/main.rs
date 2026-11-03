@@ -19,8 +19,8 @@ struct AppState {
 }
 
 /// Ruby and Ruby LSP run in the agent (docs/architecture.md#wslのエージェント). On Windows the
-/// app's own WSL distribution is registered once per app run; on Linux the agent built next to the
-/// app runs the development Ruby.
+/// app's own WSL distribution is checked once per app run, and downloaded and registered when it is
+/// missing or another version; on Linux the agent built next to the app runs the development Ruby.
 fn agent(app: &tauri::AppHandle) -> AgentClient {
     #[cfg(windows)]
     {
@@ -37,6 +37,7 @@ fn agent(app: &tauri::AppHandle) -> AgentClient {
             .map(|dir| dir.join("wsl"))
             .map_err(|e| e.to_string());
         let ready = Mutex::new(false);
+        let app = app.clone();
         AgentClient::new(move || {
             let mut ready = ready.lock().unwrap();
             if !*ready {
@@ -47,12 +48,35 @@ fn agent(app: &tauri::AppHandle) -> AgentClient {
                         .map_err(|e| format!("同梱物の情報を読めません: {e}"))?,
                 )
                 .map_err(|e| e.to_string())?;
+                let field = |name: &str| {
+                    manifest[name]
+                        .as_str()
+                        .ok_or(format!("Linuxの情報に{name}がありません。"))
+                };
+                let (url, sha256) = (field("url")?, field("sha256")?);
                 wsl::ensure_distribution(
                     wsl::wsl,
-                    &resources.join("atcoder-linux.tar.gz"),
-                    manifest["version"]
-                        .as_str()
-                        .ok_or("同梱物の版がありません。")?,
+                    |file| {
+                        // The screen shows the download; a report per megabyte is enough.
+                        let mut shown = 0;
+                        wsl::download(
+                            url,
+                            sha256,
+                            file,
+                            Duration::from_secs(30),
+                            |received, total| {
+                                if received - shown >= 1 << 20 || Some(received) == total {
+                                    shown = received;
+                                    use tauri::Emitter;
+                                    let _ = app.emit(
+                                        "runtime-download",
+                                        json!({"received": received, "total": total}),
+                                    );
+                                }
+                            },
+                        )
+                    },
+                    field("version")?,
                     location,
                     Duration::from_secs(120),
                 )?;
