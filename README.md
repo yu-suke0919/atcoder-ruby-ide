@@ -63,7 +63,7 @@ WSL2の準備は必要ですが、Ruby のインストールや PATH 設定は�
 - `AtCoder-Ruby-IDE-<version>-x64-setup.exe`：ユーザー単位の NSIS インストーラー
 
 どちらも、アプリ専用のLinux（Ubuntu 22.04の最小構成に、CIでビルドしたRuby 3.4.5（YJIT付き）・採用gem・Ruby LSP・エージェントを入れたもの）を含みます。WindowsにはRubyを同梱しません。
-ac-library-rb 1.2.0、bitarray 1.3.1、faster_prime 1.0.2、rgl 0.6.6、sorted_containers 1.1.0と必要な依存gemを同梱し、C拡張のあるgemもC3bで加えます。対応範囲・未同梱gem・制限の差は[実行環境の資料](docs/atcoder-runtime.md)を参照してください。
+ac-library-rb・rbtree・sorted_set・numo-narrayなど、AtCoderの公式追加gemのうち12個を公式と同じバージョンで、必要な依存gemとともに同梱します。補完では、これらのgemのAPIも候補に出ます。対応範囲・未同梱gem・制限の差は[実行環境の資料](docs/atcoder-runtime.md)を参照してください。
 ZIP はフォルダー全体を保持してください。単体のアプリ exe だけを取り出すと Ruby を実行できません。
 
 WebView2 Runtime が必要です。Windows で未導入の場合、NSIS インストーラーが取得します（初回はネット接続が必要）。

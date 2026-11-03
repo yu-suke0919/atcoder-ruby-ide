@@ -630,6 +630,17 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 - 修正後のCIで、WSL用のディストリビューションの作成と確認（約5分）、WindowsのWSL1での`.tar.gz`の登録・画面テスト・インストール版の確認（アンインストールで登録が消えること）が成功した。ポータブル版のZIPは約48 MBだった。
 - 利用者がWSL2のPCで、そのポータブル版を確かめた。初回の起動は登録を含めて約3秒でRuby 3.4.5を表示し、`wsl -l -v`に`AtCoderRubyIDE`がVERSION 2で出た。最初の補完は約3秒、以降はすぐに出た。アプリを閉じると、エージェントとRubyはWSLから消えた。2回目の起動ではすぐにRubyを表示した。
 
+## C拡張のあるgemとLSPの解析対象（C3b）
+
+- main aea28e5から開始。AtCoderのRubyのインストール設定（toml）を2026-11-02に取得し直し、公式追加gem 20個のバージョンを確かめた。C拡張のある7つ（rbtree・sorted_set・immutable-ruby・bit_utils・fast_trie・numo-narray・rumale）と依存gemをRuby 3.4.5へ入れて動くことを先に試し、入れる12個と入れない8個とその理由を[実行環境の資料](atcoder-runtime.md#追加するgem)に書いた。依存gemはRubyGemsのAPIで、要求を満たす2025年10月までの最新版を選び、SHA-256をRubyGemsの値と照合した。
+- 試しに入れたとき、名前順ではlbfgsbのC拡張がnumo-narrayのヘッダーを見つけられずに失敗した。インストールは固定情報の順に行い、依存先が後にある並びを入れる前に拒否する。
+- 失敗するテストを先に用意した。採用gemのfixture（`tests/fixtures/runtime-gems.rb`）に新しいgemの読み込みと動作を加え、実Runnerのテストが`rbtree`のLoadErrorで失敗することを確かめた。gemの準備の単体テストは、C拡張を持つgemがビルドされて読み込めること、依存先を後に並べると何も入れずに拒否することを、C拡張の拒否・順番を確かめないことによる失敗で確かめた。Ruby LSPのテスト（`tests/ruby_lsp.rs`）は、`AcLibraryRb::Fenwick`の補完に`AcLibraryRb::FenwickTree`が出ること、`RubyLsp::GlobalState`・`Backports::VERSION`が出ないことを、候補が空であることによる失敗で確かめた。
+- LSPの固定Gemfileは、競技用gemを既定のグループ、LSP用gemを`development`グループに書き、lockはgemを準備するときにネットワークなしで作るようにした（リポジトリのlockは消した）。初期化の`indexing.excludedPatterns`（`**/ruby-lsp/**`）は、作業場所のファイルにしか効かず、gemの解析には効いていなかった（LSP用gemの566のファイルが解析されていた）ため消した。
+- `npm run prepare:gems`は、numo-narrayなどのC拡張のビルドで約76秒かかった。`make`を並列にして約30秒にした（4コア）。
+- クラウドセッション（Linux、root、Ruby 3.4.5）で、Rust（rootで失敗する既知の`r02_cleanup_failure_releases_reservation`以外）、Node単体97件、`cargo fmt --all --check`、画面テスト80件（Windows専用2件を除く）が成功した。
+- PR #54の最初のCIで、WSL用のディストリビューションの作成がrbtreeのC拡張のビルドで失敗した（`The compiler failed to generate an executable file`）。CIでビルドするRubyは共有ライブラリを作らない構成で、mkmfは拡張を`libruby-static.a`と組み合わせて試すが、スクリプトがgemを入れる前にそれを消していた。開発のRubyで、mkmfが組み合わせるライブラリがない状態にすると同じ失敗になることを確かめ、`libruby-static.a`はgemとLSPを準備した後に消すようにした。
+- 利用者がWSL2のPCで、このPRのCIのポータブル版を確かめた。アプリ専用のディストリビューションは新しい版で登録し直され、`rbtree`・`numo/narray`・`ac-library-rb/fenwick_tree`を使うコードが期待どおりに出力し、`AcLibraryRb::`の後の補完に`AcLibraryRb::FenwickTree`などのRuby LSPの候補が出た。
+
 ## mainの全体レビューへの対応
 
 - 利用者から受け取ったmain（aea28e5）の全体レビューの4件の不具合と2件の資料の不整合を確かめ、すべて再現した。

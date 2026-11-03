@@ -1,6 +1,6 @@
 # AtCoderとのRuby実行環境の整合
 
-Phase C（Rubyの実行とLSPをWSL内のエージェントへ）を終えた後の仕様を書く。C3aで、RubyはWSL内の3.4.5で実行するようになった。残りの項目には実装する[ロードマップ](roadmap.md)の項目を付ける。使われなくなったWindows版Ruby（RubyInstaller 3.4.12）の準備・測定スクリプト・テストはC4で削除する。以前の測定結果は[検証記録](verification.md)とgitの履歴にある。
+Phase C（Rubyの実行とLSPをWSL内のエージェントへ）を終えた後の仕様を書く。C3aで、RubyはWSL内の3.4.5で実行するようになった。C3bで、C拡張のある公式追加gemを加えた。残りの項目には実装する[ロードマップ](roadmap.md)の項目を付ける。使われなくなったWindows版Ruby（RubyInstaller 3.4.12）の準備・測定スクリプト・テストはC4で削除する。以前の測定結果は[検証記録](verification.md)とgitの履歴にある。
 
 ## 参照元と対象
 
@@ -16,7 +16,7 @@ AtCoderの公開環境はLinux上のCRubyの `Ruby 3.4 (ruby 3.4.5)` で、`ruby
 ## Rubyのビルド（C3a）
 
 - Ruby 3.4.5の公式ソース（`cache.ruby-lang.org`）のSHA-256を`config/ruby-wsl.json`に固定し、`scripts/build-wsl-runtime.sh`がCIのUbuntu 22.04で`--enable-yjit --enable-load-relative --disable-install-doc`を付けてビルドする。配置場所に依存しない形で、アプリ専用のディストリビューションの`/opt/atcoder-ruby-ide/ruby`に置く。
-- 静的ライブラリ（`libruby-static.a`）を除き、実行ファイルと拡張ライブラリのデバッグ情報を`strip`で除く。Rubyの`COPYING`・`LEGAL`はライセンスとして残す。採用gemとLSP用gemもCIで同じRubyへ入れる。
+- 採用gemのC拡張をビルドした後に、静的ライブラリ（`libruby-static.a`）を除き、実行ファイルと拡張ライブラリのデバッグ情報を`strip`で除く。Rubyの`COPYING`・`LEGAL`はライセンスとして残す。採用gemとLSP用gemもCIで同じRubyへ入れる。
 - Ubuntu 22.04でビルドし、同じUbuntu 22.04（Dockerの`ubuntu:22.04`）の最小構成に、使う共有ライブラリ（`libssl3`・`libyaml-0-2`・`libffi8`・`libgmp10`・`zlib1g`）を加えたアプリ専用のディストリビューションに入れる（[WSLのエージェント](architecture.md#wslのエージェント)）。
 - 開発・LinuxのCIのテストも同じ3.4.5を使う。AtCoderの言語アップデートでバージョンが変わったときは、設定の版とハッシュを変えてビルドし直す（Phase Dで手順をまとめる）。最新パッチを自動で探す更新コマンドは持たない。
 
@@ -74,45 +74,51 @@ AtCoderと同じく`--jit`で実行する。同梱のRubyはYJIT付きでビル�
 
 ## 追加するgem
 
-C拡張のない次の5つを、公式と同じバージョンで同梱する。C3bで、C拡張のある公式gem（rbtree・sorted_set・immutable-ruby・bit_utils・fast_trie・numo-narray・rumaleなど）もCIで同梱のRubyに向けてビルドして加える。どこまで入れるかは理由付きでC3bでこの資料に書く。gem内のライセンス資料も保持する。
+AtCoderの公式追加gem 20個のうち、競技で使う見込みがあり、追加の共有ライブラリなしにCIで短時間にビルドできる次の12個を、公式と同じバージョンで同梱する（C3b）。C拡張のあるgemは、CIで同梱のRubyに向けてビルドする。gem内のライセンス資料も保持する。
 
-| gem | バージョン | 用途 |
-| --- | --- | --- |
-| ac-library-rb | 1.2.0 | Union-Find、Fenwick tree、segment treeなど |
-| bitarray | 1.3.1 | ビット配列 |
-| faster_prime | 1.0.2 | 素数判定・素因数分解 |
-| rgl | 0.6.6 | グラフ |
-| sorted_containers | 1.1.0 | ソート済み集合・配列など |
+| gem | バージョン | C拡張 | 用途 |
+| --- | --- | --- | --- |
+| ac-library-rb | 1.2.0 | なし | Union-Find、Fenwick tree、segment treeなど |
+| bit_utils | 0.1.2 | あり | popcountなどのビット演算 |
+| bitarray | 1.3.1 | なし | ビット配列 |
+| fast_trie | 0.5.1 | あり | トライ木 |
+| faster_prime | 1.0.2 | なし | 素数判定・素因数分解 |
+| immutable-ruby | 0.2.0 | なし | 永続データ構造（依存先のrbtreeにC拡張） |
+| numo-narray | 0.9.2.1 | あり | 多次元配列 |
+| rbtree | 0.4.6 | あり | 赤黒木による順序付き連想配列 |
+| rgl | 0.6.6 | なし | グラフ |
+| rumale | 1.0.0 | なし | 機械学習（依存先のlbfgsbとrumale-treeにC拡張） |
+| sorted_containers | 1.1.0 | なし | ソート済み集合・配列など |
+| sorted_set | 1.0.3 | なし | ソート済み集合（依存先のrbtreeにC拡張） |
 
-必要な依存gemも固定する。prime 0.1.3、rexml 3.4.4、pairing_heap 3.1.3、stream 0.5.6を採用する。依存gemの具体的なバージョンはAtCoder資料で保証されていないため、このプロジェクトで動作確認した組合せとして扱う。primeが依存するforwardableとsingletonは採用Rubyの標準同梱版を使う。
+必要な依存gemも固定する。依存gemの具体的なバージョンはAtCoder資料で保証されていないため、要求を満たす版のうち、AtCoderの言語アップデートの時期（2025年10月）までに公開された最新版を選び、このプロジェクトで動作確認した組合せとして扱う。
 
-`config/atcoder-runtime.json`を取得元・バージョン・SHA-256の固定情報とする。RubyGemsから取得した `.gem` はすべてハッシュ検証してから、ネットワークで依存解決せずに指定先へインストールする。別プラットフォームのgemやC拡張は拒否する。
-同梱するRubyにはCIのビルドで追加し、Linuxの開発・CIは `npm run prepare:gems` で実行用Rubyへ同じgemを追加する。標準ライブラリの利用方法は変えない。
+- prime 0.1.3、rexml 3.4.4、pairing_heap 3.1.3、stream 0.5.6
+- backports 3.25.2、function_module 0.1.1（bit_utils）
+- concurrent-ruby 1.3.5（immutable-ruby）
+- lbfgsb 0.6.0、mmh3 1.2.0、rumaleの部品のgem 18個（rumale-core・rumale-linear_modelなど、すべて1.0.0）
+
+primeが依存するforwardableとsingleton、sorted_setが依存するset、rumale-coreが依存するcsvは、採用Rubyに含まれる版を使う。
+
+`config/atcoder-runtime.json`を取得元・バージョン・SHA-256の固定情報とする。RubyGemsから取得した `.gem` はすべてハッシュ検証してから、ネットワークで依存解決せずに指定先へインストールする。C拡張は依存先の後にビルドする（lbfgsbはnumo-narrayのヘッダーを使う）。別プラットフォーム向けにビルド済みのgemは拒否する。
+同梱するRubyにはCIのビルドで追加し、Linuxの開発・CIは `npm run prepare:gems` で実行用Rubyへ同じgemを追加する（C拡張のビルドにCコンパイラーを使う）。標準ライブラリの利用方法は変えない。
 アプリはRuby起動前に、子プロセスの環境変数からRUBYOPT・RUBYLIB・BUNDLE_GEMFILE・GEM_HOME・GEM_PATHを除外する。端末のRubyオプション、外部ライブラリ探索先、BundlerのGemfileを引き継がない。起動後もGem.use_paths(Gem.default_dir)により、そのRubyの標準gemディレクトリだけを探索し、ユーザー用gemディレクトリから別バージョンを読み込まない。Rubyの確認とコード実行は同じRunnerを使う。prepare:gemsも選択したRubyの標準gemディレクトリへ追加するため、Linuxでは書き込み可能なRuby環境を用意する。
-Rubyのソースまたは採用gemの固定情報が変わったら、同梱するアーカイブをCIで作り直す。
+Rubyのソースまたは採用gemの固定情報が変わったら、同梱するディストリビューションをCIで作り直す。
+
 ## 残る差
 
-C3bでC拡張のあるgemを加えるまで、次の15の公式追加gemは同梱しない。未同梱のgemを必要とするコードはLoadError等になる。C3bの後も、加えなかったgemはこの表に残す。
+次の8つの公式追加gemは同梱しない。未同梱のgemを必要とするコードはLoadError等になる。
 
-| gem | 公式バージョン |
-| --- | --- |
-| bit_utils | 0.1.2 |
-| fast_trie | 0.5.1 |
-| ffi-geos | 2.5.0 |
-| immutable-ruby | 0.2.0 |
-| lightgbm | 0.4.3 |
-| numo-linalg | 0.1.7 |
-| numo-narray | 0.9.2.1 |
-| numo-openblas | 0.5.1 |
-| or-tools | 0.16.0 |
-| polars-df | 0.21.1 |
-| rbtree | 0.4.6 |
-| rumale | 1.0.0 |
-| sorted_set | 1.0.3 |
-| torch-rb | 0.21.0 |
-| z3 | 0.0.20230311 |
-
-immutable-rubyとsorted_setはgem本体がRubyでも、依存先にrbtreeのC拡張を含む。
+| gem | 公式バージョン | 同梱しない理由 |
+| --- | --- | --- |
+| ffi-geos | 2.5.0 | 計算幾何のGEOSの共有ライブラリとffiのC拡張が要る。競技で使う見込みが小さい |
+| lightgbm | 0.4.3 | 機械学習（勾配ブースティング）のLightGBMの共有ライブラリを使う。競技で使う見込みが小さい |
+| numo-linalg | 0.1.7 | numo-openblasを使う |
+| numo-openblas | 0.5.1 | インストール時にOpenBLASを取得してビルドし、時間と容量がかかる |
+| or-tools | 0.16.0 | インストール時に大きなOR-Toolsのライブラリを取得する |
+| polars-df | 0.21.1 | Rustで書かれた大きなC拡張で、ビルドに時間がかかる |
+| torch-rb | 0.21.0 | 1 GBを超えるLibTorchを使う |
+| z3 | 0.0.20230311 | Z3の共有ライブラリ（数十MB）を使う |
 
 | 項目 | AtCoderの公式設定 | このアプリ（Phase Cの後） |
 | --- | --- | --- |
