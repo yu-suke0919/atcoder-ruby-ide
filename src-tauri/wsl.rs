@@ -84,7 +84,11 @@ pub fn download(
             .user_agent(concat!("AtCoder-Ruby-IDE/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|e| e.to_string())?;
-        let mut response = client.get(url).send().map_err(|e| e.to_string())?;
+        // The URL is long and in runtime.json already; the reason is enough on the screen.
+        let mut response = client
+            .get(url)
+            .send()
+            .map_err(|e| e.without_url().to_string())?;
         if !response.status().is_success() {
             return Err(format!("HTTP {}", response.status().as_u16()));
         }
@@ -108,14 +112,16 @@ pub fn download(
         output.sync_all().map_err(|e| e.to_string())?;
         let actual: String = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
         if !actual.eq_ignore_ascii_case(sha256) {
-            return Err("取得したイメージのSHA-256が一致しません。".into());
+            return Err("取得したイメージのSHA-256が一致しません".into());
         }
         std::fs::rename(&part, file).map_err(|e| e.to_string())
     })();
     if received.is_err() {
         let _ = std::fs::remove_file(&part);
     }
-    received.map_err(|e| format!("Linuxのイメージを取得できません: {e}"))
+    received.map_err(|e| {
+        format!("Linuxのイメージを取得できません（{e}）。ネットワークにつながっているか確かめてから、「Ruby を再確認」を押してください。")
+    })
 }
 
 fn expect_success((success, output): (bool, String)) -> Result<(), String> {

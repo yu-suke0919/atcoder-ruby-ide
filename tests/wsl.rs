@@ -335,6 +335,32 @@ fn a_different_sha256_is_rejected_and_nothing_is_left() {
 }
 
 #[test]
+fn a_network_failure_says_what_to_do_without_the_long_url() {
+    let directory = tempfile::tempdir().unwrap();
+    let url =
+        "http://127.0.0.1:1/releases/download/wsl-images/atcoder-linux-0123456789abcdef.tar.gz";
+    let error = download(
+        url,
+        &sha256(b"image"),
+        &directory.path().join("image"),
+        STALL,
+        |_, _| {},
+    )
+    .unwrap_err();
+    assert!(
+        error.starts_with("Linuxのイメージを取得できません（"),
+        "{error}"
+    );
+    assert!(
+        error.contains(
+            "ネットワークにつながっているか確かめてから、「Ruby を再確認」を押してください。"
+        ),
+        "{error}"
+    );
+    assert!(!error.contains("0123456789abcdef"), "{error}");
+}
+
+#[test]
 fn an_http_error_is_reported() {
     let error = failed_download(Answer::Status(404), &sha256(b"image"));
     assert!(error.contains("404"), "{error}");
