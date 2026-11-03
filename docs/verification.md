@@ -639,3 +639,4 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 - `npm run prepare:gems`は、numo-narrayなどのC拡張のビルドで約76秒かかった。`make`を並列にして約30秒にした（4コア）。
 - クラウドセッション（Linux、root、Ruby 3.4.5）で、Rust（rootで失敗する既知の`r02_cleanup_failure_releases_reservation`以外）、Node単体97件、`cargo fmt --all --check`、画面テスト80件（Windows専用2件を除く）が成功した。
 - PR #54の最初のCIで、WSL用のディストリビューションの作成がrbtreeのC拡張のビルドで失敗した（`The compiler failed to generate an executable file`）。CIでビルドするRubyは共有ライブラリを作らない構成で、mkmfは拡張を`libruby-static.a`と組み合わせて試すが、スクリプトがgemを入れる前にそれを消していた。開発のRubyで、mkmfが組み合わせるライブラリがない状態にすると同じ失敗になることを確かめ、`libruby-static.a`はgemとLSPを準備した後に消すようにした。
+- 利用者がWSL2のPCで、このPRのCIのポータブル版を確かめた。アプリ専用のディストリビューションは新しい版で登録し直され、`rbtree`・`numo/narray`・`ac-library-rb/fenwick_tree`を使うコードが期待どおりに出力し、`AcLibraryRb::`の後の補完に`AcLibraryRb::FenwickTree`などのRuby LSPの候補が出た。
