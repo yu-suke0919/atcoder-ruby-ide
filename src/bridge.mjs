@@ -35,6 +35,7 @@ export const ide = {
   browserReload: () => invoke('browser_reload'),
   onBrowserUrl: handler => window.__TAURI__.event.listen('browser-url', event => handler(event.payload)),
   onTaskPage: handler => window.__TAURI__.event.listen('task-page', event => handler(event.payload)),
+  onRuntimeDownload: handler => window.__TAURI__.event.listen('runtime-download', event => handler(event.payload)),
   rubyInfo: () => invoke('ruby_info'),
   run(code, stdin, expectedOutput = null, tolerance = null, problemTimeLimitMs = null, notify = () => {}) {
     return new Promise((resolve, reject) => {

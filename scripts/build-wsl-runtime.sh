@@ -1,5 +1,6 @@
 #!/bin/bash
-# Builds the app's own WSL distribution: vendor/wsl/atcoder-linux.tar.gz and runtime.json.
+# Builds the app's own WSL distribution: vendor/wsl-image/atcoder-linux.tar.gz, and
+# vendor/wsl/runtime.json, which the app carries to download and check that image.
 # Runs on Ubuntu 22.04 (CI) with the Ruby build dependencies, Node.js, Rust and Docker installed.
 # See docs/architecture.md#wslのエージェント and docs/atcoder-runtime.md#rubyのビルドc3a.
 set -euo pipefail
@@ -53,8 +54,9 @@ strip "$payload/atcoder-ruby-agent"
 # build is imported again while the same build is kept.
 version_id=$(tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -C "$payload" -cf - . | sha256sum | cut -c1-64)
 out="$root/vendor/wsl"
-rm -rf "$out"
-mkdir -p "$out"
+image="$root/vendor/wsl-image/atcoder-linux.tar.gz"
+rm -rf "$out" "$(dirname "$image")"
+mkdir -p "$out" "$(dirname "$image")"
 container="atcoder-ruby-ide-linux-$$"
 docker rm -f "$container" >/dev/null 2>&1 || true
 docker run --name "$container" -e VERSION="$version_id" -v "$payload:/payload:ro" ubuntu:22.04 sh -euc '
@@ -68,8 +70,13 @@ docker run --name "$container" -e VERSION="$version_id" -v "$payload:/payload:ro
   chmod -R u=rwX,go=rX /opt/atcoder-ruby-ide
   printf "[user]\ndefault=atcoder\n\n[interop]\nappendWindowsPath=false\n" >/etc/wsl.conf
   echo "$VERSION" >/etc/atcoder-ruby-ide-version'
-docker export "$container" | gzip -9n >"$out/atcoder-linux.tar.gz"
+docker export "$container" | gzip -9n >"$image"
 docker rm "$container" >/dev/null
-printf '{\n  "rubyVersion": "%s",\n  "version": "%s"\n}\n' "$version" "$version_id" >"$out/runtime.json"
-du -sh "$payload" "$out/atcoder-linux.tar.gz"
+# The image's bytes differ from build to build, so the release names it by its SHA-256
+# (scripts/publish-wsl-image.cjs); the app downloads it from there.
+sha256=$(sha256sum "$image" | cut -c1-64)
+url="https://github.com/${GITHUB_REPOSITORY:-yu-suke0919/atcoder-ruby-ide}/releases/download/wsl-images/atcoder-linux-$sha256.tar.gz"
+printf '{\n  "rubyVersion": "%s",\n  "version": "%s",\n  "sha256": "%s",\n  "bytes": %s,\n  "url": "%s"\n}\n' \
+  "$version" "$version_id" "$sha256" "$(stat -c %s "$image")" "$url" >"$out/runtime.json"
+du -sh "$payload" "$image"
 cat "$out/runtime.json"
