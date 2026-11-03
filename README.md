@@ -52,7 +52,7 @@ WSL2の準備は必要ですが、Ruby のインストールや PATH 設定は�
 
 - Windows 10（x64は1903・ビルド18362.1049以降）または11。Homeでも使えます。
 - WSL2の本体。管理者のPowerShellで `wsl --install --no-distribution` を実行して再起動してください（Ubuntuなどのディストリビューションは要りません。入っていても使いません）。BIOS/UEFIでCPUの仮想化機能を有効にする必要があります。
-- アプリは初回起動時に、同梱のアプリ専用のLinux（Ubuntu 22.04の最小構成に Ruby・gem・エージェントを入れたもの）を、ディストリビューション `AtCoderRubyIDE` として登録します。利用者のディストリビューション・PATH・シェルの設定は変えません。WSL1でも動きますが、メモリ上限は効きません。
+- アプリは初回起動時に、アプリ専用のLinux（Ubuntu 22.04の最小構成に Ruby・gem・エージェントを入れたもの、約45 MB）をGitHubのリリースからダウンロードし、SHA-256を確かめてから、ディストリビューション `AtCoderRubyIDE` として登録します。初回とアプリの更新でLinuxの版が変わったときだけ、ネットワークが要ります。利用者のディストリビューション・PATH・シェルの設定は変えません。WSL1でも動きますが、メモリ上限は効きません。
 - インストール版はアンインストールのときに登録を解除します。ポータブル版をやめるときは `wsl --unregister AtCoderRubyIDE` を実行してください。
 
 ## Windows 配布版
@@ -62,12 +62,12 @@ WSL2の準備は必要ですが、Ruby のインストールや PATH 設定は�
 - `AtCoder-Ruby-IDE-<version>-x64-portable.zip`：展開して `atcoder-ruby-ide.exe` を起動
 - `AtCoder-Ruby-IDE-<version>-x64-setup.exe`：ユーザー単位の NSIS インストーラー
 
-どちらも、アプリ専用のLinux（Ubuntu 22.04の最小構成に、CIでビルドしたRuby 3.4.5（YJIT付き）・採用gem・Ruby LSP・エージェントを入れたもの）を含みます。WindowsにはRubyを同梱しません。
+どちらもアプリ本体だけで、アプリ専用のLinux（Ubuntu 22.04の最小構成に、CIでビルドしたRuby 3.4.5（YJIT付き）・採用gem・Ruby LSP・エージェントを入れたもの）は初回起動時にダウンロードします。WindowsにはRubyを同梱しません。
 ac-library-rb・rbtree・sorted_set・numo-narrayなど、AtCoderの公式追加gemのうち12個を公式と同じバージョンで、必要な依存gemとともに同梱します。補完では、これらのgemのAPIも候補に出ます。対応範囲・未同梱gem・制限の差は[実行環境の資料](docs/atcoder-runtime.md)を参照してください。
-ZIP はフォルダー全体を保持してください。単体のアプリ exe だけを取り出すと Ruby を実行できません。
+ZIP はフォルダー全体を保持してください。単体のアプリ exe だけを取り出すと、ダウンロードするLinuxの情報（`wsl/runtime.json`）がなく Ruby を実行できません。
 
 WebView2 Runtime が必要です。Windows で未導入の場合、NSIS インストーラーが取得します（初回はネット接続が必要）。
-オフライン利用する ZIP 版では、あらかじめ WebView2 を用意してください。現時点ではコード署名を設定していません。
+オフライン利用する ZIP 版では、あらかじめ WebView2 を用意し、一度ネットワークにつないで起動してLinuxを登録しておいてください。現時点ではコード署名を設定していません。
 AtCoder 本番の追加 gem や実行環境との完全一致は対象外です。
 
 ## 開発
@@ -87,7 +87,7 @@ cargo fmt --all --check
 
 共通テスト（`npm test`）とブラウザー用テストホストは `RUBY_PATH`、未指定なら PATH の `ruby` を使い、テストホストは自分自身をエージェントとして起動して Ruby を実行します。`npm run prepare:gems` で、その Ruby の標準gemディレクトリへ固定gemを追加します。実行時も同じディレクトリだけを探索し、GEM_HOME・GEM_PATHやユーザー用gemの影響を受けません。
 
-アプリ専用の Linux（`vendor/wsl/`）は、Docker が使える Ubuntu 22.04 などの Linux で、Ruby のビルドに必要なパッケージ（`build-essential libssl-dev libyaml-dev libffi-dev zlib1g-dev libgmp-dev`）を入れてから `npm run prepare:wsl` で作り、`npm run check:wsl` で確かめます。CI の `wsl-runtime` Artifact を `vendor/wsl/` に置いても使えます。Windows で `npm start` するときも、これを WSL に登録して Ruby を実行します。
+アプリ専用の Linux（イメージは `vendor/wsl-image/`、アプリに入れる情報は `vendor/wsl/runtime.json`）は、Docker が使える Ubuntu 22.04 などの Linux で、Ruby のビルドに必要なパッケージ（`build-essential libssl-dev libyaml-dev libffi-dev zlib1g-dev libgmp-dev`）を入れてから `npm run prepare:wsl` で作り、`npm run check:wsl` で確かめます。CI の `wsl-runtime` Artifact の `runtime.json` を `vendor/wsl/` に置いても使えます。Windows で `npm start` するときも、アプリは `runtime.json` のURLからイメージを取得して WSL に登録します。
 
 初回導入・コンパイルと、準備後の画面テスト時間は分けて測定します。
 
@@ -96,7 +96,7 @@ Windows では、アプリから Ruby の PATH を除去しても、WSL に置�
 
 ## ビルドと検証
 
-Windows で、`vendor/wsl/` を用意し、WSL を入れてから実行します。
+Windows で、`vendor/wsl/runtime.json` を用意し、WSL を入れてから実行します。
 
 ```powershell
 npm run build:win
@@ -109,7 +109,7 @@ npm run package:win
 
 Ruby のソースは公式配布元から取得し、[固定した SHA-256](config/ruby-wsl.json) を検証します。
 配布物は `artifacts/`、容量と同梱物のハッシュは `artifacts/reports/` に生成します。両配布物で、未保存コードからの補完取得を WSL の Ruby LSP で検証します。
-[GitHub Actions](.github/workflows/ci.yml) は、WSL へ置く同梱物の作成と確認（Ubuntu 22.04）、Linux の共通・画面テストと、Windows のビルド・ZIP 展開相当のアプリ・NSIS インストール後のアプリ起動スモークテスト（WSL1）を実行します。
+[GitHub Actions](.github/workflows/ci.yml) は、WSL へ置くイメージの作成と確認とリリース `wsl-images` への配置（Ubuntu 22.04）、Linux の共通・画面テストと、Windows のビルド・ZIP 展開相当のアプリ・NSIS インストール後のアプリ起動スモークテスト（WSL1）を実行します。
 資料だけの変更（`docs/**` とルートの `*.md`）では実行せず、同じブランチ・PR に新しい push があると古い実行を止めます。
 成功した Windows ジョブの Artifacts から ZIP またはインストーラーを取得できます。
 
