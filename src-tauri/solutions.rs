@@ -55,6 +55,16 @@ fn natural(a: &str, b: &str) -> Ordering {
 }
 
 pub(crate) fn validate_name(name: &str) -> Result<(), String> {
+    let error = || Err("ファイル名は英数字・_・-の1〜40文字にしてください。".into());
+    // ASCII first: the reserved names below are compared by bytes.
+    if name.is_empty()
+        || name.len() > NAME_LIMIT
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    {
+        return error();
+    }
     let reserved = ["CON", "PRN", "AUX", "NUL"]
         .iter()
         .any(|device| name.eq_ignore_ascii_case(device))
@@ -63,14 +73,8 @@ pub(crate) fn validate_name(name: &str) -> Result<(), String> {
                 .iter()
                 .any(|device| name[..3].eq_ignore_ascii_case(device))
             && name.as_bytes()[3].is_ascii_digit());
-    if name.is_empty()
-        || name.len() > NAME_LIMIT
-        || reserved
-        || !name
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-    {
-        return Err("ファイル名は英数字・_・-の1〜40文字にしてください。".into());
+    if reserved {
+        return error();
     }
     Ok(())
 }

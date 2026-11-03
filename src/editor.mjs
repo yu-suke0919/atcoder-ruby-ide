@@ -107,6 +107,12 @@ function complete(view) {
 
 export function createEditor(parent, initial, onChange, onCursor, completionClient) {
   const writable = new Compartment();
+  // Ruby LSP's replies are used only while the editor shows the state they were asked for.
+  const completion = new Compartment();
+  const completer = currentRevision => autocompletion({ override: [lspCompletions(completionClient, () => revision === currentRevision)], activateOnTyping: false, defaultKeymap: false, filterStrict: true });
+  // The other files of the open problem keep their state, and with it their undo history.
+  const files = new Map();
+  let file = null;
   let readOnly = false;
   let revision = 0;
   let readingForms = [];
@@ -116,7 +122,7 @@ export function createEditor(parent, initial, onChange, onCursor, completionClie
     EditorView.contentAttributes.of({ id: 'code-editor', 'data-testid': 'code-editor', 'aria-label': 'Ruby コード', tabindex: '0', spellcheck: 'false', autocapitalize: 'off' }),
     lineNumbers(), drawSelection(), history(), errorPosition, readingField(readingForms), StreamLanguage.define(ruby), indentOnInput(),
     bracketMatching(), closeBrackets(), syntaxHighlighting(colors), theme,
-    autocompletion({ override: [lspCompletions(completionClient, () => revision === currentRevision)], activateOnTyping: false, defaultKeymap: false, filterStrict: true }),
+    completion.of(completer(currentRevision)),
     EditorView.domEventHandlers({ compositionstart: (_event, view) => { closeCompletion(view); return false; } }),
     search({ top: true }), EditorState.phrases.of(phrases),
     keymap.of([
@@ -148,7 +154,24 @@ export function createEditor(parent, initial, onChange, onCursor, completionClie
   const view = new EditorView({ parent, state: state(initial) });
   return {
     get value() { return view.state.doc.toString(); },
-    set value(value) { revision++; view.setState(state(value)); },
+    /** Shows `name` with `code`. Within one problem (`sameProblem`) a file shown again keeps its
+     * undo history; another problem starts every file afresh (docs/code-editor.md). */
+    show(name, code, sameProblem = false) {
+      revision++;
+      if (!sameProblem) files.clear();
+      else if (file !== null) files.set(file, view.state);
+      const kept = files.get(name);
+      files.delete(name);
+      file = name;
+      if (kept?.doc.toString() !== code) { view.setState(state(code)); return; }
+      view.setState(kept);
+      view.dispatch({ effects: [writable.reconfigure(editable()), completion.reconfigure(completer(revision)), setReadingForms.of(readingForms), setErrorPosition.of(null)] });
+    },
+    renameFile(from, to) {
+      if (file === from) file = to;
+      else if (files.has(from)) { files.set(to, files.get(from)); files.delete(from); }
+    },
+    forgetFile(name) { files.delete(name); },
     // The [loop, array] forms of the open problem's reading code; kept for its other files.
     set readingForms(forms) { readingForms = forms; view.dispatch({ effects: setReadingForms.of(forms) }); },
     set errorLine(line) {

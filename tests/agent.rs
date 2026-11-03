@@ -253,6 +253,17 @@ fn hangup_and_terminate_stop_running_ruby_and_its_children() {
 }
 
 #[test]
+fn ruby_and_its_children_stop_after_the_time_limit_even_if_the_agent_is_killed() {
+    let mut agent = Agent::start();
+    let pids = started_pids(&mut agent, 1);
+    // SIGKILL leaves the agent no chance to stop its runs; GNU timeout stops them instead.
+    unsafe { libc::kill(agent.child.id() as i32, libc::SIGKILL) };
+    assert!(agent.exits_within(Duration::from_secs(2)));
+    // The default limit is 5 seconds from the start, and timeout acts 2 seconds after it.
+    assert!(gone_within(&pids, Duration::from_secs(9)), "{pids:?}");
+}
+
+#[test]
 fn signals_the_agent_handles_are_not_blocked_in_ruby() {
     let mut agent = Agent::start();
     agent.answer(
