@@ -51,7 +51,8 @@ impl RubyLsp {
                 },
                 "initializationOptions": {
                     "enabledFeatures": ["completion", "documentSymbols"], "formatter": "none", "linters": [],
-                    "indexing": {"excludedPatterns": ["**/ruby-lsp/**"]}
+                    // bit_utils' backports redefines core methods for old Rubies (600 files).
+                    "indexing": {"excludedGems": ["backports"]}
                 }
             }),
             deadline,
@@ -231,7 +232,7 @@ impl Session {
         let uri = url::Url::from_file_path(directory.path().join("solution.rb"))
             .map_err(|_| "LSPの文書URIを作れません")?
             .to_string();
-        let mut command = crate::process::ruby_command(ruby);
+        let mut command = crate::process::ruby_command(ruby, None);
         command
             .arg(script)
             .current_dir(directory.path())

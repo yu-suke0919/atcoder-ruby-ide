@@ -182,7 +182,7 @@ impl PreparedRun {
         let bootstrap = directory.path().join("stdio.rb");
         std::fs::write(&source, &self.request.code).map_err(|e| e.to_string())?;
         std::fs::write(&bootstrap, "Gem.use_paths(Gem.default_dir); [STDIN, STDOUT, STDERR].each { |io| io.binmode; io.set_encoding(Encoding::UTF_8) }; STDOUT.sync = true; STDERR.sync = true\n").map_err(|e| e.to_string())?;
-        let mut command = crate::process::ruby_command(ruby);
+        let mut command = crate::process::ruby_command(ruby, Some(self.timeout));
         command
             .env("RUBY_THREAD_VM_STACK_SIZE", RUBY_VM_STACK_BYTES.to_string())
             .arg("-r")

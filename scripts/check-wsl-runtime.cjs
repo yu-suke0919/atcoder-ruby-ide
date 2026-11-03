@@ -60,8 +60,10 @@ async function checkRuntime(image = path.join(root, 'vendor/wsl/atcoder-linux.ta
     const completion = await ask('lsp_complete', { code, line: 1, character: code.split('\n')[1].length });
     const items = completion.value?.items ?? completion.value;
     assert.ok(items?.some(item => item.label === 'runtime_only_method'), JSON.stringify(completion));
+    const gem = await ask('lsp_complete', { code: 'AcLibraryRb::Fenwick', line: 0, character: 20 });
+    assert.ok((gem.value?.items ?? gem.value)?.some(item => item.label === 'AcLibraryRb::FenwickTree'), JSON.stringify(gem));
     await ask('shutdown');
-    console.log(`WSL distribution ${runtime.version} works as atcoder: ${info.value.version}, YJIT, AtCoder gems and Ruby LSP`);
+    console.log(`WSL distribution ${runtime.version} works as atcoder: ${info.value.version}, YJIT, AtCoder gems and Ruby LSP with their APIs`);
   } finally {
     // After a failed check the agent still runs and would keep Node waiting.
     agent?.kill('SIGKILL');

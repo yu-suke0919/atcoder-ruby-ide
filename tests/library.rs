@@ -744,6 +744,9 @@ fn files_are_added_renamed_and_deleted_with_safe_unique_names_in_natural_order()
         "x.rb",
         "CON",
         "日本語",
+        // Four bytes, like COM1, but the third byte is inside a character.
+        "a名",
+        "😀",
         &"a".repeat(41),
         "a_1",
     ] {
