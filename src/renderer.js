@@ -442,7 +442,7 @@ function applyWorkspace(result, problem) {
   saveError = null;
   activeProblem = { ...problem, files: result.files, file: result.file };
   editor.readingForms = result.readingForms ?? [];
-  editor.value = result.document.code;
+  editor.show(result.file, result.document.code);
   savedCode = editor.value;
   filePath = result.document.filePath;
   cases.replace(result.samples.cases, { saved: true, tolerance: result.samples.tolerance ?? null });
@@ -478,7 +478,7 @@ async function showFile(name) {
   const opened = await ide.openFile(problem.url, name);
   if (problem !== activeProblem) return;
   activeProblem.file = name;
-  editor.value = opened.code;
+  editor.show(name, opened.code, true);
   savedCode = editor.value;
   filePath = opened.filePath;
   resetComparison(true);
@@ -527,7 +527,10 @@ async function rename() {
   if (fileLocked() || !from) return;
   if (from !== to && !await leaveProblem()) return;
   try {
-    if (from !== to) await ide.renameFile(activeProblem.url, from, to);
+    if (from !== to) {
+      await ide.renameFile(activeProblem.url, from, to);
+      editor.renameFile(from, to);
+    }
   } catch (error) {
     $('file-rename-message').textContent = error.message;
     return;
@@ -561,6 +564,7 @@ $('file-delete-ok').addEventListener('click', async () => {
   }
   await fileAction(async () => {
     await ide.deleteFile(activeProblem.url, name);
+    editor.forgetFile(name);
     activeProblem.files = activeProblem.files.filter(other => other !== name);
     renderFiles();
   });
@@ -725,7 +729,6 @@ async function openTask(task) {
     await ide.browserTask(task.url).catch(error => taskMessage(error.message, true));
     return;
   }
-  if (!await leaveProblem()) return;
   pendingTask = task;
   try {
     await ide.browserTask(task.url);
@@ -738,10 +741,22 @@ function openPendingTask() {
   opening = opening.then(openPendingTaskNow);
   return opening;
 }
+// The open problem stays editable while the page is read, so it is saved (and checked not to be
+// running) every time just before the workspace may change, also when the page-read event opens it.
 async function openPendingTaskNow() {
   const task = pendingTask;
   if (!task) return;
   await fileAction(async () => {
+    if (running) {
+      pendingTask = null;
+      taskMessage(`実行中のため${task.label}を開きませんでした。実行が終わってから、もう一度選んでください。`, true);
+      return;
+    }
+    if (!await leaveProblem()) {
+      if (pendingTask === task) pendingTask = null;
+      return;
+    }
+    if (pendingTask !== task) return;
     const result = await ide.openTask(task.url, task.label);
     if (pendingTask !== task) return;
     if (!result) {

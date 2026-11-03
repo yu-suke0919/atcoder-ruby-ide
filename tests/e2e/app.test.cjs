@@ -1295,6 +1295,46 @@ test('M16: a page that needs login asks to log in and opens once the page can be
   assert.equal(await page.locator('#stdin').inputValue(), 'x\n');
 });
 
+// Serves a page that needed login and reloads it in the browser, as after logging in there.
+async function servePendingPage(problem, delay = 0) {
+  const pathname = `/contests/${testContest}/tasks/${problem.id}`;
+  app.atcoder.pages.set(pathname, taskPage({ samples: [['x\n', 'x\n']] }));
+  app.atcoder.delays.set(pathname, delay);
+  if (runner !== 'native') return app.request('browser_task', { url: problem.url });
+  const taskTab = app.browser.contexts()[0].pages().find(candidate => candidate.url().endsWith(pathname));
+  return taskTab.reload();
+}
+async function openPendingProblem(id) {
+  const problem = await seedWorkspaceProblem(app, testContest, id, { task: null, code: null, cases: null });
+  await page.locator('#contest-add').click();
+  await page.locator('#contest-url').fill(problem.url);
+  await page.locator('#contest-register').click();
+  await page.locator('#task-message').filter({ hasText: 'ログイン' }).waitFor();
+  return problem;
+}
+
+test('M09: edits made while the next problem page loads are saved before it opens', async () => {
+  const problem = await openPendingProblem('loading_b');
+  // The page is read after the edit and before the autosave delay (800 ms).
+  const reloading = servePendingPage(problem, 300);
+  await page.locator('#code-editor').fill('puts :edited_while_b_loading');
+  await page.locator('#problem-title').filter({ hasText: problem.title }).waitFor();
+  await reloading;
+  assert.equal(await readFile(starterProblem.solution, 'utf8'), 'puts :edited_while_b_loading');
+});
+
+test('M09: a page read while the problem runs does not replace it', async () => {
+  const problem = await openPendingProblem('loading_c');
+  await page.locator('#code-editor').fill('sleep 2\nputs :done');
+  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await page.locator('#stop').and(page.locator(':enabled')).waitFor();
+  await servePendingPage(problem);
+  await page.locator('#task-message').filter({ hasText: '実行中' }).waitFor();
+  assert.equal(await page.locator('#problem-title').textContent(), starterProblem.title);
+  await page.getByTestId('run-status').filter({ hasText: '正常終了' }).waitFor();
+  assert.equal(await page.locator('#stdout').textContent(), 'done\n');
+});
+
 test('M17: contest icons can be hidden and restored from the rail', async () => {
   const icon = railIcon(testContest);
   await icon.click({ button: 'right' });
