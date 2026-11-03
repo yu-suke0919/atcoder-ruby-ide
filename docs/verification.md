@@ -640,3 +640,4 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 - 資料：ロードマップの現在地にC2・C3aを加え、順番を次のC3bからにした。MVPのWSLのディストリビューションを、アプリ専用のものに直した。
 - クラウドセッション（Linux、root、Ruby 3.4.5）で、Rust（rootで失敗する既知の`r02_cleanup_failure_releases_reservation`以外）、Node単体96件、`cargo fmt --all --check`、画面テスト83件（Windows専用2件を除く）が成功した。
 
+- 利用者がWSL2のPCで、このPRのCIのポータブル版を確かめた。実行中に届いたページで問題が切り替わらないこと、日本語・絵文字のファイル名を拒否した後も保存と切り替えができること、エージェントを`SIGKILL`で止めた後にRubyが残らず、次の実行でエージェントが起動し直すこと、タブを往復した後のUndo・Redoと、戻ったファイルでRuby LSPの候補（「LSP · Kernel」）が出ることを確かめ、問題はなかった。
