@@ -1,14 +1,21 @@
+// Ruby runs only in the agent, on Linux (WSL); the Windows app relays to it
+// (docs/architecture.md#wslのエージェント).
+#[cfg(unix)]
 pub mod agent;
 mod agent_client;
+#[cfg(unix)]
 mod commands;
 mod comparison;
 mod contests;
 mod document;
 mod files;
 mod input_code;
+#[cfg(unix)]
 mod lsp;
 mod navigation;
+#[cfg(unix)]
 mod process;
+#[cfg(unix)]
 mod runner;
 mod samples;
 mod solutions;
@@ -16,6 +23,7 @@ mod task;
 pub mod wsl;
 
 pub use agent_client::AgentClient;
+#[cfg(unix)]
 pub use commands::{ruby_info, RubyInfo};
 pub use comparison::{decode_output, first_difference, OutputDifference};
 pub use contests::{
@@ -24,17 +32,18 @@ pub use contests::{
 };
 pub use document::{DocumentResult, DocumentStore};
 pub use input_code::{input_code, reading_forms};
+#[cfg(unix)]
 pub use lsp::{LspInfo, RubyLsp};
 pub use navigation::{browser_target, is_allowed, ALLOWED_ORIGINS};
+#[cfg(unix)]
 pub use runner::{Output, PreparedRun, RunRequest, RunResult, Runner};
 pub use samples::{load_samples, save_samples, ProblemSample, SampleCase, Samples};
 pub use task::{
     is_task_page, parse_task, read_task_page, HomeWorkspace, Task, TaskWorkspace, Workspaces,
 };
 
-use serde::Serialize;
-
-#[derive(Clone, Serialize)]
+#[cfg(unix)]
+#[derive(Clone, serde::Serialize)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",

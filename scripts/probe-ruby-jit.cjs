@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
-const ruby = process.env.RUBY_PATH || (process.platform === 'win32' ? path.join(root, 'vendor/ruby/bin/ruby.exe') : 'ruby');
+const ruby = process.env.RUBY_PATH || 'ruby';
 const destination = path.resolve(process.argv[2] || path.join(root, 'test-results/ruby-jit.json'));
 const env = { ...process.env };
 for (const key of Object.keys(env)) {
