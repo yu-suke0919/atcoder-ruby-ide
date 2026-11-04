@@ -16,7 +16,10 @@ pub fn ruby_info(path: &Path) -> Result<RubyInfo, String> {
         })?
         .execute(path, |_| {})?;
     if result.status != "completed" {
-        return Err(format!("Ruby を起動できません: {}", result.stderr));
+        return Err(format!(
+            "Ruby を起動できません（{}、終了コード{:?}）: {}",
+            result.status, result.exit_code, result.stderr
+        ));
     }
     Ok(RubyInfo {
         version: result.stdout.trim().into(),
