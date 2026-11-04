@@ -1,13 +1,13 @@
 # Ruby LSPによる補完
 
-Shopify Ruby LSPをローカルの別プロセスとして利用し、CodeMirrorの手動補完へ接続する。未保存文書の同期・補完取得・停止はRustで管理する。C3a以降、Ruby LSPはWSL内のエージェントが競技実行と同じRubyで動かし、Windowsのアプリは`lsp_start`・`lsp_complete`・`lsp_stop`の要求と結果を中継する（[WSLのエージェント](architecture.md#wslのエージェント)）。
+Shopify Ruby LSPをローカルの別プロセスとして利用し、CodeMirrorの補完（入力中の自動表示とCtrl+Space）へ接続する。未保存文書の同期・補完取得・停止はRustで管理する。C3a以降、Ruby LSPはWSL内のエージェントが競技実行と同じRubyで動かし、Windowsのアプリは`lsp_start`・`lsp_complete`・`lsp_stop`の要求と結果を中継する（[WSLのエージェント](architecture.md#wslのエージェント)）。
 
 - Rubyは競技実行と同じ固定済み3.4.xを使う。LSP用の追加gemは`vendor/ruby-lsp/gems`へ分離し、競技用の標準gemディレクトリには追加しない。
 - `config/ruby-lsp.json`へRuby LSPと依存gemのバージョンを固定する。Rubyに含まれるPrism・RBS・logger・Bundlerも指定バージョンを確認する。追加するpure Ruby gemはRubyGemsのSHA-256を検証し、ライセンスごと準備する。C拡張のビルドは行わない。Ruby更新で同梱依存が変われば、固定情報とテストも見直す。
 - LSPの解析対象（インデックス）：LSPの固定Gemfileは、[採用した競技用gem](atcoder-runtime.md#追加するgem)を既定のグループに、Ruby LSPと依存gemを`development`グループに書く。Ruby LSPは`development`だけのgemを解析しないため、ac-library-rbなどの競技用gemとRubyの標準ライブラリのAPIが補完候補に出て、Ruby LSP・RBSなどの内部のAPIは出ない。bit_utilsが依存するbackportsは、古いRuby向けに組み込みのメソッドを定義し直す600のファイルからなるため、初期化の`indexing.excludedGems`で解析から外す。競技用gemは競技実行のRubyの標準gemディレクトリにあるものを参照し、LSP用には複製しない。競技実行の側からLSP用gemが見えない分離は変えない（C3b）。
 - `npm run prepare:lsp`で固定gemとGemfile・lock・起動スクリプトを用意する。移動後に無効になるRubyGemsのCLI用リンクは除去し、固定Gemfileで`Bundler.setup`した後、gem内の公式ruby-lsp実行ファイルをRubyから直接読み込む。起動時のcomposed bundle生成・bundle install・自動更新を使わず、ネットワーク不要とする。
 - 起動時は外部のRUBYOPT・RUBYLIB・GEM_HOME・GEM_PATH・BUNDLE_*を除去し、専用のGemfileとgem探索先を設定する。Bundlerのユーザー設定を無視する。競技実行の環境隔離は維持する。
-- Rustの`RubyLsp`が1つのセッションを管理する。Tauriコマンドは`lsp_start`・`lsp_complete`・`lsp_stop`。初回起動は明示的に行い、アプリ起動だけではLSPを起動しない。二重起動は同じセッションを返す。
+- Rustの`RubyLsp`が1つのセッションを管理する。Tauriコマンドは`lsp_start`・`lsp_complete`・`lsp_stop`。最初の補完（入力中の自動表示を含む）で起動し、アプリ起動だけではLSPを起動しない。二重起動は同じセッションを返す。
 - 作業場所はセッション専用の一時ディレクトリとし、利用者のGemfileや拡張機能を読み込まない。解答コードはファイルへ保存せず、補完要求ごとに全文を`didOpen`で送る。2回目以降は先に`didClose`を送る。全文置換の`didChange`ではRuby LSPの変更箇所の最適化により途中の宣言が再索引されないため、全文スナップショットを開き直して文書全体を解析する。文書URIはセッション内の`solution.rb`に固定し、位置は0始まりのUTF-16単位とする。初期インデックス完了後に起動成功を返す。`documentSymbol`で未保存の宣言をインデックスへ反映してから補完を取得する。
 - stdioのContent-Length付きJSON-RPCで通信する。起動30秒・要求10秒・正常終了2秒を上限とし、異常終了・不正な応答・タイムアウトはエラーにする。応答は8 MiB、ヘッダーは8 KiB、文書はUTF-8で1 MiBまで。エラー後はセッションを破棄して再起動できる。要求は直列化し、停止も進行中の起動・要求が完了してから処理する。
 - 終了時はshutdown／exitを送り、応答しなければプロセス群を終了する。アプリ終了・セッション破棄でもプロセスグループを終了し、標準エラーを排出してパイプ詰まりを防ぐ。
@@ -15,7 +15,7 @@ Shopify Ruby LSPをローカルの別プロセスとして利用し、CodeMirror
 
 ## エディタへの接続
 
-- Ctrl+Space／「補完」で初めて起動する。準備中・準備完了・失敗をコード欄に表示し、失敗時は「再試行」または次の手動補完で再接続できる。待機中も編集・保存・実行を使える。
+- 最初の補完（入力中の自動表示、またはCtrl+Space／「補完」）で起動する。準備中・準備完了・失敗をコード欄に表示し、失敗時は「再試行」または次の補完で再接続できる。入力のたびに要求するが、直列化した待ち行列で無効になった要求は送らない。待機中も編集・保存・実行を使える。
 - LSPへの要求はフロントエンドでも直列化する。待ち行列で無効になった要求は送らない。編集・カーソル移動・文書や問題の切替・読取専用への移行・IME・Escによる取消後の応答を表示・挿入しない。
 - LSPが返すメソッド候補を優先し、同じ表示名の候補を重複させない。キーワード・文書内単語・3種類の定型コードは既存の候補生成を共有する。LSP 0.26.11は直接代入したローカル変数の型で候補を返せない場合があるため、候補がない場合と接続失敗時には既存の限定的な型推定・標準メソッド候補を使う。
 - 候補の挿入範囲・挿入文字列はLSPのTextEditを使い、Undo／Redoできる通常の編集として適用する。編集範囲はカーソルのある行内に限定し、前後の行にまたがる範囲を拒否する。対応しないコマンド・追加編集・LSPスニペットは適用しない。候補の説明はプレーンテキストで表示し、既存カタログに同じ標準メソッドがあれば日本語の概要も使う。Enumerable由来の候補にはArray／Hashとして収録した説明も使い、自作クラスの同名メソッドには付けない。
