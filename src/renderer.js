@@ -32,7 +32,7 @@ let saveError = null;
 let resolveSaveFailed = null;
 let canceled = false;
 const comparisonLabels = { none: '比較なし', pending: '未比較', running: '比較中…', matched: '一致', mismatched: '不一致', unavailable: '判定なし' };
-const statusLabel = (status, exitCode, executionLimitMs) => ({ completed: '正常終了', failed: `エラー終了${exitCode == null ? '' : ` (${exitCode})`}`, stopped: '停止しました', timeout: `時間制限で停止（${executionLimitMs / 1000} 秒）`, 'output-limit': '出力上限で停止（1 MiB）', 'memory-limit': 'ローカルのメモリ上限で停止（1 GiB）', running: '実行中…', canceled: '未実行（中止）', error: '実行できませんでした' })[status] || '実行する準備ができています';
+const statusLabel = (status, exitCode, executionLimitMs, memoryLimitMiB) => ({ completed: '正常終了', failed: `エラー終了${exitCode == null ? '' : ` (${exitCode})`}`, stopped: '停止しました', timeout: `時間制限で停止（${executionLimitMs / 1000} 秒）`, 'output-limit': '出力上限で停止（1 MiB）', 'memory-limit': `ローカルのメモリ上限で停止（${memoryLimitMiB} MiB）`, running: '実行中…', canceled: '未実行（中止）', error: '実行できませんでした' })[status] || '実行する準備ができています';
 let savedCode = '';
 let filePath = null;
 let running = false;
@@ -190,7 +190,7 @@ function updateCaseList() {
     tab.setAttribute('role', 'tab');
     tab.textContent = String(index + 1);
     tab.dataset.state = caseState(item);
-    tab.title = `サンプル ${index + 1} · ${item.status === 'running' ? '実行中' : item.status && item.status !== 'completed' ? statusLabel(item.status, item.exitCode, item.executionLimitMs) : comparisonLabels[item.comparison]}${item.exceededTimeLimitMs !== null ? ' · 制限超過の可能性' : ''}`;
+    tab.title = `サンプル ${index + 1} · ${item.status === 'running' ? '実行中' : item.status && item.status !== 'completed' ? statusLabel(item.status, item.exitCode, item.executionLimitMs, item.memoryLimitMiB) : comparisonLabels[item.comparison]}${item.exceededTimeLimitMs !== null ? ' · 制限超過の可能性' : ''}`;
     if (item.exceededTimeLimitMs !== null) tab.classList.add('warning');
     tab.setAttribute('aria-label', tab.title);
     tab.setAttribute('aria-selected', String(index === cases.selected));
@@ -211,7 +211,7 @@ function showResult() {
   for (const stream of ['stdout', 'stderr']) $(stream).textContent = item[stream];
   $('stderr-count').textContent = item.stderr ? `（${item.stderr.split('\n').filter(Boolean).length} 行）` : '';
   if (['failed', 'error'].includes(item.status) && item.stderr) $('stderr-panel').open = true;
-  $('run-status').textContent = statusLabel(item.status, item.exitCode, item.executionLimitMs);
+  $('run-status').textContent = statusLabel(item.status, item.exitCode, item.executionLimitMs, item.memoryLimitMiB);
   $('run-duration').textContent = item.durationMs === null ? '— ms' : `${item.durationMs} ms`;
   showExecutionLimit();
   showTimeLimitWarning();
@@ -328,7 +328,7 @@ async function run(all = false) {
   if (running || fileBusy || closing || !rubyAvailable || !activeProblem) return;
   const code = editor.value;
   cases.clear(all);
-  const queue = cases.snapshot(all, activeProblem?.timeLimitMs ?? null);
+  const queue = cases.snapshot(all, activeProblem?.timeLimitMs ?? null, activeProblem?.memoryLimitMiB ?? null);
   canceled = false;
   running = true;
   updateButtons();
@@ -340,7 +340,7 @@ async function run(all = false) {
       showResult();
       message('Ruby を実行しています。');
       try {
-        const result = await ide.run(code, snapshot.stdin, snapshot.compare ? snapshot.expectedOutput : null, snapshot.compare ? snapshot.tolerance : null, snapshot.timeLimitMs, event => {
+        const result = await ide.run(code, snapshot.stdin, snapshot.compare ? snapshot.expectedOutput : null, snapshot.compare ? snapshot.tolerance : null, snapshot.timeLimitMs, snapshot.memoryLimitMiB, event => {
           if (event.type === 'started') {
             cases.started(snapshot, event.executionLimitMs);
             if (item === cases.current) showExecutionLimit();
@@ -350,7 +350,7 @@ async function run(all = false) {
           }
         });
         cases.finish(snapshot, result);
-        message(result.status === 'completed' ? '実行が完了しました。' : statusLabel(result.status, result.exitCode, result.executionLimitMs), ['failed', 'timeout', 'output-limit', 'memory-limit'].includes(result.status));
+        message(result.status === 'completed' ? '実行が完了しました。' : statusLabel(result.status, result.exitCode, result.executionLimitMs, result.memoryLimitMiB), ['failed', 'timeout', 'output-limit', 'memory-limit'].includes(result.status));
       } catch (error) {
         cases.fail(snapshot, error.message);
         message(error.message, true);
@@ -838,7 +838,7 @@ async function checkRuby() {
   try {
     const info = await ide.rubyInfo();
     rubyAvailable = true;
-    $('ruby-version').textContent = info.version;
+    $('ruby-version').textContent = info.jit ? info.version : `${info.version}（WSL1のためJITなし）`;
     $('ruby-version').title = info.version;
     message('Ruby を確認しました。');
   } catch (error) {

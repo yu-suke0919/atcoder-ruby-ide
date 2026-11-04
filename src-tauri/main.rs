@@ -147,6 +147,7 @@ async fn run_ruby(
     expected_output: Option<String>,
     tolerance: Option<f64>,
     problem_time_limit_ms: Option<u32>,
+    problem_memory_limit_mib: Option<u32>,
     on_event: Channel<Value>,
 ) -> Result<(), String> {
     let agent = Arc::clone(&state.agent);
@@ -156,6 +157,7 @@ async fn run_ruby(
         "expectedOutput": expected_output,
         "tolerance": tolerance,
         "problemTimeLimitMs": problem_time_limit_ms,
+        "problemMemoryLimitMib": problem_memory_limit_mib,
     });
     tauri::async_runtime::spawn_blocking(move || {
         agent.run(args, move |event| {

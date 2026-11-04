@@ -7,7 +7,10 @@ use std::process::Stdio;
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-const RUBY_VM_STACK_BYTES: usize = 32 * 1024 * 1024;
+/// The memory limit, and the VM and native stacks, when the problem's memory limit is unknown.
+const DEFAULT_MEMORY_LIMIT_MIB: u32 = 1024;
+/// How often the memory in use is checked (docs/atcoder-runtime.md#メモリ上限).
+const MEMORY_CHECK_INTERVAL: Duration = Duration::from_millis(50);
 const MIN_EXECUTION_LIMIT_MS: u64 = 5000;
 const MAX_EXECUTION_LIMIT_MS: u64 = 30000;
 const EXECUTION_MARGIN_MS: u64 = 1000;
@@ -19,6 +22,7 @@ pub struct RunRequest {
     pub expected_output: Option<String>,
     pub tolerance: Option<f64>,
     pub problem_time_limit_ms: Option<u32>,
+    pub problem_memory_limit_mib: Option<u32>,
 }
 
 #[derive(Clone, Serialize)]
@@ -36,6 +40,8 @@ pub struct RunResult {
     pub exit_code: Option<i32>,
     pub duration_ms: u64,
     pub execution_limit_ms: u64,
+    #[serde(rename = "memoryLimitMiB")]
+    pub memory_limit_mib: u32,
     pub comparison: Option<bool>,
     pub difference: Option<OutputDifference>,
     pub error_line: Option<usize>,
@@ -56,6 +62,7 @@ pub struct PreparedRun {
     runner: Arc<Runner>,
     request: RunRequest,
     timeout: Duration,
+    memory_limit_mib: u32,
 }
 #[derive(Default)]
 struct Capture {
@@ -92,6 +99,12 @@ impl Runner {
             ),
             None => self.timeout,
         };
+        let memory_limit_mib = match request.problem_memory_limit_mib {
+            Some(0) => {
+                return Err("問題のメモリ制限は1〜4,294,967,295 MiBの整数にしてください。".into())
+            }
+            limit => limit.unwrap_or(DEFAULT_MEMORY_LIMIT_MIB),
+        };
         let mut active = self.active.lock().unwrap();
         if active.is_some() {
             return Err("すでに実行中です。".into());
@@ -113,6 +126,7 @@ impl Runner {
             runner: Arc::clone(self),
             request,
             timeout,
+            memory_limit_mib,
         })
     }
     pub fn stop(&self) -> bool {
@@ -170,6 +184,7 @@ impl PreparedRun {
                 exit_code: None,
                 duration_ms: 0,
                 execution_limit_ms: self.execution_limit_ms(),
+                memory_limit_mib: self.memory_limit_mib,
                 comparison: None,
                 difference: None,
                 error_line: None,
@@ -182,8 +197,14 @@ impl PreparedRun {
         std::fs::write(&source, &self.request.code).map_err(|e| e.to_string())?;
         std::fs::write(&bootstrap, "Gem.use_paths(Gem.default_dir); [STDIN, STDOUT, STDERR].each { |io| io.binmode; io.set_encoding(Encoding::UTF_8) }; STDOUT.sync = true; STDERR.sync = true\n").map_err(|e| e.to_string())?;
         let mut command = crate::process::ruby_command(ruby, Some(self.timeout));
+        // As on AtCoder: --jit, and the VM stack of the memory limit; the native stack follows it.
+        let memory_bytes = u64::from(self.memory_limit_mib) << 20;
+        crate::process::raise_stack_limit(&mut command, memory_bytes);
+        if crate::process::jit() {
+            command.arg("--jit");
+        }
         command
-            .env("RUBY_THREAD_VM_STACK_SIZE", RUBY_VM_STACK_BYTES.to_string())
+            .env("RUBY_THREAD_VM_STACK_SIZE", memory_bytes.to_string())
             .arg("-r")
             .arg(&bootstrap)
             .arg(&source)
@@ -243,6 +264,7 @@ impl PreparedRun {
         let mut exit = None;
         let mut wait_error = None;
         let mut stopped_at = None;
+        let mut memory_checked = Instant::now();
         loop {
             if exit.is_none() {
                 match child.try_wait() {
@@ -260,6 +282,12 @@ impl PreparedRun {
             }
             if started.elapsed() >= self.timeout && self.runner.reason().is_none() {
                 self.runner.stop_for("timeout");
+            }
+            if memory_checked.elapsed() >= MEMORY_CHECK_INTERVAL && self.runner.reason().is_none() {
+                memory_checked = Instant::now();
+                if tree.resident_bytes() > memory_bytes {
+                    self.runner.stop_for("memory-limit");
+                }
             }
             if self.runner.reason().is_some() {
                 let stopped = stopped_at.get_or_insert_with(Instant::now);
@@ -317,6 +345,7 @@ impl PreparedRun {
             exit_code: exit.code(),
             duration_ms: started.elapsed().as_millis() as u64,
             execution_limit_ms: self.execution_limit_ms(),
+            memory_limit_mib: self.memory_limit_mib,
             comparison,
             difference,
             error_line,

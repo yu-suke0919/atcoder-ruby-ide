@@ -8,7 +8,7 @@ function resetComparison(item) {
 }
 
 function clearResult(item, status = null) {
-  Object.assign(item, { stdout: '', stderr: '', status, exitCode: null, durationMs: null, executionLimitMs: null });
+  Object.assign(item, { stdout: '', stderr: '', status, exitCode: null, durationMs: null, executionLimitMs: null, memoryLimitMiB: null });
   resetComparison(item);
 }
 
@@ -95,8 +95,8 @@ export class SampleCases {
   }
 
   finish({ item, revision, compare, timeLimitMs }, result) {
-    const { stdout, stderr, status, exitCode, durationMs, executionLimitMs } = result;
-    Object.assign(item, { stdout, stderr, status, exitCode, durationMs, executionLimitMs });
+    const { stdout, stderr, status, exitCode, durationMs, executionLimitMs, memoryLimitMiB } = result;
+    Object.assign(item, { stdout, stderr, status, exitCode, durationMs, executionLimitMs, memoryLimitMiB });
     item.errorLine = item.revision === revision && status === 'failed' ? result.errorLine ?? null : null;
     item.exceededTimeLimitMs = item.revision === revision && timeLimitMs != null && durationMs > timeLimitMs
       && ['completed', 'failed', 'timeout', 'output-limit', 'memory-limit'].includes(status) ? timeLimitMs : null;
@@ -121,7 +121,7 @@ export class SampleCases {
     clearResult(item, 'canceled');
   }
 
-  snapshot(all = false, timeLimitMs = null) {
-    return (all ? this.items : [this.current]).map(item => ({ item, stdin: item.stdin, expectedOutput: item.expectedOutput, compare: item.compare, tolerance: this.tolerance, revision: item.revision, timeLimitMs }));
+  snapshot(all = false, timeLimitMs = null, memoryLimitMiB = null) {
+    return (all ? this.items : [this.current]).map(item => ({ item, stdin: item.stdin, expectedOutput: item.expectedOutput, compare: item.compare, tolerance: this.tolerance, revision: item.revision, timeLimitMs, memoryLimitMiB }));
   }
 }
