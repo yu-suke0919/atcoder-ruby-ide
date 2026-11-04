@@ -195,7 +195,8 @@ const option = label => page.getByRole('option').filter({ has: page.locator('.cm
 
 test('E07: explicit completion navigates, cancels, inserts and preserves Tab and history', async () => {
   await code().fill('pu');
-  await page.waitForTimeout(150);
+  // Typing in the previous test may have left candidates open (D1); Escape only closes them here.
+  if (await page.locator('.cm-tooltip-autocomplete').count()) await code().press('Escape');
   assert.equal(await page.locator('.cm-tooltip-autocomplete').count(), 0);
   const file = starter.solution;
   await code().press('Control+s'); await waitSaved();
@@ -239,6 +240,30 @@ test('E07: explicit completion navigates, cancels, inserts and preserves Tab and
   assert.equal(await code().evaluate(el => el.contains(document.activeElement)), true);
   await code().press('Escape'); await page.keyboard.press('Tab');
   assert.equal(await code().evaluate(el => el.contains(document.activeElement)), false);
+});
+
+test('D1: typing opens completion with nothing selected, so Enter still breaks the line', async () => {
+  const selectedOption = page.locator('.cm-tooltip-autocomplete').getByRole('option', { selected: true });
+  await code().fill(''); await page.keyboard.type('whil'); await completions();
+  assert.equal(await selectedOption.count(), 0);
+  await code().press('Enter'); assert.equal(await editorText(page), 'whil\n');
+  await page.keyboard.type('end'); await completions();
+  await code().press('Enter'); assert.equal(await editorText(page), 'whil\nend\n');
+  await code().fill(''); await page.keyboard.type('whil'); await completions();
+  await code().press('ArrowDown'); assert.equal(await selectedOption.count(), 1);
+  await code().press('Enter'); assert.equal(await editorText(page), 'while');
+  await code().fill(''); await page.keyboard.type('"abc".'); await completions();
+  await page.keyboard.type('upc'); await option('upcase').waitFor();
+  await code().press('Escape');
+  for (const text of ['12', '1..', '# pu']) {
+    await code().fill(''); await page.keyboard.type(text); await page.waitForTimeout(300);
+    assert.equal(await page.locator('.cm-tooltip-autocomplete').count(), 0, text);
+  }
+  // Ctrl+Space still opens with the first candidate selected.
+  await code().fill(''); await page.keyboard.type('whil'); await completions();
+  await code().press('Escape'); await code().press('Control+Space'); await completions();
+  assert.equal(await selectedOption.count(), 1);
+  await code().press('Enter'); assert.equal(await editorText(page), 'while');
 });
 
 test('E08: templates keep indentation, receivers, normal Tab and save-run shortcuts', async () => {
