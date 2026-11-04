@@ -1,6 +1,6 @@
 # 検証記録
 
-現在の実行手順・Ruby 配布範囲は [README](../README.md)、テスト構成は [構成と検証方針](architecture.md) を参照する。Ruby 削減時の速度・容量の測定は [テスト速度の改善](test-feedback.md) に記録する。「環境と方法」から「Windows の受入検証」までは移行完了時点の履歴である。PR #10 以降の記録は末尾にまとめ、各記録の件数・時間は記載した時点の値とする。
+現在の実行手順・Ruby 配布範囲は [README](../README.md)、テスト構成は [構成と検証方針](architecture.md) を参照する。Ruby 削減時の速度・容量の測定（`test-feedback.md`）とTauriへの移行の記録（`tauri-migration.md`）は、C4でWindows版Rubyとともに削除し、gitの履歴に残す。「環境と方法」から「Windows の受入検証」までは移行完了時点の履歴である。PR #10 以降の記録は末尾にまとめ、各記録の件数・時間は記載した時点の値とする。
 
 ## 環境と方法
 

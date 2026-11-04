@@ -18,7 +18,7 @@
 
 ## 受入条件
 
-Phase U・Phase Cで変わる条件は、機能の欄に実装する[ロードマップ](roadmap.md)の項目を付ける。その項目の実装までは、以前の仕様のテストとコードが残る。Phase CのC3aで、RubyはWSL内で実行するようになった。使われなくなったWindows版Ruby（RubyInstaller）の準備・コードはC4で削除する。
+Phase U・Phase Cで変わる条件は、機能の欄に実装する[ロードマップ](roadmap.md)の項目を付ける。その項目の実装までは、以前の仕様のテストとコードが残る。Phase CのC3aで、RubyはWSL内で実行するようになり、C4で使われなくなったWindows版Ruby（RubyInstaller）の準備・コードを削除した。
 
 | ID | 機能 | 完成の条件 |
 | --- | --- | --- |
