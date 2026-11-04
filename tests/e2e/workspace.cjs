@@ -57,6 +57,9 @@ async function removeContest(app, contest) {
 }
 
 // Initialization is complete once the Ruby check has finished and the recheck button is usable.
-const waitInitialized = page => page.waitForFunction(() => !document.getElementById('ruby-recheck').disabled);
+// The app opens home and then checks Ruby; the recheck button is briefly enabled before both, so
+// this waits for the check to end.
+const waitInitialized = page => page.waitForFunction(() => !document.getElementById('ruby-recheck').disabled
+  && document.getElementById('ruby-version').textContent !== 'Ruby を確認中…');
 
 module.exports = { sampleCode, sampleCases, seedProblem, openProblem, selectTask, removeContest, waitInitialized };
