@@ -1,5 +1,4 @@
 node_modules/
-vendor/ruby/
 vendor/ruby-lsp/
 .cache/
 test-results/

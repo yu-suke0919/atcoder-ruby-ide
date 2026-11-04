@@ -1,6 +1,6 @@
 # AtCoderとのRuby実行環境の整合
 
-Phase C（Rubyの実行とLSPをWSL内のエージェントへ）を終えた後の仕様を書く。C3aで、RubyはWSL内の3.4.5で実行するようになった。C3bで、C拡張のある公式追加gemを加えた。残りの項目には実装する[ロードマップ](roadmap.md)の項目を付ける。使われなくなったWindows版Ruby（RubyInstaller 3.4.12）の準備・測定スクリプト・テストはC4で削除する。以前の測定結果は[検証記録](verification.md)とgitの履歴にある。
+Phase C（Rubyの実行とLSPをWSL内のエージェントへ）を終えた後の仕様を書く。C3aで、RubyはWSL内の3.4.5で実行するようになった。C3bで、C拡張のある公式追加gemを加えた。C4で、使われなくなったWindows版Ruby（RubyInstaller 3.4.12）の準備・測定スクリプト・テストを削除した。残りの項目には実装する[ロードマップ](roadmap.md)の項目を付ける。以前の測定結果（Windows版Rubyを含む）は[検証記録](verification.md)とgitの履歴にある。
 
 ## 参照元と対象
 
@@ -35,30 +35,25 @@ LinuxのUIテストホストだけは、既定上限を従来のATCODER_IDE_UI_T
 受入条件は境界値・最大値・不正値と予約解放、8秒の問題で6秒のコードが完了すること、不明時の既定上限、開始・結果の値の一致、手動停止・子孫の終了・次の実行・全件実行の継続とする。両OSの画面で9秒・30秒の表示、過去の結果と読み取り直し後の区別、1280×720の操作を確認する。
 ## 再帰スタック
 
-C5で、AtCoderと同じく`RUBY_THREAD_VM_STACK_SIZE`を問題のメモリ制限の値（不明なら既定の値）にし、Rubyの起動前に`RLIMIT_STACK`（ネイティブスタック）を上げる。C0では、`RLIMIT_STACK`とVMスタックを1 GBにすると100万段の再帰ができた。WSL2では通常のユーザーでもハードリミットが無制限で、同じ設定で100万段の再帰ができた。次の32 MiBの固定と測定は、C5までの現在の仕様。Windowsの測定（PEヘッダーの予約量など）はC4で削除する。
+C5で、AtCoderと同じく`RUBY_THREAD_VM_STACK_SIZE`を問題のメモリ制限の値（不明なら既定の値）にし、Rubyの起動前に`RLIMIT_STACK`（ネイティブスタック）を上げる。C0では、`RLIMIT_STACK`とVMスタックを1 GBにすると100万段の再帰ができた。WSL2では通常のユーザーでもハードリミットが無制限で、同じ設定で100万段の再帰ができた。次の32 MiBの固定は、C5までの現在の仕様。
 
 
 実行用RubyのRUBY_THREAD_VM_STACK_SIZEを32 MiB（33,554,432 bytes）に固定する。Runnerで子プロセスごとに設定し、端末の同変数より優先する。LSPが共有するruby_commandには追加せず、LSPの起動設定は維持する。保存形式は変更しない。
 
-採用Ruby 3.4.12で、既定値1 MiBでは失敗する通常のRubyメソッド再帰10万段が16 MiB以上で完了し、100万段には128 MiB以上が必要だった。Windowsでは深さ0の測定プロセスのピークコミット量が、既定値約54 MiB、32 MiB設定で約85 MiB、128 MiB設定で約181 MiBになった。100万段のために常に128 MiBを確保する設定は採らず、32 MiBを常用値とし、実Runnerの受入条件を通常再帰20万段の完了にする。メソッドの引数・ローカル変数などによって到達深さは変わる。
+Ruby 3.4.12での測定では、既定値1 MiBでは失敗する通常のRubyメソッド再帰10万段が16 MiB以上で完了し、100万段には128 MiB以上が必要だった。100万段のために常に128 MiBを確保する設定は採らず、32 MiBを常用値とし、実Runnerの受入条件を通常再帰20万段の完了にする。メソッドの引数・ローカル変数などによって到達深さは変わる。
 
-配列のeach・mapでブロックを挟む再帰は、Windows・LinuxともにVMスタックを256 MiBまで増やしても10万段でSystemStackErrorになった。Windows同梱ruby.exeのPEヘッダーのスタック予約量は2 MiBで、VMスタックとは別の制約として残る。Windows実行ファイルやOSのネイティブスタック設定は変更せず、AtCoderと同じ再帰深さは保証しない。深いDFSでは明示的な配列スタックによる反復処理も使う。
+配列のeach・mapでブロックを挟む再帰は、VMスタックを256 MiBまで増やしても10万段でSystemStackErrorになった。ネイティブスタック（`RLIMIT_STACK`）が別の制約として残るためで、C5まではOSのネイティブスタック設定を変更せず、AtCoderと同じ再帰深さは保証しない。深いDFSでは明示的な配列スタックによる反復処理も使う。
 
 32 MiB設定でのeach・map型の最大成功深さは次のとおり（Ruby 3.4.12、2026年10月31日）。各探索は新しいRubyのメインスレッドでtests/fixtures/deep-recursion.rbを実行し、同一プロセス内で深さ0から100,000の間を二分探索した。各試行で最大成功深さの次の深さがSystemStackErrorになることも確認した。
 
 | 測定環境 | ネイティブスタックの設定 | each型の最大成功深さ（3回の範囲） | map型の最大成功深さ（3回の範囲） |
 | --- | --- | --- | --- |
-| Windows x64 CI・同梱Ruby | PEヘッダーの予約量2 MiB | 1,102〜1,103 | 1,080 |
 | Linux x64 CI・setup-ruby | RLIMIT_STACKのsoft limit 16 MiB | 16,611〜16,613 | 16,354〜16,358 |
 | Linux x64開発環境 | RLIMIT_STACKのsoft limit 8 MiB | 8,293〜8,294 | 8,164〜8,169 |
 
 値はこの固定コードと測定環境での結果であり、DFS全般の保証値ではない。プロセスごとに数段の差があり、OS・ビルド・ネイティブスタック上限・コードによって変わる。測定でOSのスタック設定は変更していない。AtCoderの公開tomlにはネイティブスタック・ulimitの設定がなく、AtCoderでeach型がどこまで通るかは不明。
 
-測定は通常再帰・each・mapを深さ0・100,000・1,000,000、既定値と4・16・32・64・128・256 MiBで比較した。Windowsの再現はPowerShell 7で `pwsh -NoProfile -File scripts/measure-ruby-stack.ps1` を使い、`artifacts/reports/ruby-stack.json` に成否・実効VM設定・処理時間・ピークワーキングセット・ピークコミット量を保存する。時間は再帰処理部分、メモリは測定用Rubyプロセスの値でありIDE全体の値ではない。メモリ取得用の100 ms待機は再帰処理時間に含めない。
-
-境目の再測定は `RUBY_PATH` に採用Rubyを指定して `node scripts/measure-ruby-recursion.cjs` を実行する。GitHub ActionsのTest and buildを手動実行し、measure_ruby_stackを有効にすると、通常のテスト・配布ビルドの代わりに両OSの測定を実行して結果をartifactへ保存する。Windowsでは従来のVMサイズ・メモリ測定も行う。
-
-受入条件は通常再帰20万段が実Runnerで完了すること、実際のスタック上限到達後も次の実行ができること、通常コード・手動停止・5秒の時間制限・LSPが正常に動くこと。テストを先に追加し、Linux・Windowsの全テストとWindows配布検証をPRのCIで確認する。
+受入条件は通常再帰20万段が実Runnerで完了すること、実際のスタック上限到達後も次の実行ができること、通常コード・手動停止・5秒の時間制限・LSPが正常に動くこと。実Runnerのテストは、LinuxのCIと、WindowsのCIの配布物の画面テスト（WSL内のエージェント）で確かめる。
 
 ## メモリ上限
 
@@ -66,7 +61,7 @@ C5で、AtCoderと同じく`RUBY_THREAD_VM_STACK_SIZE`を問題のメモリ制�
 - 手段はcgroup v2の`memory.max`か、エージェントによる使用中のメモリ（RSS）の監視のどちらかにする。WSL2ではcgroup v2の`memory`コントローラーがあるが、通常のユーザーは`/sys/fs/cgroup`へ書けなかった（[WSL2での確認](architecture.md#wsl2での確認)）。上限の値（端末保護の固定1 GiBか、問題のメモリ制限か）もC5で決める。
 - 上限で止めた実行は`memory-limit`を停止理由にし、出力比較とエラー行ジャンプを付けず、全件実行は次のケースへ進む。最初に確定した手動停止・時間制限・出力上限は上書きしない。
 - WSL1はメモリ上限の仕組み（`RLIMIT_AS`・`RLIMIT_DATA`・cgroup）がなく、上限は効かない。そのことを画面に表示する。
-- C3aでWSLへ移ってからC5までは、メモリ上限がない。C3aまでは、WindowsのRunnerがRubyと子孫のJob全体に1 GiBのコミット上限を設けていた。
+- C3aでWSLへ移ってからC5までは、メモリ上限がない（C3aまでは、WindowsのJob Objectで1 GiBのコミット上限を設けていた）。
 
 ## JIT（C5）
 

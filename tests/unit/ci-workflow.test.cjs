@@ -18,3 +18,8 @@ test('CI cancels older runs of the same workflow and ref', () => {
     'cancel-in-progress': true,
   });
 });
+
+test('CI builds the WSL distribution, tests on Linux and builds the Windows app, with no Windows Ruby', () => {
+  assert.deepEqual(Object.keys(workflow.jobs), ['wsl-runtime', 'linux', 'windows']);
+  assert.equal(workflow.on.workflow_dispatch, null);
+});

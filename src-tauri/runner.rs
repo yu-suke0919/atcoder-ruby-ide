@@ -8,7 +8,6 @@ use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 const RUBY_VM_STACK_BYTES: usize = 32 * 1024 * 1024;
-const WINDOWS_JOB_MEMORY_BYTES: usize = 1024 * 1024 * 1024;
 const MIN_EXECUTION_LIMIT_MS: u64 = 5000;
 const MAX_EXECUTION_LIMIT_MS: u64 = 30000;
 const EXECUTION_MARGIN_MS: u64 = 1000;
@@ -192,8 +191,8 @@ impl PreparedRun {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let (mut child, tree) = ProcessTree::spawn(&mut command, Some(WINDOWS_JOB_MEMORY_BYTES))
-            .map_err(|e| format!("Ruby を起動できません: {e}"))?;
+        let (mut child, tree) =
+            ProcessTree::spawn(&mut command).map_err(|e| format!("Ruby を起動できません: {e}"))?;
         let tree = Arc::new(tree);
         self.runner.active.lock().unwrap().as_mut().unwrap().tree = Some(Arc::clone(&tree));
         if self.runner.reason().is_some() {
@@ -211,7 +210,6 @@ impl PreparedRun {
         let stdout_pipe = child.stdout.take().unwrap();
         let stderr_pipe = child.stderr.take().unwrap();
         let mut pipe = child.stdin.take().unwrap();
-        #[cfg(unix)]
         for result in [
             crate::process::nonblocking(&stdout_pipe),
             crate::process::nonblocking(&stderr_pipe),
@@ -255,19 +253,6 @@ impl PreparedRun {
                         wait_error = Some(error.to_string());
                         break;
                     }
-                }
-            }
-            // Check even after a fast allocation failure and process exit, before
-            // accepting an ordinary exit status. Do not infer OOM from stderr.
-            #[cfg(windows)]
-            match tree.memory_limit_reached() {
-                Ok(true) => {
-                    self.runner.stop_for("memory-limit");
-                }
-                Ok(false) => {}
-                Err(error) => {
-                    wait_error = Some(format!("Rubyのメモリ制限通知を取得できません: {error}"));
-                    break;
                 }
             }
             if exit.is_some() && stdout.is_finished() && stderr.is_finished() {
@@ -425,52 +410,6 @@ fn cleanup(directory: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[cfg(windows)]
-    #[test]
-    fn memory_notification_stops_the_job_and_releases_the_runner() {
-        let ruby = std::path::PathBuf::from(
-            std::env::var_os("RUBY_PATH").unwrap_or_else(|| "ruby".into()),
-        );
-        let runner = Runner::new(Duration::from_secs(5), MAX_TEXT_BYTES);
-        let notified = Arc::clone(&runner);
-        let result = runner
-            .prepare(RunRequest {
-                code: "require 'rbconfig'; spawn(RbConfig.ruby, '-e', 'sleep 30'); puts 'ready'; sleep 30".into(),
-                expected_output: Some("never compared".into()),
-                ..Default::default()
-            })
-            .unwrap()
-            .execute(&ruby, move |_| {
-                let tree = notified
-                    .active
-                    .lock()
-                    .unwrap()
-                    .as_ref()
-                    .unwrap()
-                    .tree
-                    .clone()
-                    .unwrap();
-                tree.post_memory_limit_notification().unwrap();
-            })
-            .unwrap();
-        assert_eq!(result.status, "memory-limit");
-        assert_eq!(result.comparison, None);
-        assert_eq!(result.difference, None);
-        assert_eq!(result.error_line, None);
-        assert_eq!(
-            runner
-                .prepare(RunRequest {
-                    code: "puts 'next'".into(),
-                    ..Default::default()
-                })
-                .unwrap()
-                .execute(&ruby, |_| {})
-                .unwrap()
-                .stdout,
-            "next\n"
-        );
-    }
 
     #[test]
     fn error_frames_match_the_exact_source_and_skip_prism_headers() {

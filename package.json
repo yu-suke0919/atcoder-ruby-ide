@@ -13,8 +13,6 @@
     "test": "cargo test --locked --workspace && node --test --test-isolation=none tests/unit/*.test.cjs",
     "test:e2e": "node --test --test-isolation=none tests/e2e/*.test.cjs",
     "test:atcoder-live": "cargo test --locked --test library live_atcoder -- --ignored --nocapture",
-    "prepare:ruby": "node --use-env-proxy scripts/prepare-ruby.cjs",
-    "update:ruby": "node --use-env-proxy scripts/update-ruby.cjs",
     "prepare:gems": "node --use-env-proxy scripts/prepare-gems.cjs",
     "prepare:lsp": "node --use-env-proxy scripts/prepare-lsp.cjs",
     "prepare:wsl": "bash scripts/build-wsl-runtime.sh",

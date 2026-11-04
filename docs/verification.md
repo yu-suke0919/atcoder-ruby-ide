@@ -1,6 +1,6 @@
 # 検証記録
 
-現在の実行手順・Ruby 配布範囲は [README](../README.md)、テスト構成は [構成と検証方針](architecture.md) を参照する。Ruby 削減時の速度・容量の測定は [テスト速度の改善](test-feedback.md) に記録する。「環境と方法」から「Windows の受入検証」までは移行完了時点の履歴である。PR #10 以降の記録は末尾にまとめ、各記録の件数・時間は記載した時点の値とする。
+現在の実行手順・Ruby 配布範囲は [README](../README.md)、テスト構成は [構成と検証方針](architecture.md) を参照する。Ruby 削減時の速度・容量の測定（`test-feedback.md`）とTauriへの移行の記録（`tauri-migration.md`）は、C4でWindows版Rubyとともに削除し、gitの履歴に残す。「環境と方法」から「Windows の受入検証」までは移行完了時点の履歴である。PR #10 以降の記録は末尾にまとめ、各記録の件数・時間は記載した時点の値とする。
 
 ## 環境と方法
 
@@ -663,3 +663,12 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 - CIで、リリース`wsl-images`にイメージ（49 MB）が置かれ、Windowsのアプリはそこから取得して登録したディストリビューションで画面テストとインストール版の確認が成功した。ポータブル版のZIPは約52 MBから2.8 MB、インストーラーは約51 MBから2.3 MBになった。
 - 利用者がWSL2のPCで、このPRのポータブル版を確かめた。初回の起動で1分弱でダウンロードと登録が終わり、実行と補完は今までどおり動いた。ネットワークを切って登録を解除してから起動すると「Linuxのイメージを取得できません: error sending request for url (…)」と表示され、つなぎ直して「Ruby を再確認」を押すとダウンロードが始まった。
 - 利用者の要望で、取得に失敗したときの表示を「Linuxのイメージを取得できません（<理由>）。ネットワークにつながっているか確かめてから、「Ruby を再確認」を押してください。」にし、理由から長いURLを除いた。つながらないアドレスからの取得で、案内が出てURLを含まないことを、以前の表示による失敗を確かめてからテストにした。
+
+## Windows版Rubyの関連の削除（C4）
+
+- main 60f963dから開始。資料（構成と検証方針・実行環境・Ruby LSP・MVP・README・ロードマップ）から、C4で削除するとしていたWindows版Rubyの記述を除き、Windows版Rubyの時期の記録だった`tauri-migration.md`と`test-feedback.md`を削除した（gitの履歴に残る）。ロードマップの現在地にC3c・C4を加えた。
+- 削除したもの：Windows版Rubyの準備と更新（`prepare:ruby`・`update:ruby`・`config/ruby-windows.json`）、そのテスト10件、Job Objectとメモリ上限の通知（`process.rs`のWindowsの実装、Runnerのメモリ上限の確認、`windows-sys`の機能、Windows専用のテスト2件と`tests/fixtures/windows-memory.rb`）、スタックの測定のスクリプト2つとCIの`ruby-stack`ジョブ・手動実行の入力。
+- Runner・Ruby LSP管理・プロセスグループ・エージェントのモジュールは、Linux向けにだけビルドするようにした。Windowsのアプリはこれらを使わない。Windows向けのライブラリの`cargo check`で、警告がないことを確かめた。
+- CIの構成のテストに、ジョブが`wsl-runtime`・`linux`・`windows`の3つで手動実行の入力がないことを加え、削除の前に失敗することを確かめた。
+- JITの調査のスクリプト（`probe-ruby-jit.cjs`）は、Windows版Rubyに依らずC5の`--jit`の前提を確かめるため残し、Windows版Rubyの既定の場所を除いた。
+- クラウドセッション（Linux、root、Ruby 3.4.5）で、Rust（rootで失敗する既知の`r02_cleanup_failure_releases_reservation`以外）、Node単体88件、`cargo fmt --all --check`、画面テスト84件（Windows専用2件を除く）が成功した。

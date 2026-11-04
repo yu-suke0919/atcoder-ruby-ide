@@ -8,7 +8,6 @@ WSL2の準備は必要ですが、Ruby のインストールや PATH 設定は�
 - [ロードマップ](docs/roadmap.md)
 - [クラウドセッションでの開発](docs/cloud-development.md)
 - [構成と検証方針](docs/architecture.md)
-- [移行と配布容量](docs/tauri-migration.md)
 - [検証記録](docs/verification.md)
 - [レビューで維持する修正](docs/review.md)
 - [複数サンプル](docs/multi-sample.md)
@@ -92,7 +91,7 @@ cargo fmt --all --check
 初回導入・コンパイルと、準備後の画面テスト時間は分けて測定します。
 
 Windows では、アプリから Ruby の PATH を除去しても、WSL に置いた同梱の Ruby で実行することを確認します。
-通常起動ではテスト用デバッグポートを開きません。機能追加ごとの検証結果は [検証記録](docs/verification.md)、Ruby 削減時の速度・容量の測定は [テスト速度の改善](docs/test-feedback.md) を参照してください。
+通常起動ではテスト用デバッグポートを開きません。機能追加ごとの検証結果は [検証記録](docs/verification.md) を参照してください。
 
 ## ビルドと検証
 
