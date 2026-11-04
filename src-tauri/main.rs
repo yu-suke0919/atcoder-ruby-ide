@@ -157,7 +157,7 @@ async fn run_ruby(
         "expectedOutput": expected_output,
         "tolerance": tolerance,
         "problemTimeLimitMs": problem_time_limit_ms,
-        "problemMemoryLimitMiB": problem_memory_limit_mib,
+        "problemMemoryLimitMib": problem_memory_limit_mib,
     });
     tauri::async_runtime::spawn_blocking(move || {
         agent.run(args, move |event| {

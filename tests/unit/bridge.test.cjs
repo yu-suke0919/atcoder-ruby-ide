@@ -20,7 +20,7 @@ test('problem limits travel to Rust and started carries the actual execution bud
   const events = [];
   const result = await ide.run('', '', null, null, 8000, 256, event => events.push(event));
   assert.equal(calls[0].problemTimeLimitMs, 8000);
-  assert.equal(calls[0].problemMemoryLimitMiB, 256);
+  assert.equal(calls[0].problemMemoryLimitMib, 256);
   assert.deepEqual(events, [{ type: 'started', executionLimitMs: 9000 }]);
   assert.equal(result.executionLimitMs, 9000);
   for (const value of [0, -1, 1.5, NaN, Infinity, 4294967296, '8000']) {
@@ -89,4 +89,30 @@ test('M03: the bridge only saves into the opened workspace and has no external f
     { command: 'file_rename', args: { workspace: 'home', from: 'home_1', to: 'main' } },
     { command: 'file_delete', args: { workspace: 'home', name: 'home_2' } }
   ]);
+});
+
+// The UI test host hands the bridge's arguments to the agent as they are, so only this test sees
+// that Tauri names each argument after its Rust parameter in camelCase (docs/architecture.md).
+test('the bridge sends each command the argument names Tauri reads from the Rust parameters', () => {
+  const fs = require('node:fs');
+  const camel = name => name.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
+  const injected = /^(tauri::)?(AppHandle|State|Window|Webview|WebviewWindow)\b/;
+  const commands = new Map();
+  for (const file of ['main.rs', 'browser.rs']) {
+    const source = fs.readFileSync(path.join(__dirname, '../../src-tauri', file), 'utf8');
+    for (const [, name, params] of source.matchAll(/#\[tauri::command\]\s*(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*\(([^)]*)\)/g)) {
+      // Commas inside generics such as State<'_, AppState> do not separate parameters.
+      const names = params.split(/,(?![^<]*>)/).map(param => param.trim()).filter(Boolean)
+        .map(param => param.match(/^(\w+)\s*:\s*(.*)$/s)).filter(([, , type]) => !injected.test(type))
+        .map(([, name]) => camel(name));
+      commands.set(name, names.sort());
+    }
+  }
+  const bridge = fs.readFileSync(path.join(__dirname, '../../src/bridge.mjs'), 'utf8');
+  const calls = [...bridge.matchAll(/invoke\('(\w+)'(?:,\s*\{([^}]*)\})?\)/g)];
+  assert.ok(calls.length >= 20);
+  for (const [, command, args = ''] of calls) {
+    const sent = args.split(',').map(arg => arg.split(':')[0].trim()).filter(Boolean).sort();
+    assert.deepEqual(sent, commands.get(command), command);
+  }
 });

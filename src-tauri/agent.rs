@@ -33,7 +33,6 @@ struct RunArgs {
     expected_output: Option<String>,
     tolerance: Option<f64>,
     problem_time_limit_ms: Option<u32>,
-    #[serde(rename = "problemMemoryLimitMiB")]
     problem_memory_limit_mib: Option<u32>,
 }
 

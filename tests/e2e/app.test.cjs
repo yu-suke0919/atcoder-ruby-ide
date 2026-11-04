@@ -1076,8 +1076,8 @@ test('P14: long problem runs receive their budget before output and keep per-cas
   assert.equal(await page.locator('#execution-limit').textContent(), '実行時上限 9 秒');
   await page.evaluate(async () => {
     const { ide } = await import('./bridge.mjs');
-    ide.run = async (code, stdin, expectedOutput, tolerance, problemTimeLimitMs, problemMemoryLimitMiB, notify) => {
-      if (problemTimeLimitMs !== 8000 || problemMemoryLimitMiB !== 1024) throw new Error('run did not use the problem limits');
+    ide.run = async (code, stdin, expectedOutput, tolerance, problemTimeLimitMs, problemMemoryLimitMib, notify) => {
+      if (problemTimeLimitMs !== 8000 || problemMemoryLimitMib !== 1024) throw new Error('run did not use the problem limits');
       notify({ type: 'started', executionLimitMs: 30000 });
       return { status: 'timeout', stdout: '', stderr: '', exitCode: 1, durationMs: 30001, executionLimitMs: 30000, comparison: null, difference: null, errorLine: null };
     };
