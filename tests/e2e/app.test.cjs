@@ -461,12 +461,19 @@ test('M01: Tab inserts two spaces and output is rendered as text', async () => {
   assert.match(await page.getByTestId('stdout').textContent(), /<img/);
 });
 
+test('M08: Ruby that uses more memory than the problem allows is stopped at its limit', async () => {
+  await openStarter({ task: 'memory', taskData: { samples: [], memoryLimitMiB: 64 } });
+  await page.getByTestId('code-editor').fill("s = 'x' * (300 << 20)\nsleep 10\nputs :not_stopped");
+  await runAndWait('ローカルのメモリ上限で停止（64 MiB）');
+  assert.equal(await page.locator('#stdout').textContent(), '');
+});
+
 test('M08: a local memory-limit result is distinct and the batch continues', async () => {
   await page.evaluate(async () => {
     const { ide } = await import('./bridge.mjs');
     const run = ide.run;
     ide.run = (code, stdin, ...args) => stdin === 'limit'
-      ? Promise.resolve({ status: 'memory-limit', stdout: '', stderr: '', exitCode: 1, durationMs: 100, executionLimitMs: 5000, comparison: null, difference: null, errorLine: null })
+      ? Promise.resolve({ status: 'memory-limit', stdout: '', stderr: '', exitCode: 1, durationMs: 100, executionLimitMs: 5000, memoryLimitMiB: 512, comparison: null, difference: null, errorLine: null })
       : run(code, stdin, ...args);
   });
   await page.getByTestId('code-editor').fill('puts STDIN.read');
@@ -480,7 +487,7 @@ test('M08: a local memory-limit result is distinct and the batch continues', asy
   await page.getByTestId('cases-summary').filter({ hasText: '完了 2 / 2' }).waitFor({ timeout: 15000 });
   assert.match(await page.getByTestId('cases-summary').textContent(), /エラー 1/);
   await selectCase(1);
-  assert.equal(await page.getByTestId('run-status').textContent(), 'ローカルのメモリ上限で停止（1 GiB）');
+  assert.equal(await page.getByTestId('run-status').textContent(), 'ローカルのメモリ上限で停止（512 MiB）');
   assert.equal(await page.getByTestId('comparison-status').textContent(), '判定なし');
   assert.equal(await page.locator('#error-location').isHidden(), true);
   await page.setViewportSize({ width: 1280, height: 720 });
@@ -1059,8 +1066,8 @@ test('P14: long problem runs receive their budget before output and keep per-cas
   assert.equal(await page.locator('#execution-limit').textContent(), '実行時上限 9 秒');
   await page.evaluate(async () => {
     const { ide } = await import('./bridge.mjs');
-    ide.run = async (code, stdin, expectedOutput, tolerance, problemTimeLimitMs, notify) => {
-      if (problemTimeLimitMs !== 8000) throw new Error('run did not use the problem limit');
+    ide.run = async (code, stdin, expectedOutput, tolerance, problemTimeLimitMs, problemMemoryLimitMiB, notify) => {
+      if (problemTimeLimitMs !== 8000 || problemMemoryLimitMiB !== 1024) throw new Error('run did not use the problem limits');
       notify({ type: 'started', executionLimitMs: 30000 });
       return { status: 'timeout', stdout: '', stderr: '', exitCode: 1, durationMs: 30001, executionLimitMs: 30000, comparison: null, difference: null, errorLine: null };
     };

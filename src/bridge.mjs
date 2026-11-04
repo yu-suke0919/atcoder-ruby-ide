@@ -37,11 +37,12 @@ export const ide = {
   onTaskPage: handler => window.__TAURI__.event.listen('task-page', event => handler(event.payload)),
   onRuntimeDownload: handler => window.__TAURI__.event.listen('runtime-download', event => handler(event.payload)),
   rubyInfo: () => invoke('ruby_info'),
-  run(code, stdin, expectedOutput = null, tolerance = null, problemTimeLimitMs = null, notify = () => {}) {
+  run(code, stdin, expectedOutput = null, tolerance = null, problemTimeLimitMs = null, problemMemoryLimitMiB = null, notify = () => {}) {
     return new Promise((resolve, reject) => {
       if (expectedOutput !== null && typeof expectedOutput !== 'string') { reject(new Error('期待出力は文字列で指定してください。')); return; }
       validateTolerance(tolerance);
       if (problemTimeLimitMs !== null && (!Number.isInteger(problemTimeLimitMs) || problemTimeLimitMs <= 0 || problemTimeLimitMs > 4294967295)) throw new Error('問題の時間制限は1〜4,294,967,295ミリ秒の整数にしてください。');
+      if (problemMemoryLimitMiB !== null && (!Number.isInteger(problemMemoryLimitMiB) || problemMemoryLimitMiB <= 0 || problemMemoryLimitMiB > 4294967295)) throw new Error('問題のメモリ制限は1〜4,294,967,295 MiBの整数にしてください。');
       const decoders = { stdout: new TextDecoder(), stderr: new TextDecoder() };
       const channel = new Channel();
       channel.onmessage = event => {
@@ -52,7 +53,7 @@ export const ide = {
         } else if (event.type === 'completed') resolve(event.result);
         else if (event.type === 'failed') reject(new Error(event.message));
       };
-      invoke('run_ruby', { code, stdin, expectedOutput, tolerance, problemTimeLimitMs, onEvent: channel }).catch(reject);
+      invoke('run_ruby', { code, stdin, expectedOutput, tolerance, problemTimeLimitMs, problemMemoryLimitMiB, onEvent: channel }).catch(reject);
     });
   },
   stop: () => invoke('stop_ruby'),

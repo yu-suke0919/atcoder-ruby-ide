@@ -33,6 +33,8 @@ struct RunArgs {
     expected_output: Option<String>,
     tolerance: Option<f64>,
     problem_time_limit_ms: Option<u32>,
+    #[serde(rename = "problemMemoryLimitMiB")]
+    problem_memory_limit_mib: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -135,6 +137,7 @@ impl Agent {
                     expected_output: args.expected_output,
                     tolerance: args.tolerance,
                     problem_time_limit_ms: args.problem_time_limit_ms,
+                    problem_memory_limit_mib: args.problem_memory_limit_mib,
                 })?;
                 let mut worker = self.worker.lock().unwrap();
                 // The previous run released its reservation before its last event.

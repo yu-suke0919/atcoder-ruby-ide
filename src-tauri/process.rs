@@ -16,6 +16,68 @@ impl ProcessTree {
             libc::kill(-self.0, libc::SIGKILL);
         }
     }
+    /// The memory in use (RSS) of every process in the group, from /proc, which WSL1 has too.
+    pub fn resident_bytes(&self) -> u64 {
+        let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as u64;
+        let Ok(entries) = std::fs::read_dir("/proc") else {
+            return 0;
+        };
+        let in_group = |path: &std::path::Path| {
+            // The process group is the fifth field of stat: the third after the name in parentheses.
+            std::fs::read_to_string(path.join("stat"))
+                .ok()
+                .and_then(|stat| {
+                    stat.rsplit_once(')')?
+                        .1
+                        .split_whitespace()
+                        .nth(2)?
+                        .parse::<i32>()
+                        .ok()
+                })
+                == Some(self.0)
+        };
+        let pages: u64 = entries
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.bytes().all(|b| b.is_ascii_digit()))
+            })
+            .filter(|path| in_group(path))
+            .filter_map(|path| {
+                let statm = std::fs::read_to_string(path.join("statm")).ok()?;
+                statm.split_whitespace().nth(1)?.parse::<u64>().ok()
+            })
+            .sum();
+        pages * page
+    }
+}
+
+/// Raises the native stack (the soft RLIMIT_STACK) to `bytes`, or the hard limit if that is lower,
+/// in the started process; Ruby's main thread gets it, and children inherit it.
+pub(crate) fn raise_stack_limit(command: &mut Command, bytes: u64) {
+    use std::os::unix::process::CommandExt;
+    unsafe {
+        command.pre_exec(move || {
+            let mut limit = libc::rlimit {
+                rlim_cur: 0,
+                rlim_max: 0,
+            };
+            if libc::getrlimit(libc::RLIMIT_STACK, &mut limit) != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            limit.rlim_cur = if limit.rlim_max == libc::RLIM_INFINITY {
+                bytes as libc::rlim_t
+            } else {
+                (bytes as libc::rlim_t).min(limit.rlim_max)
+            };
+            if libc::setrlimit(libc::RLIMIT_STACK, &limit) != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
 }
 
 /// Isolate every Ruby process from the caller's Ruby/Bundler environment.

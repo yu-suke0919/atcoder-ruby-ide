@@ -883,13 +883,21 @@ fn deep_recursion_and_stack_overflow_leave_the_runner_usable() {
     assert_eq!(result.status, "completed", "{}", result.stderr);
     assert_eq!(result.stdout, "200000\n");
     let code = format!("{fixture}\nbegin; count_down(-1); rescue SystemStackError; STDERR.puts 'stack limit reached'; exit 1; end");
+    // The stacks are as large as the memory limit, so a small limit ends this soon. As on AtCoder
+    // the stack is memory too: the memory check may stop it before the stack overflows.
     let result = runner
-        .prepare(request(&code, ""))
+        .prepare(RunRequest {
+            code,
+            problem_memory_limit_mib: Some(64),
+            ..Default::default()
+        })
         .unwrap()
         .execute(&ruby(), |_| {})
         .unwrap();
-    assert_eq!(result.status, "failed", "{}", result.stderr);
-    assert_eq!(result.stderr, "stack limit reached\n");
+    match result.status.as_str() {
+        "failed" => assert_eq!(result.stderr, "stack limit reached\n"),
+        status => assert_eq!(status, "memory-limit", "{}", result.stderr),
+    }
     let result = runner
         .prepare(request("puts 'recovered'", ""))
         .unwrap()
@@ -897,4 +905,50 @@ fn deep_recursion_and_stack_overflow_leave_the_runner_usable() {
         .unwrap();
     assert_eq!(result.status, "completed");
     assert_eq!(result.stdout, "recovered\n");
+}
+
+fn run_with_memory(code: &str, memory_limit_mib: Option<u32>) -> atcoder_ruby_ide::RunResult {
+    Runner::new(Duration::from_secs(5), 1048576)
+        .prepare(RunRequest {
+            code: code.into(),
+            problem_memory_limit_mib: memory_limit_mib,
+            ..Default::default()
+        })
+        .unwrap()
+        .execute(&ruby(), |_| {})
+        .unwrap()
+}
+
+#[test]
+fn c5_ruby_runs_with_yjit_and_stacks_of_the_problem_memory_limit() {
+    let code = "p RubyVM::YJIT.enabled?\np RubyVM::DEFAULT_PARAMS[:thread_vm_stack_size]\np Process.getrlimit(:STACK)[0]";
+    // AtCoder sets the VM stack to the memory limit; an unknown limit is 1024 MiB.
+    for (limit, bytes) in [(None, 1024u64 << 20), (Some(256), 256 << 20)] {
+        let result = run_with_memory(code, limit);
+        assert_eq!(result.status, "completed", "{}", result.stderr);
+        assert_eq!(result.stdout, format!("true\n{bytes}\n{bytes}\n"));
+        assert_eq!(result.memory_limit_mib, limit.unwrap_or(1024));
+    }
+}
+
+#[test]
+fn c5_more_memory_than_the_problem_allows_stops_ruby_and_the_next_run_works() {
+    let started = std::time::Instant::now();
+    let result = run_with_memory(
+        "s = 'x' * (300 << 20)\nsleep 10\nputs :not_stopped",
+        Some(64),
+    );
+    assert_eq!(result.status, "memory-limit", "{}", result.stderr);
+    assert_eq!(result.memory_limit_mib, 64);
+    assert_eq!(result.stdout, "");
+    assert!(started.elapsed() < Duration::from_secs(4));
+    let result = run_with_memory("s = 'x' * (16 << 20)\nputs s.size", Some(64));
+    assert_eq!(result.status, "completed", "{}", result.stderr);
+    assert_eq!(result.stdout, format!("{}\n", 16 << 20));
+    assert!(Runner::new(Duration::from_secs(5), 1048576)
+        .prepare(RunRequest {
+            problem_memory_limit_mib: Some(0),
+            ..Default::default()
+        })
+        .is_err());
 }
