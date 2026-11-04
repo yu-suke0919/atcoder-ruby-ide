@@ -200,9 +200,11 @@ impl PreparedRun {
         // As on AtCoder: --jit, and the VM stack of the memory limit; the native stack follows it.
         let memory_bytes = u64::from(self.memory_limit_mib) << 20;
         crate::process::raise_stack_limit(&mut command, memory_bytes);
+        if crate::process::jit() {
+            command.arg("--jit");
+        }
         command
             .env("RUBY_THREAD_VM_STACK_SIZE", memory_bytes.to_string())
-            .arg("--jit")
             .arg("-r")
             .arg(&bootstrap)
             .arg(&source)

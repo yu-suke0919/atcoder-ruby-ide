@@ -126,14 +126,6 @@ jobs:
           $env:APP_EXE = (Resolve-Path artifacts/portable/atcoder-ruby-ide.exe).Path
           npm run test:e2e
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      # Temporary (C5): measures Ruby in the app's distribution on WSL1 when the GUI tests fail.
-      - name: Measure Ruby in WSL after a failure
-        if: failure()
-        shell: bash
-        env:
-          MSYS_NO_PATHCONV: '1'
-        run: |
-          wsl.exe -d AtCoderRubyIDE -e bash -c 'R=/opt/atcoder-ruby-ide/ruby/bin/ruby; echo "stack $(ulimit -s) hard $(ulimit -Hs)"; for args in "-e 0" "--jit -e 0"; do for vm in 33554432 1073741824; do echo "== vm=$vm $args"; time RUBY_THREAD_VM_STACK_SIZE=$vm $R $args; done; done; echo "== /proc $(ls -d /proc/[0-9]* | wc -l) processes"; time (for p in /proc/[0-9]*; do cat $p/stat $p/statm; done >/dev/null 2>&1); cat /proc/self/statm'
       - name: Install NSIS and smoke test the app with Ruby in WSL
         run: node scripts/test-installed-windows.cjs
       - name: Compress portable ZIP and measure distribution sizes

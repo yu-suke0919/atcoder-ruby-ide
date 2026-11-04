@@ -54,6 +54,16 @@ impl ProcessTree {
     }
 }
 
+/// Whether Ruby runs with --jit: not on WSL1, whose kernel release ends with "Microsoft" and where
+/// starting YJIT took about 8 seconds (docs/atcoder-runtime.md#jitc5).
+pub(crate) fn jit() -> bool {
+    static JIT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *JIT.get_or_init(|| {
+        !std::fs::read_to_string("/proc/sys/kernel/osrelease")
+            .is_ok_and(|release| release.trim_end().ends_with("Microsoft"))
+    })
+}
+
 /// Raises the native stack (the soft RLIMIT_STACK) to `bytes`, or the hard limit if that is lower,
 /// in the started process; Ruby's main thread gets it, and children inherit it.
 pub(crate) fn raise_stack_limit(command: &mut Command, bytes: u64) {

@@ -253,6 +253,16 @@ test('R08: editing one case field preserves raw newlines in the other fields', a
     }
   }
 });
+test('M12: Ruby without the JIT on WSL1 says so', async () => {
+  await page.evaluate(async () => {
+    const { ide } = await import('./bridge.mjs');
+    ide.rubyInfo = async () => ({ version: 'ruby 3.4.5 (2025-07-16 revision 20cda200d3) +PRISM [x86_64-linux]', jit: false });
+  });
+  await page.getByRole('button', { name: 'Ruby を再確認', exact: true }).click();
+  await page.getByTestId('ruby-version').filter({ hasText: '（WSL1のためJITなし）' }).waitFor();
+  assert.match(await page.getByTestId('ruby-version').textContent(), /^ruby 3\.4\.5 .*（WSL1のためJITなし）$/);
+});
+
 test('M12: Ruby detection can fail and recover without losing edits', async () => {
   await page.getByTestId('code-editor').fill('puts "recovered"');
   await page.getByTestId('stdin').fill('keep input');

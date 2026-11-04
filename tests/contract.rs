@@ -952,3 +952,10 @@ fn c5_more_memory_than_the_problem_allows_stops_ruby_and_the_next_run_works() {
         })
         .is_err());
 }
+
+#[test]
+fn c5_the_ruby_check_reports_whether_runs_use_the_jit() {
+    // WSL1 runs without --jit (its YJIT start takes about 8 seconds); elsewhere they use it.
+    let info = atcoder_ruby_ide::ruby_info(&ruby()).unwrap();
+    assert!(info.jit);
+}

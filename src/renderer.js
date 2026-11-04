@@ -838,7 +838,7 @@ async function checkRuby() {
   try {
     const info = await ide.rubyInfo();
     rubyAvailable = true;
-    $('ruby-version').textContent = info.version;
+    $('ruby-version').textContent = info.jit ? info.version : `${info.version}（WSL1のためJITなし）`;
     $('ruby-version').title = info.version;
     message('Ruby を確認しました。');
   } catch (error) {
