@@ -126,6 +126,13 @@ jobs:
           $env:APP_EXE = (Resolve-Path artifacts/portable/atcoder-ruby-ide.exe).Path
           npm run test:e2e
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Measure memory in WSL after a failure
+        if: failure()
+        shell: bash
+        env:
+          MSYS_NO_PATHCONV: '1'
+        run: |
+          wsl.exe -d AtCoderRubyIDE -e bash -c 'R=/opt/atcoder-ruby-ide/ruby/bin/ruby; echo "page $(getconf PAGESIZE)"; cat /proc/sys/kernel/osrelease; timeout -s KILL 20 $R -e "s = %q(x) * (300 << 20); sleep 6" & p=$!; sleep 4; for q in /proc/[0-9]*; do echo "== $q"; cat $q/stat; echo; cat $q/statm; grep -E "VmRSS|VmSize|NSpgid" $q/status; done; ps -eo pid,pgid,rss,vsz,args; wait'
       - name: Install NSIS and smoke test the app with Ruby in WSL
         run: node scripts/test-installed-windows.cjs
       - name: Compress portable ZIP and measure distribution sizes
