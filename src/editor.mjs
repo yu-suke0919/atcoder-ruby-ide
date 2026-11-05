@@ -3,7 +3,8 @@ import {
   StreamLanguage, ruby, indentUnit, indentOnInput, bracketMatching,
   syntaxHighlighting, HighlightStyle, tags, history, historyKeymap, defaultKeymap,
   indentMore, indentLess, redo, closeBrackets, closeBracketsKeymap,
-  autocompletion, completionKeymap, completionStatus, startCompletion, closeCompletion,
+  autocompletion, completionKeymap, completionStatus, acceptCompletion, currentCompletions, selectedCompletionIndex, setSelectedCompletion,
+  startCompletion, closeCompletion,
   search, searchKeymap, openSearchPanel,
 } from './vendor/editor/codemirror.mjs';
 import { lspCompletions } from './lsp-completion.mjs';
@@ -131,6 +132,13 @@ export function createEditor(parent, initial, onChange, onCursor, completionClie
     keymap.of([
       { key: 'Tab', run: view => {
         if (view.state.readOnly) return false;
+        // Shown candidates take Tab: the selected one, or the first (docs/code-editor.md).
+        if (completionStatus(view.state) === 'active' && currentCompletions(view.state).length) {
+          if (selectedCompletionIndex(view.state) === null) view.dispatch({ effects: setSelectedCompletion(0) });
+          // Right after they open, CodeMirror ignores acceptance; Tab must not move the focus then.
+          acceptCompletion(view);
+          return true;
+        }
         if (view.state.selection.ranges.some(range => !range.empty)) return indentMore(view);
         view.dispatch({ ...view.state.replaceSelection('  '), userEvent: 'input.indent', scrollIntoView: true });
         return true;
