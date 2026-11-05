@@ -2,7 +2,8 @@ use crate::files::{read_limited, write_atomic, MAX_TEXT_BYTES};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
-/// The solution file of the opened problem. Saving only ever writes back to it.
+/// The solution file of the opened problem. Saving only ever writes back to it, and only for the
+/// revision it was opened as: a screen still showing an earlier file cannot write into this one.
 #[derive(Default)]
 pub struct DocumentStore {
     file_path: Option<PathBuf>,
@@ -14,6 +15,7 @@ pub struct DocumentStore {
 pub struct DocumentResult {
     pub file_path: String,
     pub code: String,
+    pub revision: u64,
 }
 
 impl DocumentStore {
@@ -37,14 +39,24 @@ impl DocumentStore {
         let file_path = path.to_string_lossy().into();
         self.file_path = Some(path);
         self.revision = self.revision.wrapping_add(1);
-        Ok(DocumentResult { file_path, code })
+        Ok(DocumentResult {
+            file_path,
+            code,
+            revision: self.revision,
+        })
     }
 
-    pub fn save(&self, code: &str) -> Result<(), String> {
+    pub fn save(&self, revision: u64, code: &str) -> Result<(), String> {
         let path = self
             .file_path
             .as_deref()
             .ok_or("問題を開いてから保存してください。")?;
+        if revision != self.revision {
+            return Err(
+                "表示中のファイルは開き直されたため保存できません。ファイルを開き直してください。"
+                    .into(),
+            );
+        }
         if code.len() > MAX_TEXT_BYTES {
             return Err("コードは 1 MiB 以下にしてください。".into());
         }

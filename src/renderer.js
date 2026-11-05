@@ -35,6 +35,8 @@ const comparisonLabels = { none: '比較なし', pending: '未比較', running: 
 const statusLabel = (status, exitCode, executionLimitMs, memoryLimitMiB) => ({ completed: '正常終了', failed: `エラー終了${exitCode == null ? '' : ` (${exitCode})`}`, stopped: '停止しました', timeout: `時間制限で停止（${executionLimitMs / 1000} 秒）`, 'output-limit': '出力上限で停止（1 MiB）', 'memory-limit': `ローカルのメモリ上限で停止（${memoryLimitMiB} MiB）`, running: '実行中…', canceled: '未実行（中止）', error: '実行できませんでした' })[status] || '実行する準備ができています';
 let savedCode = '';
 let filePath = null;
+// The revision Rust opened the shown file as; saving sends it so only that file is written.
+let documentRevision = null;
 let running = false;
 let fileBusy = true;
 let rubyAvailable = false;
@@ -73,6 +75,8 @@ function showSaveState() {
 
 function scheduleSave() {
   clearTimeout(saveTimer);
+  // Back at the saved content, an earlier failure no longer leaves anything unsaved.
+  if (!needsSave()) saveError = null;
   saveTimer = needsSave() ? setTimeout(() => { saveTimer = null; saveNow(); }, SAVE_DELAY_MS) : null;
   showSaveState();
 }
@@ -82,15 +86,16 @@ async function saveNow() {
   clearTimeout(saveTimer);
   saveTimer = null;
   while (saving) await saving;
-  if (!needsSave()) { showSaveState(); return saveError === null; }
+  if (!needsSave()) { saveError = null; showSaveState(); return true; }
   const problem = activeProblem;
   const code = editor.value;
+  const revision = documentRevision;
   const data = cases.data();
   const codeChanged = code !== savedCode;
   const casesChanged = cases.dirty;
   saving = (async () => {
     try {
-      if (codeChanged) { await ide.saveCode(code); if (problem.url === activeProblem?.url) savedCode = code; }
+      if (codeChanged) { await ide.saveCode(code, revision); if (problem.url === activeProblem?.url) savedCode = code; }
       if (casesChanged) {
         await ide.saveSamples(problem.url, data);
         if (problem.url === activeProblem?.url) cases.markSaved(data);
@@ -445,6 +450,7 @@ function applyWorkspace(result, problem) {
   editor.show(result.file, result.document.code);
   savedCode = editor.value;
   filePath = result.document.filePath;
+  documentRevision = result.document.revision;
   cases.replace(result.samples.cases, { saved: true, tolerance: result.samples.tolerance ?? null });
   showProblem(); showCase(); updateEditor(); renderFiles();
 }
@@ -481,20 +487,24 @@ async function showFile(name) {
   editor.show(name, opened.code, true);
   savedCode = editor.value;
   filePath = opened.filePath;
+  documentRevision = opened.revision;
   resetComparison(true);
   updateEditor();
   renderFiles();
   editor.focus();
 }
+// Unsaved edits of the open file are saved first, with editing stopped so none is made after the
+// save; a failed save asks before leaving them.
+function leaveFileAction(action) {
+  return fileAction(async () => { if (await leaveProblem()) await action(); });
+}
 async function switchFile(name) {
   if (fileLocked() || name === activeProblem.file) return;
-  // Unsaved edits of the open file are saved first; a failed save asks before leaving them.
-  if (!await leaveProblem()) return;
-  await fileAction(() => showFile(name));
+  await leaveFileAction(() => showFile(name));
 }
 $('file-add').addEventListener('click', async () => {
-  if (fileLocked() || !await leaveProblem()) return;
-  await fileAction(async () => {
+  if (fileLocked()) return;
+  await leaveFileAction(async () => {
     const name = await ide.createFile(activeProblem.url, activeProblem.label);
     activeProblem.files = sortFiles([...activeProblem.files, name]);
     await showFile(name);
@@ -502,8 +512,8 @@ $('file-add').addEventListener('click', async () => {
 });
 // Copies a file, with its unsaved edits, into a new tab and opens it.
 async function copyFile(name) {
-  if (fileLocked() || !await leaveProblem()) return;
-  await fileAction(async () => {
+  if (fileLocked()) return;
+  await leaveFileAction(async () => {
     const copy = await ide.copyFile(activeProblem.url, name, activeProblem.label);
     activeProblem.files = sortFiles([...activeProblem.files, copy]);
     await showFile(copy);
@@ -559,8 +569,8 @@ $('file-delete-ok').addEventListener('click', async () => {
   if (fileLocked() || !name) return;
   // The open file is not deleted while open: another tab opens first.
   if (name === activeProblem.file) {
-    if (!await leaveProblem()) return;
-    await fileAction(() => showFile(activeProblem.files.find(other => other !== name)));
+    await leaveFileAction(() => showFile(activeProblem.files.find(other => other !== name)));
+    if (name === activeProblem.file) return;
   }
   await fileAction(async () => {
     await ide.deleteFile(activeProblem.url, name);
@@ -709,14 +719,16 @@ async function selectContest(url) {
 async function selectHome() {
   hideMenu();
   if (running || fileBusy || closing) return;
-  if (!activeProblem?.home && !await leaveProblem()) return;
-  selectedContest = HOME;
-  pendingTask = null;
-  taskMessage('');
-  renderRail();
-  renderTasks();
-  await ide.browserHome(null).catch(error => taskMessage(error.message, true));
-  if (!activeProblem?.home) await fileAction(async () => applyWorkspace(await ide.openHome(), homeProblem), taskMessage);
+  await fileAction(async () => {
+    if (!activeProblem?.home && !await leaveProblem()) return;
+    selectedContest = HOME;
+    pendingTask = null;
+    taskMessage('');
+    renderRail();
+    renderTasks();
+    await ide.browserHome(null).catch(error => taskMessage(error.message, true));
+    if (!activeProblem?.home) applyWorkspace(await ide.openHome(), homeProblem);
+  }, taskMessage);
 }
 $('home-icon').addEventListener('click', selectHome);
 
@@ -758,12 +770,13 @@ async function openPendingTaskNow() {
     }
     if (pendingTask !== task) return;
     const result = await ide.openTask(task.url, task.label);
-    if (pendingTask !== task) return;
+    // Rust has opened it, so it is shown even if something else was chosen meanwhile; a problem
+    // chosen later opens after this.
     if (!result) {
-      taskMessage(`${task.label} の問題ページを読み込んでいます。表示されない場合は、右側のブラウザでログインし、開催中のコンテストは参加登録してください。`);
+      if (pendingTask === task) taskMessage(`${task.label} の問題ページを読み込んでいます。表示されない場合は、右側のブラウザでログインし、開催中のコンテストは参加登録してください。`);
       return;
     }
-    pendingTask = null;
+    if (pendingTask === task) pendingTask = null;
     applyWorkspace(result, { ...result.task, label: task.label, title: `${task.label} - ${task.title}` });
     taskMessage('');
     message(`${task.label} を開きました。`);

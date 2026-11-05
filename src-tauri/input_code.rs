@@ -285,7 +285,8 @@ fn list(line: &Line) -> Option<String> {
             _ => return None,
         }
     }
-    ellipsis.then(|| name.unwrap().clone())
+    // A line of only an ellipsis has no variable to read.
+    name.filter(|_| ellipsis).cloned()
 }
 
 /// How many rows a block has: written out (1, 2, 3, ...) or ended after `\vdots` by the last

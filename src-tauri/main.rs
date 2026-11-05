@@ -174,9 +174,13 @@ async fn stop_ruby(state: tauri::State<'_, AppState>) -> Result<Value, String> {
 }
 
 #[tauri::command]
-async fn document_save(state: tauri::State<'_, AppState>, code: String) -> Result<(), String> {
+async fn document_save(
+    state: tauri::State<'_, AppState>,
+    revision: u64,
+    code: String,
+) -> Result<(), String> {
     let documents = Arc::clone(&state.documents);
-    tauri::async_runtime::spawn_blocking(move || documents.lock().unwrap().save(&code))
+    tauri::async_runtime::spawn_blocking(move || documents.lock().unwrap().save(revision, &code))
         .await
         .map_err(|e| e.to_string())?
 }
