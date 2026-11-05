@@ -272,6 +272,31 @@ test('D1: typing opens completion with nothing selected, so Enter still breaks t
   await code().press('Enter'); assert.equal(await editorText(page), 'while');
 });
 
+test('D1: Tab right after candidates open, or while they are queried again, still inserts', async () => {
+  // A Tab the moment candidates appear falls in CodeMirror's interaction delay (review R5).
+  await code().fill('');
+  await page.evaluate(() => {
+    const observer = new MutationObserver(() => {
+      if (!document.querySelector('.cm-tooltip-autocomplete [role="option"]')) return;
+      observer.disconnect();
+      document.getElementById('code-editor').dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', keyCode: 9, bubbles: true, cancelable: true }));
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  });
+  await page.keyboard.type('whil');
+  await page.waitForFunction(() => document.getElementById('code-editor').textContent === 'while', null, { timeout: 15000 });
+  // Each key queries again; the shown candidates cannot be accepted until the reply comes.
+  await code().fill(''); await page.keyboard.type('whi'); await completions();
+  await page.evaluate(async () => {
+    const { ide } = await import('./bridge.mjs');
+    const complete = ide.lspComplete;
+    ide.lspComplete = (...args) => new Promise(resolve => setTimeout(() => { ide.lspComplete = complete; resolve(complete(...args)); }, 300));
+  });
+  await page.keyboard.type('l'); await code().press('Tab');
+  await page.waitForFunction(() => document.getElementById('code-editor').textContent === 'while', null, { timeout: 15000 });
+  assert.equal(await editorText(page), 'while');
+});
+
 test('E08: templates keep indentation, receivers, normal Tab and save-run shortcuts', async () => {
   await code().fill('  if'); await code().press('End');
   await page.locator('#editor-complete').click(); await completions(); await option('if … end').click();
@@ -284,6 +309,8 @@ test('E08: templates keep indentation, receivers, normal Tab and save-run shortc
   await code().press('Shift+Tab'); assert.equal(await editorText(page), '  if condition\n    \n  end');
   await page.keyboard.insertText('true');
   assert.equal(await editorText(page), '  if true\n    \n  end');
+  // Typing opened candidates (D1); once they are closed, Tab indents.
+  await completions(); await code().press('Escape');
   await code().press('Tab'); assert.equal(await editorText(page), '  if true  \n    \n  end');
   await code().fill('items.ea'); await code().press('Control+Space'); await completions(); await option('each do … end').click();
   assert.equal(await editorText(page), 'items.each do |item|\n  \nend');
