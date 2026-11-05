@@ -208,6 +208,10 @@ fn input_formats_are_read_from_the_loaded_page_and_become_reading_code() {
         "$N$\n$A_1$\n$\\vdots$\n$A_{2N}$",
         "$N$\n$A_1 + B$",
         "",
+        // Rows without a variable, which once panicked (review R3).
+        "...",
+        "$\\ldots$",
+        "$N$\n$\\vdots$",
     ] {
         assert_eq!(input_code(format, &[]), None, "{format}");
     }
@@ -457,7 +461,7 @@ fn workspace_opens_only_after_the_page_was_read_and_keeps_user_data_on_rereads()
         .exists());
     assert!(opened.samples.cases.iter().all(|case| case.compare));
     assert_eq!(opened.samples.tolerance, None);
-    documents.save("puts 'mine'").unwrap();
+    documents.save(documents.revision(), "puts 'mine'").unwrap();
     let mut edited = opened.samples.clone();
     edited.cases[0].stdin = "edited\n".into();
     edited.tolerance = Some(1e-6);
@@ -492,7 +496,7 @@ fn home_opens_without_a_task_and_keeps_its_code_and_samples_apart_from_problems(
     );
     assert_eq!(home.samples.cases.len(), 1);
     assert!(!home.samples.cases[0].compare && home.samples.cases[0].stdin.is_empty());
-    documents.save("puts gets").unwrap();
+    documents.save(documents.revision(), "puts gets").unwrap();
     let samples = Samples {
         tolerance: None,
         cases: vec![SampleCase {
@@ -767,7 +771,9 @@ fn files_are_added_renamed_and_deleted_with_safe_unique_names_in_natural_order()
         .unwrap();
     let file = root.path().join("workspaces/abs/practice_1/files/main.rb");
     assert_eq!(documents.path(), Some(file.as_path()));
-    documents.save("puts 'renamed'").unwrap();
+    documents
+        .save(documents.revision(), "puts 'renamed'")
+        .unwrap();
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "puts 'renamed'");
     assert!(workspaces.delete_file(URL, "main", &documents).is_err());
     workspaces.delete_file(URL, "A_2", &documents).unwrap();

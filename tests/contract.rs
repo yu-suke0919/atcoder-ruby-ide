@@ -370,12 +370,18 @@ fn m03_document_saves_only_to_the_opened_workspace_file() {
     let opened = store.open(first.clone()).unwrap();
     assert_eq!(opened.code, "puts 'こんにちは'\r\n");
     assert_eq!(store.path(), Some(first.as_path()));
-    store.save("puts 2\n").unwrap();
+    store.save(store.revision(), "puts 2\n").unwrap();
     assert_eq!(std::fs::read_to_string(&first).unwrap(), "puts 2\n");
     let second = root.path().join("別の問題.rb");
     std::fs::write(&second, "").unwrap();
-    store.open(second.clone()).unwrap();
-    store.save("puts 3").unwrap();
+    let reopened = store.open(second.clone()).unwrap();
+    assert_ne!(reopened.revision, opened.revision);
+    assert_eq!(reopened.revision, store.revision());
+    store.save(reopened.revision, "puts 3").unwrap();
+    assert_eq!(std::fs::read_to_string(&second).unwrap(), "puts 3");
+    assert_eq!(std::fs::read_to_string(&first).unwrap(), "puts 2\n");
+    // A screen still showing the first file must not write into the second (review R1).
+    assert!(store.save(opened.revision, "puts :stale").is_err());
     assert_eq!(std::fs::read_to_string(&second).unwrap(), "puts 3");
     assert_eq!(std::fs::read_to_string(first).unwrap(), "puts 2\n");
 }
@@ -384,7 +390,7 @@ fn m03_save_requires_an_open_problem_and_io_errors_keep_the_document() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("solution.rb");
     let mut store = DocumentStore::default();
-    assert!(store.save("orphan").is_err());
+    assert!(store.save(store.revision(), "orphan").is_err());
     std::fs::write(&path, "original").unwrap();
     store.open(path.clone()).unwrap();
     assert!(store.open(root.path().join("missing.rb")).is_err());
@@ -392,15 +398,15 @@ fn m03_save_requires_an_open_problem_and_io_errors_keep_the_document() {
     std::fs::remove_file(&path).unwrap();
     std::fs::create_dir(&path).unwrap();
     std::fs::write(path.join("keep"), "keep").unwrap();
-    assert!(store.save("changed").is_err());
+    assert!(store.save(store.revision(), "changed").is_err());
     assert_eq!(std::fs::read_to_string(path.join("keep")).unwrap(), "keep");
     assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
     std::fs::remove_dir_all(&path).unwrap();
-    store.save("recovered").unwrap();
+    store.save(store.revision(), "recovered").unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "recovered");
     store.reset();
     assert!(store.path().is_none());
-    assert!(store.save("after reset").is_err());
+    assert!(store.save(store.revision(), "after reset").is_err());
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "recovered");
 }
 #[test]
@@ -793,7 +799,7 @@ fn m08_source_open_and_save_enforce_utf8_byte_limit_without_changing_current_doc
     store.open(current.clone()).unwrap();
     let at_limit = "あ".repeat(349525) + "a";
     assert_eq!(at_limit.len(), 1048576);
-    store.save(&at_limit).unwrap();
+    store.save(store.revision(), &at_limit).unwrap();
     assert_eq!(std::fs::read_to_string(&current).unwrap(), at_limit);
     std::fs::write(&candidate, &at_limit).unwrap();
     assert_eq!(store.open(candidate.clone()).unwrap().code, at_limit);
@@ -808,7 +814,7 @@ fn m08_source_open_and_save_enforce_utf8_byte_limit_without_changing_current_doc
         .contains("1 MiB"));
     assert_eq!(store.path(), Some(current.as_path()));
     assert!(store
-        .save(&(at_limit.clone() + "a"))
+        .save(store.revision(), &(at_limit.clone() + "a"))
         .err()
         .unwrap()
         .contains("1 MiB"));

@@ -37,7 +37,7 @@ beforeEach(resetWorkspace);
 
 after(async () => {
   if (app) await close(app);
-  if (app) for (const contest of [testContest, `${testContest}-list`, `${testContest}-memory`]) await removeContest(app, contest);
+  if (app) for (const contest of [testContest, `${testContest}-list`, `${testContest}-memory`, `${testContest}-race-a`, `${testContest}-race-b`]) await removeContest(app, contest);
   if (root) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
@@ -1350,6 +1350,72 @@ test('M09: a page read while the problem runs does not replace it', async () => 
   assert.equal(await page.locator('#problem-title').textContent(), starterProblem.title);
   await page.getByTestId('run-status').filter({ hasText: '正常終了' }).waitFor();
   assert.equal(await page.locator('#stdout').textContent(), 'done\n');
+});
+
+// Holds the UI test host's reply to the first `command` after it was handled, until released.
+function holdReply(command) {
+  const request = app.request;
+  let handled, release;
+  const done = new Promise(resolve => { handled = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  let held = false;
+  app.request = async (name, args = {}) => {
+    const result = await request(name, args);
+    if (name === command && !held) { held = true; handled(); await gate; }
+    return result;
+  };
+  return { handled: done, release() { app.request = request; release(); } };
+}
+const holdsReplies = { skip: runner === 'native' && 'holds a reply of the UI test host' };
+
+test('M09: a problem Rust opened is shown although another contest was chosen meanwhile, and saves go to it', holdsReplies, async () => {
+  const a = await seedWorkspaceProblem(app, `${testContest}-race-a`, 'race_a', { label: 'A', code: 'puts :a_original' });
+  const b = await seedWorkspaceProblem(app, `${testContest}-race-b`, 'race_b', { label: 'B', code: 'puts :b_original' });
+  await openProblem(page, a);
+  await openProblem(page, b);
+  await railIcon(`${testContest}-race-a`).click();
+  const reply = holdReply('task_open');
+  try {
+    await selectTask(page, a);
+    await reply.handled;
+    await railIcon(`${testContest}-race-b`).click();
+    await page.locator('#contest-title').filter({ hasText: `${testContest}-race-b` }).waitFor();
+  } finally { reply.release(); }
+  await page.locator('#problem-title').filter({ hasText: a.title }).waitFor();
+  await page.waitForFunction(() => document.getElementById('code-editor').getAttribute('contenteditable') === 'true');
+  await page.locator('#code-editor').fill('puts :after_race');
+  await page.locator('#code-editor').press('Control+s'); await waitSaved();
+  assert.equal(await readFile(a.solution, 'utf8'), 'puts :after_race');
+  assert.equal(await readFile(b.solution, 'utf8'), 'puts :b_original');
+});
+
+test('M09: switching tabs stops editing while the open file is saved, so no edit is lost', holdsReplies, async () => {
+  const problem = await seedWorkspaceProblem(app, testContest, 'switch_save', { code: null, label: 'W', title: '切替' });
+  await openProblem(page, problem);
+  await page.locator('#code-editor').fill('puts :first');
+  const reply = holdReply('document_save');
+  let editable;
+  try {
+    await page.locator('#file-tabs [role="tab"]', { hasText: /^W_2$/ }).click();
+    await reply.handled;
+    editable = await page.locator('#code-editor').isEditable();
+  } finally { reply.release(); }
+  assert.equal(editable, false);
+  await page.waitForFunction(() => document.querySelector('#file-tabs [aria-selected="true"]').textContent === 'W_2');
+  assert.equal(await readFile(path.join(problem.workspace, 'files', 'W_1.rb'), 'utf8'), 'puts :first');
+});
+
+test('M03: going back to the saved content clears a failed save', async () => {
+  await page.locator('#tolerant-compare').check();
+  await page.locator('#tolerance').fill('0');
+  await page.locator('#code-editor').press('Control+s');
+  await waitSaveFailed();
+  await page.locator('#tolerant-compare').uncheck();
+  await waitSaved();
+  assert.equal(await page.locator('#save-retry').isHidden(), true);
+  await page.locator('#home-icon').click();
+  await page.locator('#problem-title').filter({ hasText: 'ホーム' }).waitFor();
+  assert.equal(await page.locator('#save-failed-dialog').isVisible(), false);
 });
 
 test('M12: the download of the Linux image is shown while Ruby is checked', { skip: runner === 'native' && 'the native app downloads the real image only once' }, async () => {
