@@ -101,6 +101,22 @@ const phrases = {
   Completions: '補完候補',
 };
 
+// Tab takes the selected candidate, or the first. Right after they open, and while typing queries
+// them again, CodeMirror cannot accept them yet, so this waits unless the document changes
+// (docs/code-editor.md).
+function acceptWhenReady(view) {
+  const doc = view.state.doc;
+  const attempt = () => {
+    if (view.state.doc !== doc || view.state.readOnly || completionStatus(view.state) === null) return;
+    if (currentCompletions(view.state).length) {
+      if (selectedCompletionIndex(view.state) === null) view.dispatch({ effects: setSelectedCompletion(0) });
+      if (acceptCompletion(view)) return;
+    }
+    setTimeout(attempt, 20);
+  };
+  attempt();
+}
+
 export function createEditor(parent, initial, onChange, onCursor, completionClient) {
   const writable = new Compartment();
   // Ruby LSP's replies are used only while the editor shows the state they were asked for.
@@ -132,13 +148,7 @@ export function createEditor(parent, initial, onChange, onCursor, completionClie
     keymap.of([
       { key: 'Tab', run: view => {
         if (view.state.readOnly) return false;
-        // Shown candidates take Tab: the selected one, or the first (docs/code-editor.md).
-        if (completionStatus(view.state) === 'active' && currentCompletions(view.state).length) {
-          if (selectedCompletionIndex(view.state) === null) view.dispatch({ effects: setSelectedCompletion(0) });
-          // Right after they open, CodeMirror ignores acceptance; Tab must not move the focus then.
-          acceptCompletion(view);
-          return true;
-        }
+        if (completionStatus(view.state) !== null) { acceptWhenReady(view); return true; }
         if (view.state.selection.ranges.some(range => !range.empty)) return indentMore(view);
         view.dispatch({ ...view.state.replaceSelection('  '), userEvent: 'input.indent', scrollIntoView: true });
         return true;
