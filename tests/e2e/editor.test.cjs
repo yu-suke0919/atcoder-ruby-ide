@@ -229,8 +229,9 @@ test('E07: explicit completion navigates, cancels, inserts and preserves Tab and
   await code().press('Control+Shift+Z'); assert.equal(await editorText(page), 'puts');
   await code().fill('whil'); await code().press('Control+Space'); await completions();
   await code().press('Enter'); assert.equal(await editorText(page), 'while');
-  await code().fill('pu'); await code().press('Control+Space'); await completions();
-  await code().press('Tab'); assert.equal(await editorText(page), 'pu  ');
+  // Tab inserts the selected candidate while candidates are shown (D1).
+  await code().fill('whil'); await code().press('Control+Space'); await completions();
+  await code().press('Tab'); assert.equal(await editorText(page), 'while');
   await code().fill('push'); await code().press('Home'); await code().press('ArrowRight'); await code().press('ArrowRight');
   await code().press('Control+Space'); await completions(); await option('puts').click();
   assert.equal(await editorText(page), 'puts');
@@ -242,7 +243,7 @@ test('E07: explicit completion navigates, cancels, inserts and preserves Tab and
   assert.equal(await code().evaluate(el => el.contains(document.activeElement)), false);
 });
 
-test('D1: typing opens completion with nothing selected, so Enter still breaks the line', async () => {
+test('D1: typing opens completion with nothing selected, so Enter still breaks the line and Tab inserts', async () => {
   const selectedOption = page.locator('.cm-tooltip-autocomplete').getByRole('option', { selected: true });
   await code().fill(''); await page.keyboard.type('whil'); await completions();
   assert.equal(await selectedOption.count(), 0);
@@ -252,6 +253,11 @@ test('D1: typing opens completion with nothing selected, so Enter still breaks t
   await code().fill(''); await page.keyboard.type('whil'); await completions();
   await code().press('ArrowDown'); assert.equal(await selectedOption.count(), 1);
   await code().press('Enter'); assert.equal(await editorText(page), 'while');
+  // With nothing selected, Tab inserts the first candidate; with none shown, it indents.
+  await code().fill(''); await page.keyboard.type('whil'); await completions();
+  await code().press('Tab'); assert.equal(await editorText(page), 'while');
+  assert.equal(await page.locator('.cm-tooltip-autocomplete').count(), 0);
+  await code().press('Tab'); assert.equal(await editorText(page), 'while  ');
   await code().fill(''); await page.keyboard.type('"abc".'); await completions();
   await page.keyboard.type('upc'); await option('upcase').waitFor();
   await code().press('Escape');
