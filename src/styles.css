@@ -137,6 +137,8 @@ h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 .rail-icon, .rail-add { --icon: calc(var(--rail-width) - 16px); width: var(--icon); height: var(--icon); flex-shrink: 0; padding: 0; border: 1px solid var(--border); border-radius: calc(var(--icon) / 4); background: var(--panel); color: var(--text); font-size: calc(var(--icon) * .28); font-weight: 650; overflow: hidden; text-overflow: ellipsis; }
 .rail-icon[aria-pressed="true"] { background: #493760; border-color: #a78bfa; color: white; }
 .rail-add { font-size: calc(var(--icon) * .45); color: var(--muted); }
+/* The gear stays at the bottom of the rail. */
+.rail-settings { margin-top: auto; }
 .rail-home { font-size: calc(var(--icon) * .5); }
 .rail-menu { position: fixed; z-index: 10; min-width: 220px; max-height: 60vh; overflow: auto; padding: 4px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); box-shadow: 0 8px 24px #0008; }
 .rail-menu[hidden] { display: none; }
@@ -176,9 +178,9 @@ h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 .browser-message:empty { display: none; }
 .browser-host { flex: 1; min-width: 0; min-height: 0; background: #0c1016; display: grid; place-items: center; color: var(--muted); font-size: 11px; padding: 16px; text-align: center; }
 .statusbar { display: flex; justify-content: space-between; padding: 6px 16px; border-top: 1px solid var(--border); color: #75849b; font-size: 10px; flex-shrink: 0; background: #121720; }
-#contest-dialog, #save-failed-dialog, #file-rename-dialog, #file-delete-dialog { width: min(560px, calc(100vw - 36px)); padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); }
-#contest-dialog::backdrop, #save-failed-dialog::backdrop, #file-rename-dialog::backdrop, #file-delete-dialog::backdrop { background: #000a; }
-#contest-dialog h2, #save-failed-dialog h2, #file-rename-dialog h2, #file-delete-dialog h2 { margin: 0 0 12px; font-size: 15px; }
+#contest-dialog, #save-failed-dialog, #file-rename-dialog, #file-delete-dialog, #settings-dialog { width: min(560px, calc(100vw - 36px)); padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); }
+#contest-dialog::backdrop, #save-failed-dialog::backdrop, #file-rename-dialog::backdrop, #file-delete-dialog::backdrop, #settings-dialog::backdrop { background: #000a; }
+#contest-dialog h2, #save-failed-dialog h2, #file-rename-dialog h2, #file-delete-dialog h2, #settings-dialog h2 { margin: 0 0 12px; font-size: 15px; }
 #contest-url, #file-rename-input { display: block; width: 100%; margin-top: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 8px; font: inherit; }
 .dialog-help, #contest-message, #save-failed-message, #file-rename-message, #file-delete-message { color: var(--muted); font-size: 11px; line-height: 1.6; white-space: pre-line; }
 #contest-message[data-error="true"], #file-rename-message { color: #f5a3b2; }
