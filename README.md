@@ -1,6 +1,6 @@
 # AtCoder Ruby IDE
 
-Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使います。Rubyの実行とRuby LSPはWSL2の中で動き、AtCoderと同じRuby 3.4.5（YJIT付き）を配布物に同梱します。
+Windows 向けの個人用 Ruby IDE です。Tauri v2 と OS の WebView2 を使います。Rubyの実行とRuby LSPはWSL2の中で動きます。AtCoderと同じRuby 3.4.5（YJIT付き）は、初回起動時にダウンロードするアプリ専用のLinuxに入っています。
 WSL2の準備は必要ですが、Ruby のインストールや PATH 設定は（WindowsにもWSLにも）不要です。
 
 - [MVP の仕様と受入条件](docs/mvp.md)
@@ -51,7 +51,7 @@ WSL2の準備は必要ですが、Ruby のインストールや PATH 設定は�
 
 - Windows 10（x64は1903・ビルド18362.1049以降）または11。Homeでも使えます。
 - WSL2の本体。管理者のPowerShellで `wsl --install --no-distribution` を実行して再起動してください（Ubuntuなどのディストリビューションは要りません。入っていても使いません）。BIOS/UEFIでCPUの仮想化機能を有効にする必要があります。
-- アプリは初回起動時に、アプリ専用のLinux（Ubuntu 22.04の最小構成に Ruby・gem・エージェントを入れたもの、約45 MB）をGitHubのリリースからダウンロードし、SHA-256を確かめてから、ディストリビューション `AtCoderRubyIDE` として登録します。初回とアプリの更新でLinuxの版が変わったときだけ、ネットワークが要ります。利用者のディストリビューション・PATH・シェルの設定は変えません。WSL1でも動きますが、メモリ上限は効きません。
+- アプリは初回起動時に、アプリ専用のLinux（Ubuntu 22.04の最小構成に Ruby・gem・エージェントを入れたもの、約45 MB）をGitHubのリリースからダウンロードし、SHA-256を確かめてから、ディストリビューション `AtCoderRubyIDE` として登録します。初回とアプリの更新でLinuxの版が変わったときだけ、ネットワークが要ります。利用者のディストリビューション・PATH・シェルの設定は変えません。WSL1でも動き、メモリ上限も効きますが、Rubyの起動が遅くなるため`--jit`（YJIT）を使いません（画面のRubyのバージョンの横に「WSL1のためJITなし」と出ます）。
 - インストール版はアンインストールのときに登録を解除します。ポータブル版をやめるときは `wsl --unregister AtCoderRubyIDE` を実行してください。
 
 ## Windows 配布版
@@ -86,7 +86,7 @@ cargo fmt --all --check
 
 共通テスト（`npm test`）とブラウザー用テストホストは `RUBY_PATH`、未指定なら PATH の `ruby` を使い、テストホストは自分自身をエージェントとして起動して Ruby を実行します。`npm run prepare:gems` で、その Ruby の標準gemディレクトリへ固定gemを追加します。実行時も同じディレクトリだけを探索し、GEM_HOME・GEM_PATHやユーザー用gemの影響を受けません。
 
-アプリ専用の Linux（イメージは `vendor/wsl-image/`、アプリに入れる情報は `vendor/wsl/runtime.json`）は、Docker が使える Ubuntu 22.04 などの Linux で、Ruby のビルドに必要なパッケージ（`build-essential libssl-dev libyaml-dev libffi-dev zlib1g-dev libgmp-dev`）を入れてから `npm run prepare:wsl` で作り、`npm run check:wsl` で確かめます。CI の `wsl-runtime` Artifact の `runtime.json` を `vendor/wsl/` に置いても使えます。Windows で `npm start` するときも、アプリは `runtime.json` のURLからイメージを取得して WSL に登録します。
+アプリ専用の Linux（イメージは `vendor/wsl-image/`、アプリに入れる情報は `vendor/wsl/runtime.json`）は、Docker が使える Ubuntu 22.04 などの Linux で、Ruby のビルドに必要なパッケージ（`build-essential libssl-dev libyaml-dev libffi-dev zlib1g-dev libgmp-dev`）を入れてから `npm run prepare:wsl` で作り、`npm run check:wsl` で確かめます。アプリは `runtime.json` のURL（GitHubのリリース `wsl-images` の `atcoder-linux-<SHA-256>.tar.gz`）からイメージを取得して WSL に登録します。このファイルはCI（mainへのプッシュとPR）が `scripts/publish-wsl-image.cjs` でリリースへ置いたものだけがあります。手元の `npm run prepare:wsl` で作ったイメージはリリースにないため、その `runtime.json` のままではWindowsのアプリが取得できません。Windows で `npm start` するときは、CI の `wsl-runtime` Artifact の `runtime.json` を `vendor/wsl/` に置いてください。
 
 初回導入・コンパイルと、準備後の画面テスト時間は分けて測定します。
 

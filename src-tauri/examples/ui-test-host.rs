@@ -68,10 +68,10 @@ fn main() {
                 Ok(Value::Null)
             }
             "document_save" => {
-                documents
-                    .lock()
-                    .unwrap()
-                    .save(args["code"].as_str().ok_or("コードを指定してください")?)?;
+                documents.lock().unwrap().save(
+                    args["revision"].as_u64().ok_or("版を指定してください")?,
+                    args["code"].as_str().ok_or("コードを指定してください")?,
+                )?;
                 Ok(Value::Null)
             }
             "session_reset" => {

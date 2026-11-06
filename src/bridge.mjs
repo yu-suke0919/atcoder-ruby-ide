@@ -57,7 +57,7 @@ export const ide = {
     });
   },
   stop: () => invoke('stop_ruby'),
-  saveCode: code => invoke('document_save', { code }),
+  saveCode: (code, revision) => invoke('document_save', { code, revision }),
   resetSession: () => invoke('session_reset'),
   setTitle: title => appWindow.setTitle(title),
   onCloseRequested: handler => appWindow.onCloseRequested(handler),

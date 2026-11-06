@@ -57,7 +57,8 @@ jobs:
           retention-days: 14
 
   linux:
-    runs-on: ubuntu-latest
+    # Pinned: setup-ruby builds only the latest 3.4.x for newer images, and AtCoder uses 3.4.5.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

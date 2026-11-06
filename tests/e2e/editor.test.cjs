@@ -174,7 +174,7 @@ test('E06: a pending save never blocks typing and the latest edit is saved after
   await page.evaluate(async () => {
     const { ide } = await import('./bridge.mjs');
     const save = ide.saveCode;
-    ide.saveCode = code => new Promise((resolve, reject) => { window.finishEditorSave = () => { ide.saveCode = save; save(code).then(resolve, reject); }; });
+    ide.saveCode = (code, revision) => new Promise((resolve, reject) => { window.finishEditorSave = () => { ide.saveCode = save; save(code, revision).then(resolve, reject); }; });
   });
   await code().press('Control+s');
   await page.waitForFunction(() => document.getElementById('save-state').dataset.state === 'saving');

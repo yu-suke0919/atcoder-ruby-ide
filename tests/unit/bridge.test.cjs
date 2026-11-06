@@ -73,9 +73,9 @@ test('M03: the bridge only saves into the opened workspace and has no external f
     window: { getCurrentWindow: () => ({}) },
   } };
   const { ide } = await import(`${pathToFileURL(path.join(__dirname, '../../src/bridge.mjs')).href}?workspace-only`);
-  await ide.saveCode('puts 1');
+  await ide.saveCode('puts 1', 3);
   await ide.resetSession();
-  assert.deepEqual(calls, [{ command: 'document_save', args: { code: 'puts 1' } }, { command: 'session_reset', args: undefined }]);
+  assert.deepEqual(calls, [{ command: 'document_save', args: { code: 'puts 1', revision: 3 } }, { command: 'session_reset', args: undefined }]);
   for (const name of ['saveFile', 'newFile', 'openCases', 'saveCases', 'confirmDiscard']) assert.equal(ide[name], undefined, name);
   // Files are tabs of a workspace: the commands name the workspace and the tab, never a path.
   calls.length = 0;
