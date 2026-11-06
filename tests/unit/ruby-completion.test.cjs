@@ -1,13 +1,14 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-async function complete(doc, pos = doc.length, readOnly = false) {
+async function complete(doc, pos = doc.length, readOnly = false, explicit = true) {
   const { EditorState, StreamLanguage, ruby } = await import('../../src/vendor/editor/codemirror.mjs');
   const { CompletionContext } = await import('@codemirror/autocomplete');
   const { rubyCompletions } = await import('../../src/ruby-completion.mjs');
   const state = EditorState.create({ doc, selection: { anchor: pos }, extensions: [StreamLanguage.define(ruby), EditorState.readOnly.of(readOnly)] });
-  return rubyCompletions(new CompletionContext(state, pos, true));
+  return rubyCompletions(new CompletionContext(state, pos, explicit));
 }
+const typed = doc => complete(doc, doc.length, false, false);
 
 test('Ruby completion offers keywords, common methods and the three templates without duplicate labels', async () => {
   const result = await complete('');
@@ -292,5 +293,18 @@ test('Ruby completion caches recheck changed assignments and control boundaries'
     const state = EditorState.create({ doc, extensions: [StreamLanguage.define(ruby)] });
     assert.equal(typed.validFor('up', doc.length - 2, doc.length, state), valid, doc);
     if (valid) assert.equal(unknown.validFor('up', doc.length - 2, doc.length, state), false, doc);
+  }
+});
+
+test('D1: typing opens completion after an identifier, `.` and `&.`, but not elsewhere', async () => {
+  assert.ok((await typed('pu')).options.some(option => option.label === 'puts'));
+  for (const doc of ['values.', 'values&.', '"abc".']) {
+    const result = await typed(doc);
+    assert.equal(result.from, doc.length, doc);
+    assert.ok(result.options.some(option => option.type === 'method'), doc);
+  }
+  assert.ok((await typed('"abc".')).options.some(option => option.label === 'upcase'));
+  for (const doc of ['', 'x = ', 'puts(', '1..', '1...', '12', 'a = 3.1', '# values.', 'puts "a.']) {
+    assert.equal(await typed(doc), null, doc);
   }
 });

@@ -3,7 +3,8 @@ import {
   StreamLanguage, ruby, indentUnit, indentOnInput, bracketMatching,
   syntaxHighlighting, HighlightStyle, tags, history, historyKeymap, defaultKeymap,
   indentMore, indentLess, redo, closeBrackets, closeBracketsKeymap,
-  autocompletion, completionKeymap, startCompletion, closeCompletion,
+  autocompletion, completionKeymap, completionStatus, acceptCompletion, currentCompletions, selectedCompletionIndex, setSelectedCompletion,
+  startCompletion, closeCompletion,
   search, searchKeymap, openSearchPanel,
 } from './vendor/editor/codemirror.mjs';
 import { lspCompletions } from './lsp-completion.mjs';
@@ -100,16 +101,35 @@ const phrases = {
   Completions: '補完候補',
 };
 
-function complete(view) {
-  if (view.state.readOnly || view.compositionStarted) return false;
-  return startCompletion(view);
+// Tab takes the selected candidate, or the first. Right after they open, and while typing queries
+// them again, CodeMirror cannot accept them yet, so this waits unless the document changes
+// (docs/code-editor.md).
+function acceptWhenReady(view) {
+  const doc = view.state.doc;
+  const attempt = () => {
+    if (view.state.doc !== doc || view.state.readOnly || completionStatus(view.state) === null) return;
+    if (currentCompletions(view.state).length) {
+      if (selectedCompletionIndex(view.state) === null) view.dispatch({ effects: setSelectedCompletion(0) });
+      if (acceptCompletion(view)) return;
+    }
+    setTimeout(attempt, 20);
+  };
+  attempt();
 }
 
 export function createEditor(parent, initial, onChange, onCursor, completionClient) {
   const writable = new Compartment();
   // Ruby LSP's replies are used only while the editor shows the state they were asked for.
   const completion = new Compartment();
-  const completer = currentRevision => autocompletion({ override: [lspCompletions(completionClient, () => revision === currentRevision)], activateOnTyping: false, defaultKeymap: false, filterStrict: true });
+  // Typing opens candidates with none selected, so Enter still breaks the line; Ctrl+Space selects
+  // the first until those candidates close (docs/code-editor.md).
+  let explicit = false;
+  const completer = currentRevision => autocompletion({ override: [lspCompletions(completionClient, () => revision === currentRevision)], selectOnOpen: explicit, defaultKeymap: false, filterStrict: true });
+  const complete = view => {
+    if (view.state.readOnly || view.compositionStarted) return false;
+    if (!explicit) { explicit = true; view.dispatch({ effects: completion.reconfigure(completer(revision)) }); }
+    return startCompletion(view);
+  };
   // The other files of the open problem keep their state, and with it their undo history.
   const files = new Map();
   let file = null;
@@ -128,6 +148,7 @@ export function createEditor(parent, initial, onChange, onCursor, completionClie
     keymap.of([
       { key: 'Tab', run: view => {
         if (view.state.readOnly) return false;
+        if (completionStatus(view.state) !== null) { acceptWhenReady(view); return true; }
         if (view.state.selection.ranges.some(range => !range.empty)) return indentMore(view);
         view.dispatch({ ...view.state.replaceSelection('  '), userEvent: 'input.indent', scrollIntoView: true });
         return true;
@@ -147,6 +168,10 @@ export function createEditor(parent, initial, onChange, onCursor, completionClie
       ...defaultKeymap.filter(binding => binding.key !== 'Mod-Enter'),
     ]),
     EditorView.updateListener.of(update => {
+      if (explicit && completionStatus(update.startState) !== null && completionStatus(update.state) === null) {
+        explicit = false;
+        queueMicrotask(() => { if (!explicit) view.dispatch({ effects: completion.reconfigure(completer(revision)) }); });
+      }
       if (update.docChanged) onChange();
       else if (update.selectionSet) onCursor();
     }),
@@ -158,6 +183,7 @@ export function createEditor(parent, initial, onChange, onCursor, completionClie
      * undo history; another problem starts every file afresh (docs/code-editor.md). */
     show(name, code, sameProblem = false) {
       revision++;
+      explicit = false;
       if (!sameProblem) files.clear();
       else if (file !== null) files.set(file, view.state);
       const kept = files.get(name);
