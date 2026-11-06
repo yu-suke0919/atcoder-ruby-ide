@@ -702,3 +702,4 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 - 新しい画面テストの1件が、同じコンテストに同じラベル（`S`）の問題を作ったため、問題一覧の重複で登録できずに失敗し、その後のテストも問題を開けずに失敗した。ラベルを`W`に変えた。
 - クラウドセッション（root）で、Rust（rootで失敗する既知の`r02_cleanup_failure_releases_reservation`以外）、`cargo fmt --all --check`、Node単体89件、画面テスト89件（Windows専用2件を除く）が成功した。
 - PR #60をマージした後のCIで、Linuxのジョブが`ruby/setup-ruby`で失敗した。GitHubの`ubuntu-latest`がUbuntu 26.04に変わり、そこでは3.4系の最新（3.4.12）しか用意されず、AtCoderと同じ3.4.5を入れられなかったため。このPRの変更とは関係がなく、mainでも同じく失敗する。Linuxのジョブを、それまでの`ubuntu-latest`と同じUbuntu 24.04に固定した。
+- Ubuntu 24.04に固定した後のCIで、Rustの`agent_answers_ruby_info_and_streams_a_run_in_order`が、最初のイベントが`started`でなく`output`で失敗した。エージェントは実行の`started`を作業スレッドから、要求への応答を主スレッドから送るため、`started`が応答より先に届くことがある。本物のクライアント（`AgentClient`）は要求の前に受け取り先を登録して対応済みだったが、テストの補助関数`answer`は応答より前のメッセージを捨てていた。捨てずに残し、後の`events`で読むようにした。クラウドセッションでは通常の40回と、1つのCPUに負荷をかけた30回のどちらでも再現しなかったが、失敗の内容（`started`が抜けて`output`が先頭になる）はこの経路でしか起きない。

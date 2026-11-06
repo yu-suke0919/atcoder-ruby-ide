@@ -29,6 +29,9 @@ struct Agent {
     child: Child,
     stdin: Option<ChildStdin>,
     lines: Receiver<Value>,
+    // Messages read while waiting for an answer, such as a run's started event, which the agent
+    // may send before it answers the request that started the run.
+    kept: std::cell::RefCell<std::collections::VecDeque<Value>>,
 }
 
 impl Agent {
@@ -52,6 +55,7 @@ impl Agent {
             stdin: child.stdin.take(),
             child,
             lines,
+            kept: Default::default(),
         }
     }
     fn send(&mut self, id: u64, command: &str, args: Value) {
@@ -59,15 +63,19 @@ impl Agent {
         writeln!(self.stdin.as_mut().unwrap(), "{request}").unwrap();
     }
     fn next(&self) -> Value {
+        if let Some(message) = self.kept.borrow_mut().pop_front() {
+            return message;
+        }
         self.lines.recv_timeout(Duration::from_secs(60)).unwrap()
     }
     fn answer(&mut self, id: u64, command: &str, args: Value) -> Value {
         self.send(id, command, args);
         loop {
-            let message = self.next();
+            let message = self.lines.recv_timeout(Duration::from_secs(60)).unwrap();
             if message["id"] == id {
                 return message;
             }
+            self.kept.borrow_mut().push_back(message);
         }
     }
     /// Run events of one run, up to and including its completed or failed event.
