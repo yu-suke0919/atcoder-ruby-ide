@@ -33,7 +33,8 @@ export function rubyCompletions(context) {
   }
   const word = context.matchBefore(/[\p{L}\p{N}_]+[!?]?/u);
   if (word && !identifier.test(word.text)) return null;
-  if (!word && !context.explicit) return null;
+  // Typing opens candidates in a word or right after `.`/`&.` (docs/code-editor.md).
+  if (!word && !context.explicit && !isMemberAccess(state, pos)) return null;
   const from = word ? word.from : pos;
   const member = isMemberAccess(state, from);
   const type = member ? receiverType(state, tree, from) : null;
