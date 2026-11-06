@@ -16,8 +16,7 @@ Tauri の `app.path().app_local_data_dir()` を使う。Windows では通常 `%L
   workspaces/<contest-id>/<task-id>/solution.rb  U3aより前の解答（変換元として残す）
   home/samples.json                              ホームのサンプルと許容誤差
   home/files/*.rb                                ホームのファイル（タブ）
-  submissions/<contest-id>.json                  アプリのブラウザで行った提出の結果
-  settings.json                                  設定
+  submissions/<contest-id>.json                  アプリのブラウザで表示した自分の提出一覧から読んだ提出の結果
 ```
 
 - `contests`：コンテスト・問題集の名前・URL、登録の経緯（参加登録・「＋」）、開始・終了の時刻、非表示の状態、公式順の問題一覧（表示番号・タイトル・問題URL）。
@@ -25,7 +24,7 @@ Tauri の `app.path().app_local_data_dir()` を使う。Windows では通常 `%L
 - `samples.json`：初めて開いたときに`task.json`のサンプルから作り、以後は利用者の編集だけで変わる。読み取り直しで上書きしない。
 - 解答ファイルは問題ごとに複数持つ。初めて開いたときに2つ作る。
 
-以前の仕様の`library/problems`（単問キャッシュ）と`library/collections`（問題集の一覧と、問題文を含む固定原本）はU2bから読まない。残ったファイルは利用者が手動で削除してよい。以前に登録した問題集は、同じURLを「＋」で登録し直すと問題一覧を取り直し、`workspaces`の解答とサンプルをそのまま使える。`submissions`・`settings.json`は、[ロードマップ](roadmap.md)のU5で加える。移すPRで、次の保存形式の方針に従う。
+以前の仕様の`library/problems`（単問キャッシュ）と`library/collections`（問題集の一覧と、問題文を含む固定原本）はU2bから読まない。残ったファイルは利用者が手動で削除してよい。以前に登録した問題集は、同じURLを「＋」で登録し直すと問題一覧を取り直し、`workspaces`の解答とサンプルをそのまま使える。`submissions`は、[ロードマップ](roadmap.md)のU5aで加える。設定（U5c）はファイルにせず、画面の`localStorage`に置く（[画面の仕様](ui.md#設定歯車)）。移すPRで、次の保存形式の方針に従う。
 
 U2bの時点の形式は次のとおり。どれも未知の項目を拒否する。
 
