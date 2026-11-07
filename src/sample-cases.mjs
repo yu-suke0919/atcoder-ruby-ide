@@ -52,6 +52,14 @@ export class SampleCases {
     this.#savedData = JSON.stringify(data);
   }
 
+  // Back to the samples last saved, when edits that failed to save are discarded.
+  revert() {
+    const { tolerance = null, cases } = JSON.parse(this.#savedData);
+    const selected = this.selected;
+    this.replace(cases, { saved: true, tolerance });
+    this.selected = Math.min(selected, this.items.length - 1);
+  }
+
   replace(data, { saved = false, tolerance = null } = {}) {
     if (!Array.isArray(data) || data.length < 1 || data.length > MAX_CASES) {
       throw new Error('ケースは 1〜100 件にしてください。');

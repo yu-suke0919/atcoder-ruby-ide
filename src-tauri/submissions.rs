@@ -7,10 +7,14 @@ use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use url::Url;
 
 const MAX_SUBMISSIONS: usize = 10_000;
 const MAX_SUBMISSIONS_BYTES: usize = 4 * 1024 * 1024;
+/// Every webview reads its submission list on its own thread: records are read, merged and saved
+/// one at a time so no submission is lost (docs/review.md, R6).
+static RECORDS: Mutex<()> = Mutex::new(());
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -155,6 +159,9 @@ impl Submissions {
             .ok_or("自分の提出一覧のページではありません。")?;
         let key = ContestKey::parse(&contest)?;
         let path = self.path(&key);
+        let _guard = RECORDS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut record = self.load(&path)?;
         let read = parse(&key, html);
         let judging = read.iter().any(|submission| submission.judging);

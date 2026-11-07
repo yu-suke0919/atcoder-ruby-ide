@@ -198,6 +198,28 @@ fn input_formats_are_read_from_the_loaded_page_and_become_reading_code() {
         .as_deref(),
         Some("n, s = gets.split\nn = n.to_i\n")
     );
+    // Decimals are read as strings, left to the user to convert (review R8, ABC169 C).
+    assert_eq!(
+        input_code(
+            "$A$ $B$",
+            &constraints(&[
+                "$0 \\leq A \\leq 10^{15}$",
+                "$0 \\leq B < 10$",
+                "$A$ は整数",
+                "$B$ は小数第 $2$ 位まで与えられる"
+            ])
+        )
+        .as_deref(),
+        Some("a, b = gets.split\na = a.to_i\n")
+    );
+    assert_eq!(
+        input_code(
+            "$N$\n$X_1$\n$\\vdots$\n$X_N$",
+            &constraints(&["$X_i$ は実数"])
+        )
+        .as_deref(),
+        Some("n = gets.to_i\nn.times do\n  x = gets.chomp\nend\n")
+    );
     assert_eq!(
         input_code("$N$\n$A_1$\n$\\vdots$\n$A_{N-1}$", &[]).as_deref(),
         Some("n = gets.to_i\n(n - 1).times do\n  a = gets.to_i\nend\n")
@@ -1395,5 +1417,36 @@ fn u6a_saved_times_must_be_a_pair_in_order() {
     ] {
         std::fs::write(directory.join("abc483.json"), &broken).unwrap();
         assert!(contests.list().unwrap().is_empty(), "{broken}");
+    }
+}
+
+#[test]
+fn r6_submissions_read_at_the_same_time_are_all_kept() {
+    for _ in 0..10 {
+        let root = tempfile::tempdir().unwrap();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let threads: Vec<_> = [80642902, 80642903]
+            .into_iter()
+            .map(|id| {
+                let (root, barrier) = (root.path().to_owned(), barrier.clone());
+                std::thread::spawn(move || {
+                    let page = submissions_list(&[
+                        submission_row(WAITING, 80642902).replace("80642902", &id.to_string())
+                    ]);
+                    barrier.wait();
+                    Submissions::new(root)
+                        .read_page(SUBMISSIONS, &page)
+                        .unwrap();
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        let saved: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(root.path().join("submissions/tessoku-book.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(saved["submissions"].as_array().unwrap().len(), 2);
     }
 }
