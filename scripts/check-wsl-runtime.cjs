@@ -16,7 +16,7 @@ async function checkRuntime(image = path.join(root, 'vendor/wsl-image/atcoder-li
   const bytes = readFileSync(image);
   assert.equal(require('node:crypto').createHash('sha256').update(bytes).digest('hex'), runtime.sha256, 'runtime.json has another SHA-256');
   assert.equal(bytes.length, runtime.bytes);
-  assert.ok(runtime.url.endsWith(`/releases/download/wsl-images/atcoder-linux-${runtime.sha256}.tar.gz`), runtime.url);
+  assert.ok(runtime.url.endsWith(`/releases/download/wsl-images/atcoder-linux-${runtime.version}.tar.gz`), runtime.url);
   const tag = `atcoder-ruby-ide-check:${runtime.version.slice(0, 12)}`;
   const container = `atcoder-ruby-ide-check-${process.pid}`;
   execFileSync('docker', ['import', image, tag], { stdio: 'inherit' });

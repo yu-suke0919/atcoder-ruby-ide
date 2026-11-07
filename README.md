@@ -86,7 +86,7 @@ cargo fmt --all --check
 
 共通テスト（`npm test`）とブラウザー用テストホストは `RUBY_PATH`、未指定なら PATH の `ruby` を使い、テストホストは自分自身をエージェントとして起動して Ruby を実行します。`npm run prepare:gems` で、その Ruby の標準gemディレクトリへ固定gemを追加します。実行時も同じディレクトリだけを探索し、GEM_HOME・GEM_PATHやユーザー用gemの影響を受けません。
 
-アプリ専用の Linux（イメージは `vendor/wsl-image/`、アプリに入れる情報は `vendor/wsl/runtime.json`）は、Docker が使える Ubuntu 22.04 などの Linux で、Ruby のビルドに必要なパッケージ（`build-essential libssl-dev libyaml-dev libffi-dev zlib1g-dev libgmp-dev`）を入れてから `npm run prepare:wsl` で作り、`npm run check:wsl` で確かめます。アプリは `runtime.json` のURL（GitHubのリリース `wsl-images` の `atcoder-linux-<SHA-256>.tar.gz`）からイメージを取得して WSL に登録します。このファイルはCI（mainへのプッシュとPR）が `scripts/publish-wsl-image.cjs` でリリースへ置いたものだけがあります。手元の `npm run prepare:wsl` で作ったイメージはリリースにないため、その `runtime.json` のままではWindowsのアプリが取得できません。Windows で `npm start` するときは、CI の `wsl-runtime` Artifact の `runtime.json` を `vendor/wsl/` に置いてください。
+アプリ専用の Linux（イメージは `vendor/wsl-image/`、アプリに入れる情報は `vendor/wsl/runtime.json`）は、Docker が使える Ubuntu 22.04 などの Linux で、Ruby のビルドに必要なパッケージ（`build-essential libssl-dev libyaml-dev libffi-dev zlib1g-dev libgmp-dev`）を入れてから `npm run prepare:wsl` で作り、`npm run check:wsl` で確かめます。Ruby・gem・Ruby LSPは`.cache/wsl/`に残し、それを決めるファイルが変わるまで作り直しません。アプリは `runtime.json` のURL（GitHubのリリース `wsl-images` の `atcoder-linux-<版>.tar.gz`）からイメージを取得して WSL に登録します。このファイルはCI（mainへのプッシュとPR）が `scripts/publish-wsl-image.cjs` でリリースへ置いたものだけがあります。手元の `npm run prepare:wsl` で作ったイメージはリリースにないため、その `runtime.json` のままではWindowsのアプリが取得できません。Windows で `npm start` するときは、CI の `wsl-runtime` Artifact の `runtime.json` を `vendor/wsl/` に置いてください。
 
 初回導入・コンパイルと、準備後の画面テスト時間は分けて測定します。
 

@@ -23,3 +23,12 @@ test('CI builds the WSL distribution, tests on Linux and builds the Windows app,
   assert.deepEqual(Object.keys(workflow.jobs), ['wsl-runtime', 'linux', 'windows']);
   assert.equal(workflow.on.workflow_dispatch, null);
 });
+
+test('CI caches the built Ruby, gems and Ruby LSP under the files that decide them', () => {
+  const script = readFileSync(path.join(__dirname, '../../scripts/build-wsl-runtime.sh'), 'utf8');
+  const inputs = script.match(/^inputs=\(([^)]*)\)$/m)[1].trim().split(/\s+/);
+  for (const file of inputs) readFileSync(path.join(__dirname, '../..', file));
+  const cache = workflow.jobs['wsl-runtime'].steps.find(step => step.uses?.startsWith('actions/cache@'));
+  assert.equal(cache.with.path, '.cache/wsl');
+  assert.equal(cache.with.key, `wsl-runtime-\${{ hashFiles(${inputs.map(file => `'${file}'`).join(', ')}) }}`);
+});
