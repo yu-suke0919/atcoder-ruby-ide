@@ -18,6 +18,7 @@
     "allow-contest-list",
     "allow-contest-register",
     "allow-contest-set-hidden",
+    "allow-submission-states",
     "allow-task-open",
     "allow-samples-save",
     "allow-home-open",

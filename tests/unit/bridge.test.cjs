@@ -116,3 +116,14 @@ test('the bridge sends each command the argument names Tauri reads from the Rust
     assert.deepEqual(sent, commands.get(command), command);
   }
 });
+
+// Windows refuses a command its capability does not allow; the UI test host has no capabilities,
+// so only this test sees a command left out (U5a).
+test('every command the app declares is allowed for its own page', () => {
+  const fs = require('node:fs');
+  const build = fs.readFileSync(path.join(__dirname, '../../src-tauri/build.rs'), 'utf8');
+  const declared = [...build.slice(build.indexOf('.commands(&[')).matchAll(/"(\w+)"/g)].map(([, name]) => name);
+  assert.ok(declared.includes('run_ruby'));
+  const capability = JSON.parse(fs.readFileSync(path.join(__dirname, '../../src-tauri/capabilities/main.json'), 'utf8'));
+  for (const name of declared) assert.ok(capability.permissions.includes(`allow-${name.replaceAll('_', '-')}`), name);
+});
