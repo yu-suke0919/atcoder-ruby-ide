@@ -37,7 +37,7 @@ beforeEach(resetWorkspace);
 
 after(async () => {
   if (app) await close(app);
-  if (app) for (const contest of [testContest, `${testContest}-list`, `${testContest}-memory`, `${testContest}-race-a`, `${testContest}-race-b`, `${testContest}-subs`, `${testContest}-join`, `${testContest}-started`, `${testContest}-ended`]) await removeContest(app, contest);
+  if (app) for (const contest of [testContest, `${testContest}-list`, `${testContest}-memory`, `${testContest}-race-a`, `${testContest}-race-b`, `${testContest}-subs`, `${testContest}-join`, `${testContest}-started`, `${testContest}-ended`, `${testContest}-start`]) await removeContest(app, contest);
   if (root) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
@@ -1151,6 +1151,13 @@ test('P14: long problem runs receive their budget before output and keep per-cas
 });
 
 const railIcon = contest => page.locator(`#contest-icons .rail-icon[aria-label="テスト ${contest}"]`);
+const hour = 60 * 60 * 1000;
+// AtCoder writes contest times in JST.
+const jst = ms => new Date(ms + 9 * hour).toISOString().replace(/\.\d+Z$/, '+09:00');
+const openTop = async contest => {
+  await page.locator('#browser-url').fill(`https://atcoder.jp/contests/${contest}`);
+  await page.locator('#browser-url').press('Enter');
+};
 
 test('M17/M18: a registered contest lists its tasks in official order and the four columns fit 1280x720', async () => {
   const contest = `${testContest}-list`;
@@ -1289,14 +1296,7 @@ test('M20: the task list is colored by the submissions read from the shown submi
 });
 
 test('M17/U6a: a registered contest top adds the contest, says when it starts, lists its tasks once started and is hidden a day after its end', async () => {
-  const hour = 60 * 60 * 1000;
-  // AtCoder writes the times in JST.
-  const jst = ms => new Date(ms + 9 * hour).toISOString().replace(/\.\d+Z$/, '+09:00');
   const now = Date.now();
-  const openTop = async contest => {
-    await page.locator('#browser-url').fill(`https://atcoder.jp/contests/${contest}`);
-    await page.locator('#browser-url').press('Enter');
-  };
   const upcoming = `${testContest}-join`;
   const start = jst(now + hour);
   app.atcoder.pages.set(`/contests/${upcoming}`, contestTopPage(upcoming, { contestant: false, start, end: jst(now + 3 * hour) }));
@@ -1330,6 +1330,28 @@ test('M17/U6a: a registered contest top adds the contest, says when it starts, l
   assert.deepEqual([hidden.hidden, hidden.joined], [true, undefined]);
   assert.equal(await railIcon(ended).count(), 0);
   assert.equal(await railIcon(upcoming).count(), 1);
+});
+
+test('M17/U6b: a joined contest that starts while the app runs fetches its tasks and opens the first one, also when selected before the start', async () => {
+  const contest = `${testContest}-start`;
+  await seedWorkspaceProblem(app, contest, 'start_a', { label: 'A', title: '開始' });
+  await seedWorkspaceProblem(app, contest, 'start_b', { label: 'B', title: '次' });
+  // Right at the start the task list cannot be seen yet: the app tries again.
+  const list = `/contests/${contest}/tasks`;
+  const served = app.atcoder.pages.get(list);
+  app.atcoder.pages.delete(list);
+  const start = Date.now() + 4000;
+  app.atcoder.pages.set(`/contests/${contest}`, contestTopPage(contest, { start: jst(start), end: jst(start + 2 * hour) }));
+  await openTop(contest);
+  await railIcon(contest).click();
+  await page.locator('#task-message').filter({ hasText: '開始前です' }).waitFor();
+  const shown = setTimeout(() => app.atcoder.pages.set(list, served), start + 2000 - Date.now());
+  try {
+    await page.locator('#problem-title').filter({ hasText: 'A - 開始' }).waitFor({ timeout: 30000 });
+  } finally { clearTimeout(shown); }
+  assert.deepEqual(await page.locator('.task-item .task-label').allTextContents(), ['A', 'B']);
+  assert.equal(await page.locator('.task-item[aria-current="true"] .task-label').textContent(), 'A');
+  assert.equal(await railIcon(contest).getAttribute('aria-pressed'), 'true');
 });
 
 test('U2c: the URL field follows the shown page and opens only AtCoder pages', async () => {

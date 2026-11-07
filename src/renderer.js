@@ -761,6 +761,47 @@ async function loadMissingTasks(url) {
     renderTasks();
   } catch (error) { if (url === selectedContest) taskMessage(error.message, true); }
 }
+// A joined contest that starts while the app runs gets its task list and opens its first task,
+// switching from any other problem (U6b). Contests that started before the app opened are
+// fetched when selected. Right at the start the list may not be visible yet, so it is tried every
+// 5 seconds for up to a minute.
+const appStartedAt = Date.now();
+const startedContests = new Set();
+function checkStarts() {
+  const now = Date.now();
+  for (const contest of contests) {
+    const start = contest.joined && contest.startTime ? Date.parse(contest.startTime) : NaN;
+    if (start >= appStartedAt && start <= now && !startedContests.has(contest.url)) {
+      startedContests.add(contest.url);
+      openStartedContest(contest.url, start);
+    }
+  }
+}
+async function openStartedContest(url, start) {
+  let contest = contestFor(url);
+  while (!contest.tasks.length) {
+    if (url === selectedContest) taskMessage('始まりました。問題一覧を取得しています…');
+    try {
+      contest = (await ide.registerContest(url)).contest;
+      rememberContest(contest);
+    } catch (error) {
+      if (Date.now() - start >= 60 * 1000) {
+        if (url === selectedContest) taskMessage(error.message, true);
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      contest = contestFor(url);
+      if (!contest) return;
+    }
+  }
+  if (url === selectedContest) taskMessage('');
+  await selectContest(url);
+  if (running || fileBusy || closing) {
+    taskMessage(`${contest.title}が始まりました。実行が終わったら問題を選んでください。`);
+    return;
+  }
+  await openTask(contest.tasks[0]);
+}
 async function setHidden(url, hidden) {
   try {
     rememberContest(await ide.setContestHidden(url, hidden));
@@ -959,3 +1000,4 @@ async function initialize() {
 }
 initialize();
 setInterval(hideEndedContests, 60 * 1000);
+setInterval(checkStarts, 1000);
