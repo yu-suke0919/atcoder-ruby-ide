@@ -264,6 +264,8 @@ function showTolerance() {
 }
 
 function resetComparison(all = false) {
+  // The copy notice is about the code that ran, which an edit or another file replaces.
+  if (all) $('copy-notice').hidden = true;
   cases.invalidate(all);
   expectedOutput.disabled = !cases.current.compare;
   showComparison(cases.current.comparison);
@@ -332,7 +334,7 @@ async function fileAction(action, report = message) {
 async function run(all = false) {
   if (running || fileBusy || closing || !rubyAvailable || !activeProblem) return;
   const code = editor.value;
-  const matchedBefore = cases.allMatched;
+  $('copy-notice').hidden = true;
   cases.clear(all);
   const queue = cases.snapshot(all, activeProblem?.timeLimitMs ?? null, activeProblem?.memoryLimitMiB ?? null);
   canceled = false;
@@ -368,8 +370,8 @@ async function run(all = false) {
   try { await pending; }
   finally { currentRun = null; running = false; showResult(); updateButtons(); }
   // A match is reset by any edit of the code, so the code that matched is the code that ran.
-  if (!matchedBefore && cases.allMatched && copyOnMatch()) {
-    try { await navigator.clipboard.writeText(code); message('全サンプルが一致したため、コードをクリップボードへコピーしました。'); }
+  if (cases.allMatched && copyOnMatch()) {
+    try { await navigator.clipboard.writeText(code); $('copy-notice').hidden = false; }
     catch (error) { message(`コードをクリップボードへコピーできませんでした：${error.message}`, true); }
   }
 }
@@ -451,6 +453,7 @@ function applyWorkspace(result, problem) {
   clearTimeout(saveTimer);
   saveTimer = null;
   saveError = null;
+  $('copy-notice').hidden = true;
   activeProblem = { ...problem, files: result.files, file: result.file };
   editor.readingForms = result.readingForms ?? [];
   editor.show(result.file, result.document.code);
