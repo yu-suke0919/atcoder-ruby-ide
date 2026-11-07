@@ -1563,8 +1563,10 @@ test('M17: contest icons can be hidden and restored from the rail', async () => 
   await icon.waitFor({ state: 'detached' });
   assert.equal(JSON.parse(await readFile(path.join(app.dataDir, 'contests', `${testContest}.json`), 'utf8')).hidden, true);
   assert.equal(await page.locator('#problem-title').textContent(), starterProblem.title);
-  await page.locator('#contest-rail').click({ button: 'right', position: { x: 28, y: 300 } });
-  await page.getByRole('menuitem', { name: /表示する/ }).click();
+  // The empty part of the rail, below the icons that earlier tests added.
+  const [rail, icons] = await Promise.all(['#contest-rail', '#contest-icons'].map(selector => page.locator(selector).boundingBox()));
+  await page.locator('#contest-rail').click({ button: 'right', position: { x: 28, y: icons.y + icons.height - rail.y + 8 } });
+  await page.getByRole('menuitem', { name: `「テスト ${testContest}」を表示する`, exact: true }).click();
   await icon.waitFor();
   assert.equal(JSON.parse(await readFile(path.join(app.dataDir, 'contests', `${testContest}.json`), 'utf8')).hidden, false);
   await workspaceStillOpen();
