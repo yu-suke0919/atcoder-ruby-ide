@@ -1,6 +1,9 @@
 //! The AtCoder pages in the right column: one home page and one page per task of the selected
 //! contest. Pages cannot call the app; the app reads a task page after it has loaded.
-use atcoder_ruby_ide::{browser_target, is_allowed, is_task_page, read_task_page, Workspaces};
+use atcoder_ruby_ide::{
+    browser_target, is_allowed, is_task_page, read_task_page, submissions_page, Submissions,
+    Workspaces,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -117,6 +120,55 @@ fn read_if_needed(webview: &tauri::Webview, task_url: String) {
     }
 }
 
+/// How often a shown submission list with a judging submission is read again (U5a).
+const JUDGING_READ_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// Reads the shown submission list into the contest's submissions and tells the screen the colors.
+/// While a submission is judging, AtCoder rewrites the list in place, so it is read again as long
+/// as the page still shows it.
+fn read_submissions(webview: &tauri::Webview) {
+    let app = webview.app_handle().clone();
+    let label = webview.label().to_string();
+    let read = webview.eval_with_callback("document.documentElement.outerHTML", move |json| {
+        let html = serde_json::from_str::<String>(&json).unwrap_or_default();
+        let (app, label) = (app.clone(), label.clone());
+        std::thread::spawn(move || {
+            let shown_list = || {
+                app.get_webview(&label)
+                    .and_then(|webview| webview.url().ok())
+                    .and_then(|url| from_origin(&url))
+                    .filter(|url| submissions_page(url).is_some())
+            };
+            let Some(page) = shown_list() else {
+                return;
+            };
+            let result = app
+                .path()
+                .app_local_data_dir()
+                .map_err(|e| e.to_string())
+                .and_then(|root| Submissions::new(root).read_page(page.as_str(), &html));
+            match result {
+                Ok(update) => {
+                    let _ = app.emit_to("main", "submissions", &update);
+                    if update.judging {
+                        std::thread::sleep(JUDGING_READ_INTERVAL);
+                        if let (Some(_), Some(webview)) = (shown_list(), app.get_webview(&label)) {
+                            read_submissions(&webview);
+                        }
+                    }
+                }
+                Err(error) => {
+                    let _ =
+                        app.emit_to("main", "submissions", serde_json::json!({ "error": error }));
+                }
+            }
+        });
+    });
+    if let Err(error) = read {
+        eprintln!("cannot read the submission list: {error}");
+    }
+}
+
 fn builder(
     app: &tauri::AppHandle,
     label: &str,
@@ -137,6 +189,11 @@ fn builder(
         });
     builder = builder.on_page_load(move |webview, payload| {
         show_url(&webview, payload.url());
+        if payload.event() == tauri::webview::PageLoadEvent::Finished
+            && from_origin(payload.url()).is_some_and(|url| submissions_page(&url).is_some())
+        {
+            read_submissions(&webview);
+        }
         if let Some(task_url) = &task {
             if payload.event() == tauri::webview::PageLoadEvent::Finished
                 && is_task_page(task_url, payload.url())

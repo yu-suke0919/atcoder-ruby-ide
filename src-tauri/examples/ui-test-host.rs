@@ -2,8 +2,8 @@
 //! Ruby requests go through AgentClient to this program started again with `--agent`, which
 //! serves them like the real agent (docs/architecture.md#wslのエージェント).
 use atcoder_ruby_ide::{
-    agent::Agent, browser_target, fetch_page, http_client, read_task_page, AgentClient, Contests,
-    DocumentStore, Workspaces,
+    agent::Agent, browser_target, fetch_page, http_client, read_task_page, submissions_page,
+    AgentClient, Contests, DocumentStore, Submissions, Workspaces,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -80,6 +80,11 @@ fn main() {
                 Ok(Value::Null)
             }
             "contest_list" => Ok(json!(contests.list()?)),
+            "submission_states" => Ok(json!(Submissions::new(&data).states(
+                args["contest"]
+                    .as_str()
+                    .ok_or("コンテストを指定してください")?
+            )?)),
             "contest_register" => Ok(json!(
                 contests.register(args["url"].as_str().ok_or("URLを指定してください")?, page)?
             )),
@@ -173,6 +178,37 @@ fn main() {
                     &sink,
                     json!({"appEvent": "browser-url", "payload": url.as_str()}),
                 );
+                // The app reads a shown submission list; while one is judging, AtCoder rewrites
+                // it in place, which this host follows by fetching the served page again.
+                if submissions_page(&url).is_some() {
+                    let (sink, data, origin) = (Arc::clone(&sink), data.clone(), origin.clone());
+                    std::thread::spawn(move || {
+                        let submissions = Submissions::new(&data);
+                        for _ in 0..150 {
+                            let read = http_client()
+                                .and_then(|client| {
+                                    fetch_page(
+                                        &client,
+                                        &url.as_str().replacen("https://atcoder.jp", &origin, 1),
+                                        "",
+                                    )
+                                })
+                                .and_then(|html| submissions.read_page(url.as_str(), &html));
+                            let payload = match &read {
+                                Ok(update) => json!(update),
+                                Err(error) => json!({"error": error}),
+                            };
+                            send(
+                                &sink,
+                                json!({"appEvent": "submissions", "payload": payload}),
+                            );
+                            if !read.is_ok_and(|update| update.judging) {
+                                break;
+                            }
+                            std::thread::sleep(Duration::from_millis(200));
+                        }
+                    });
+                }
                 Ok(Value::Null)
             }
             "browser_layout"

@@ -19,6 +19,7 @@ mod process;
 mod runner;
 mod samples;
 mod solutions;
+mod submissions;
 mod task;
 pub mod wsl;
 
@@ -38,6 +39,7 @@ pub use navigation::{browser_target, is_allowed, ALLOWED_ORIGINS};
 #[cfg(unix)]
 pub use runner::{Output, PreparedRun, RunRequest, RunResult, Runner};
 pub use samples::{load_samples, save_samples, ProblemSample, SampleCase, Samples};
+pub use submissions::{submissions_page, SubmissionUpdate, Submissions, TaskResult};
 pub use task::{
     is_task_page, parse_task, read_task_page, HomeWorkspace, Task, TaskWorkspace, Workspaces,
 };

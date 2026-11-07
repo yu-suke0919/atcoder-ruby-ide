@@ -15,6 +15,7 @@ fn main() {
             "contest_list",
             "contest_register",
             "contest_set_hidden",
+            "submission_states",
             "task_open",
             "samples_save",
             "home_open",

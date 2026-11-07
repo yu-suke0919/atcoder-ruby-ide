@@ -664,6 +664,20 @@ function renderRail() {
     return button;
   }));
 }
+// The colors of each contest's tasks from the submissions read so far (U5a): ac, judging or other.
+const taskResults = new Map();
+const resultLabels = { ac: 'AC', judging: 'ジャッジ中', other: 'AC以外' };
+async function loadTaskResults(contest) {
+  try { taskResults.set(contest, await ide.submissionStates(contest)); }
+  catch (error) { taskMessage(error.message, true); }
+  if (contest === selectedContest) renderTasks();
+}
+ide.onSubmissions(update => {
+  if (update.error) { message(update.error, true); return; }
+  taskResults.set(update.contest, update.states);
+  if (update.contest === selectedContest) renderTasks();
+}).catch(error => message(String(error), true));
+
 function renderTasks() {
   if (selectedContest === HOME) {
     $('contest-title').textContent = 'ホーム';
@@ -677,6 +691,8 @@ function renderTasks() {
     const button = document.createElement('button');
     button.className = 'task-item';
     button.dataset.url = task.url;
+    const result = taskResults.get(selectedContest)?.[task.url];
+    if (result) { button.dataset.result = result; button.title = resultLabels[result]; }
     const label = document.createElement('span'); label.className = 'task-label'; label.textContent = task.label;
     const title = document.createElement('span'); title.textContent = task.title;
     button.append(label, title);
@@ -724,6 +740,7 @@ async function selectContest(url) {
   hideMenu();
   if (url !== selectedContest) {
     selectedContest = url;
+    if (url) loadTaskResults(url);
     pendingTask = null;
     taskMessage('');
   }
