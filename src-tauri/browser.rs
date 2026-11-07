@@ -1,8 +1,8 @@
 //! The AtCoder pages in the right column: one home page and one page per task of the selected
 //! contest. Pages cannot call the app; the app reads a task page after it has loaded.
 use atcoder_ruby_ide::{
-    browser_target, is_allowed, is_task_page, read_task_page, submissions_page, Submissions,
-    Workspaces,
+    browser_target, contest_top, is_allowed, is_task_page, read_task_page, submissions_page,
+    unix_now, Contests, Submissions, Workspaces,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -169,6 +169,34 @@ fn read_submissions(webview: &tauri::Webview) {
     }
 }
 
+/// Reads a loaded contest top page: a registered contest is added or updated and the screen is
+/// told (U6a). Registering changes no URL, so every load of the top is read.
+fn read_contest_top(webview: &tauri::Webview, page: Url) {
+    let app = webview.app_handle().clone();
+    let read = webview.eval_with_callback("document.documentElement.outerHTML", move |json| {
+        let html = serde_json::from_str::<String>(&json).unwrap_or_default();
+        let (app, page) = (app.clone(), page.clone());
+        std::thread::spawn(move || {
+            let lock = std::sync::Arc::clone(&app.state::<crate::AppState>().contest_lock);
+            let _guard = lock.lock().unwrap();
+            let joined = app
+                .path()
+                .app_local_data_dir()
+                .map_err(|e| e.to_string())
+                .and_then(|root| Contests::new(root).join(page.as_str(), &html, unix_now()));
+            let payload = match joined {
+                Ok(None) => return,
+                Ok(Some(contest)) => serde_json::json!({ "contest": contest }),
+                Err(error) => serde_json::json!({ "error": error }),
+            };
+            let _ = app.emit_to("main", "contest-joined", payload);
+        });
+    });
+    if let Err(error) = read {
+        eprintln!("cannot read the contest page: {error}");
+    }
+}
+
 fn builder(
     app: &tauri::AppHandle,
     label: &str,
@@ -189,10 +217,12 @@ fn builder(
         });
     builder = builder.on_page_load(move |webview, payload| {
         show_url(&webview, payload.url());
-        if payload.event() == tauri::webview::PageLoadEvent::Finished
-            && from_origin(payload.url()).is_some_and(|url| submissions_page(&url).is_some())
-        {
-            read_submissions(&webview);
+        if payload.event() == tauri::webview::PageLoadEvent::Finished {
+            match from_origin(payload.url()) {
+                Some(url) if submissions_page(&url).is_some() => read_submissions(&webview),
+                Some(url) if contest_top(&url).is_some() => read_contest_top(&webview, url),
+                _ => {}
+            }
         }
         if let Some(task_url) = &task {
             if payload.event() == tauri::webview::PageLoadEvent::Finished

@@ -28,8 +28,8 @@ pub use agent_client::AgentClient;
 pub use commands::{ruby_info, RubyInfo};
 pub use comparison::{decode_output, first_difference, OutputDifference};
 pub use contests::{
-    fetch_page, http_client, parse_task_list, Contest, ContestKey, ContestTask, Contests,
-    RegisteredContest,
+    contest_top, fetch_page, http_client, parse_task_list, unix_now, Contest, ContestKey,
+    ContestTask, Contests, RegisteredContest,
 };
 pub use document::{DocumentResult, DocumentStore};
 pub use input_code::{input_code, reading_forms};

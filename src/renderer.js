@@ -727,6 +727,40 @@ function rememberContest(contest) {
   if (index < 0) contests.push(contest); else contests[index] = contest;
   contests.sort((a, b) => a.url.localeCompare(b.url));
 }
+// A registration seen on a contest's top page adds or updates the contest (U6a).
+ide.onContestJoined(({ contest, error }) => {
+  if (error) { message(error, true); return; }
+  rememberContest(contest);
+  renderRail();
+  if (contest.url === selectedContest) renderTasks();
+}).catch(error => message(String(error), true));
+// Joined contests are hidden a day after their end, checked at start and every minute (U6a).
+async function hideEndedContests() {
+  try {
+    for (const contest of await ide.hideEndedContests()) {
+      rememberContest(contest);
+      if (selectedContest === contest.url) await selectContest(null);
+    }
+    renderRail();
+  } catch (error) { message(error.message, true); }
+}
+// A contest joined before its start has no task list yet: selecting it after the start fetches
+// the list once (U6a).
+async function loadMissingTasks(url) {
+  const contest = contestFor(url);
+  if (!contest || contest.tasks.length) return;
+  if (contest.startTime && Date.now() < Date.parse(contest.startTime)) {
+    taskMessage(`開始前です（開始 ${contest.startTime.slice(0, 16).replace('T', ' ')}）。開始後に選ぶと問題一覧を取得します。`);
+    return;
+  }
+  taskMessage('問題一覧を取得しています…');
+  try {
+    rememberContest((await ide.registerContest(url)).contest);
+    if (url !== selectedContest) return;
+    taskMessage('');
+    renderTasks();
+  } catch (error) { if (url === selectedContest) taskMessage(error.message, true); }
+}
 async function setHidden(url, hidden) {
   try {
     rememberContest(await ide.setContestHidden(url, hidden));
@@ -751,6 +785,7 @@ async function selectContest(url) {
   await ide.browserHome(url).catch(error => taskMessage(error.message, true));
   renderRail();
   renderTasks();
+  if (url) loadMissingTasks(url);
 }
 
 // Opens home: its own workspace in the editor and AtCoder's top page in the browser.
@@ -914,7 +949,7 @@ async function initialize() {
     updateButtons();
     layoutBrowser();
     contests = await ide.listContests();
-    renderRail();
+    await hideEndedContests();
     await selectHome();
     await checkRuby();
   } catch (error) {
@@ -923,3 +958,4 @@ async function initialize() {
   }
 }
 initialize();
+setInterval(hideEndedContests, 60 * 1000);
