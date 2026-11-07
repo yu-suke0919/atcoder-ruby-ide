@@ -771,7 +771,7 @@ test('M13: cases keep independent inputs, expectations and results', async () =>
   await resetCases();
 });
 
-test('M21: a run that makes every compared sample match copies the code once, unless turned off in the settings', async () => {
+test('M21: each run that ends with every compared sample matching copies the code and says so by the run buttons, unless turned off', async () => {
   const stubClipboard = () => page.evaluate(() => {
     window.copied = [];
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { window.copied.push(text); } } });
@@ -788,15 +788,22 @@ test('M21: a run that makes every compared sample match copies the code once, un
   await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
   await page.getByTestId('expected-output').fill('ONE');
   await addCase('two', 'TWO');
+  const notice = page.locator('.run-actions #copy-notice');
   // The first sample has not been run, so not every compared sample matches yet.
   await runAndWait();
   assert.deepEqual(await copied(), []);
+  assert.equal(await notice.isVisible(), false);
   await runAll();
   assert.deepEqual(await copied(), ['puts STDIN.read.upcase']);
-  assert.match(await page.locator('#message').textContent(), /クリップボード/);
-  // Already matching before the run: nothing is copied again.
+  assert.equal(await notice.textContent(), 'クリップボードにコピーしました');
+  // Every run that ends with all matching copies and says so again.
   await runAndWait();
-  assert.equal((await copied()).length, 1);
+  assert.equal((await copied()).length, 2);
+  assert.equal(await notice.isVisible(), true);
+  // The notice is about the code that ran: an edit takes it away.
+  await page.getByTestId('code-editor').press('End');
+  await page.keyboard.type(' ');
+  assert.equal(await notice.isVisible(), false);
   const copyOption = page.getByRole('checkbox', { name: '全サンプル一致でコードをコピー' });
   await page.getByRole('button', { name: '設定', exact: true }).click();
   assert.equal(await copyOption.isChecked(), true);
@@ -804,7 +811,8 @@ test('M21: a run that makes every compared sample match copies the code once, un
   await page.locator('#settings-close').click();
   await page.getByTestId('code-editor').fill('puts STDIN.read.upcase # off');
   await runAll();
-  assert.equal((await copied()).length, 1);
+  assert.equal((await copied()).length, 2);
+  assert.equal(await notice.isVisible(), false);
   // The setting is kept after a reload, then turned back on for the other tests.
   await page.reload(); await waitInitialized(page);
   await page.getByRole('button', { name: '設定', exact: true }).click();
