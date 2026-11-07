@@ -771,6 +771,56 @@ test('M13: cases keep independent inputs, expectations and results', async () =>
   await resetCases();
 });
 
+test('M21: each run that ends with every compared sample matching copies the code and says so by the run buttons, unless turned off', async () => {
+  const stubClipboard = () => page.evaluate(() => {
+    window.copied = [];
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { window.copied.push(text); } } });
+  });
+  const copied = () => page.evaluate(() => window.copied);
+  const runAll = async () => {
+    await page.locator('#run-all').click();
+    await page.getByTestId('cases-summary').filter({ hasText: '完了 2 / 2' }).waitFor();
+    await page.waitForFunction(() => !document.getElementById('run-all').disabled);
+  };
+  await stubClipboard();
+  await page.getByTestId('code-editor').fill('puts STDIN.read.upcase');
+  await page.getByTestId('stdin').fill('one');
+  await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
+  await page.getByTestId('expected-output').fill('ONE');
+  await addCase('two', 'TWO');
+  const notice = page.locator('.run-actions #copy-notice');
+  // The first sample has not been run, so not every compared sample matches yet.
+  await runAndWait();
+  assert.deepEqual(await copied(), []);
+  assert.equal(await notice.isVisible(), false);
+  await runAll();
+  assert.deepEqual(await copied(), ['puts STDIN.read.upcase']);
+  assert.equal(await notice.textContent(), 'クリップボードにコピーしました');
+  // Every run that ends with all matching copies and says so again.
+  await runAndWait();
+  assert.equal((await copied()).length, 2);
+  assert.equal(await notice.isVisible(), true);
+  // The notice is about the code that ran: an edit takes it away.
+  await page.getByTestId('code-editor').press('End');
+  await page.keyboard.type(' ');
+  assert.equal(await notice.isVisible(), false);
+  const copyOption = page.getByRole('checkbox', { name: '全サンプル一致でコードをコピー' });
+  await page.getByRole('button', { name: '設定', exact: true }).click();
+  assert.equal(await copyOption.isChecked(), true);
+  await copyOption.uncheck();
+  await page.locator('#settings-close').click();
+  await page.getByTestId('code-editor').fill('puts STDIN.read.upcase # off');
+  await runAll();
+  assert.equal((await copied()).length, 2);
+  assert.equal(await notice.isVisible(), false);
+  // The setting is kept after a reload, then turned back on for the other tests.
+  await page.reload(); await waitInitialized(page);
+  await page.getByRole('button', { name: '設定', exact: true }).click();
+  assert.equal(await copyOption.isChecked(), false);
+  await copyOption.check();
+  await page.locator('#settings-close').click();
+});
+
 test('M13: all cases run sequentially and continue after an error', async () => {
   await page.getByTestId('code-editor').fill('s = STDIN.read; puts s; warn "bad" if s == "error"; exit 1 if s == "error"');
   await page.getByTestId('stdin').fill('error');

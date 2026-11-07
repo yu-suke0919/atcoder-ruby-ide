@@ -350,3 +350,21 @@ test('cancel and clearing results use the current comparison setting and remove 
   cases.clear(true);
   for (const item of cases.items) assert.equal(item.status, null);
 });
+
+test('U5c: every compared sample matches only when there is one and none is pending, mismatched or unavailable', async () => {
+  const { SampleCases } = await load();
+  const cases = new SampleCases([sample(), sample('two', 'TWO'), sample('free', '', false)]);
+  assert.equal(cases.allMatched, false);
+  const queue = cases.snapshot(true);
+  const done = (snapshot, comparison) => { cases.begin(snapshot); cases.finish(snapshot, { status: 'completed', stdout: '', stderr: '', comparison, durationMs: 1, executionLimitMs: 5000 }); };
+  done(queue[0], true);
+  assert.equal(cases.allMatched, false);
+  done(queue[1], false);
+  assert.equal(cases.allMatched, false);
+  done(queue[1], true);
+  done(queue[2], null);
+  assert.equal(cases.allMatched, true);
+  cases.invalidate(true);
+  assert.equal(cases.allMatched, false);
+  assert.equal(new SampleCases([sample('a', '', false)]).allMatched, false);
+});

@@ -264,6 +264,8 @@ function showTolerance() {
 }
 
 function resetComparison(all = false) {
+  // The copy notice is about the code that ran, which an edit or another file replaces.
+  if (all) $('copy-notice').hidden = true;
   cases.invalidate(all);
   expectedOutput.disabled = !cases.current.compare;
   showComparison(cases.current.comparison);
@@ -332,6 +334,7 @@ async function fileAction(action, report = message) {
 async function run(all = false) {
   if (running || fileBusy || closing || !rubyAvailable || !activeProblem) return;
   const code = editor.value;
+  $('copy-notice').hidden = true;
   cases.clear(all);
   const queue = cases.snapshot(all, activeProblem?.timeLimitMs ?? null, activeProblem?.memoryLimitMiB ?? null);
   canceled = false;
@@ -366,6 +369,11 @@ async function run(all = false) {
   currentRun = pending;
   try { await pending; }
   finally { currentRun = null; running = false; showResult(); updateButtons(); }
+  // A match is reset by any edit of the code, so the code that matched is the code that ran.
+  if (cases.allMatched && copyOnMatch()) {
+    try { await navigator.clipboard.writeText(code); $('copy-notice').hidden = false; }
+    catch (error) { message(`コードをクリップボードへコピーできませんでした：${error.message}`, true); }
+  }
 }
 
 function appendOutput(stream, text) {
@@ -445,6 +453,7 @@ function applyWorkspace(result, problem) {
   clearTimeout(saveTimer);
   saveTimer = null;
   saveError = null;
+  $('copy-notice').hidden = true;
   activeProblem = { ...problem, files: result.files, file: result.file };
   editor.readingForms = result.readingForms ?? [];
   editor.show(result.file, result.document.code);
@@ -595,11 +604,23 @@ function layoutBrowser() {
 }
 new ResizeObserver(layoutBrowser).observe($('browser-host'));
 window.addEventListener('resize', layoutBrowser);
-// Pane sizes are a convenience of this screen, so storage that fails only loses them.
-setupLayout({
+// Pane sizes and settings are conveniences of this screen, so storage that fails only loses them.
+const storage = {
   get: key => { try { return localStorage.getItem(key); } catch { return null; } },
   set: (key, value) => { try { localStorage.setItem(key, value); } catch {} }
-}, 'atcoder-ide-layout');
+};
+setupLayout(storage, 'atcoder-ide-layout');
+
+// Settings (the gear): copying the code when a run makes every compared sample match is on
+// unless turned off (docs/ui.md).
+const COPY_ON_MATCH_KEY = 'atcoder-ide-copy-on-match';
+const copyOnMatch = () => storage.get(COPY_ON_MATCH_KEY) !== 'off';
+$('settings-open').addEventListener('click', () => {
+  $('copy-on-match').checked = copyOnMatch();
+  openDialog($('settings-dialog'));
+});
+$('copy-on-match').addEventListener('change', () => storage.set(COPY_ON_MATCH_KEY, $('copy-on-match').checked ? 'on' : 'off'));
+$('settings-close').addEventListener('click', () => $('settings-dialog').close());
 
 // The URL field shows the shown page unless the user is typing in it.
 let browserUrl = '';

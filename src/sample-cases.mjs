@@ -30,6 +30,12 @@ export class SampleCases {
     return this.items[this.selected];
   }
 
+  // Every sample that compares has matched; there has to be at least one.
+  get allMatched() {
+    const compared = this.items.filter(item => item.compare);
+    return compared.length > 0 && compared.every(item => item.comparison === 'matched');
+  }
+
   get dirty() {
     return JSON.stringify(this.data()) !== this.#savedData;
   }

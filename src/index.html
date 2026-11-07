@@ -17,6 +17,7 @@
       <button id="home-icon" class="rail-icon rail-home" title="ホーム" aria-label="ホーム" aria-pressed="false">⌂</button>
       <div id="contest-icons" class="rail-icons"></div>
       <button id="contest-add" class="rail-add" title="コンテスト・問題集を登録" aria-label="コンテスト・問題集を登録">＋</button>
+      <button id="settings-open" class="rail-add rail-settings" title="設定" aria-label="設定">⚙</button>
     </nav>
     <div class="splitter" data-split="rail" role="separator" aria-orientation="vertical" aria-label="アイコンと問題一覧の境目" title="ドラッグで幅を変更、ダブルクリックで元に戻す"></div>
     <nav class="task-panel" aria-labelledby="contest-title">
@@ -30,7 +31,7 @@
         <div class="panel-heading"><div class="panel-label file-label"><h3 id="editor-heading" class="sr-only">コード</h3><div id="file-tabs" class="file-tabs" role="tablist" aria-label="ファイル"></div><button id="file-add" class="quiet-button file-add" title="ファイルを追加" aria-label="ファイルを追加">＋</button></div><span class="save-status"><span id="save-state" data-testid="save-state" data-state="none" class="subtle" role="status">問題を開いてください</span><button id="save-retry" class="quiet-button" title="Ctrl+S" hidden>保存を再試行</button></span></div>
         <div class="editor-area">
           <div id="editor-host" class="editor-container"></div>
-          <div class="run-actions" role="group" aria-label="実行"><button id="stop" class="stop-button" disabled><span aria-hidden="true">■</span> 停止</button><button id="run-all" class="stop-button">全件実行</button><button id="run" class="run-button"><span aria-hidden="true">&#9654;&#65038;</span> 実行</button></div>
+          <div class="run-actions" role="group" aria-label="実行"><span id="copy-notice" class="copy-notice" role="status" hidden>クリップボードにコピーしました</span><button id="stop" class="stop-button" disabled><span aria-hidden="true">■</span> 停止</button><button id="run-all" class="stop-button">全件実行</button><button id="run" class="run-button"><span aria-hidden="true">&#9654;&#65038;</span> 実行</button></div>
         </div>
         <div class="completion-state"><span id="completion-state" data-state="idle" role="status" aria-live="polite">補完は初回利用時に準備します</span><button id="completion-retry" class="quiet-button" hidden>再試行</button></div>
         <div class="editor-footer"><span id="file-path" title="問題を開いてください">問題を開いてください</span><button id="editor-complete" class="quiet-button" title="Ctrl+Space">補完</button><button id="editor-search" class="quiet-button" title="Ctrl+F / Ctrl+H">検索・置換</button><span id="cursor-position">Ln 1, Col 1</span></div>
@@ -78,7 +79,13 @@
       <div id="browser-host" class="browser-host"><p>AtCoder のページを表示します。ログイン・参加登録・提出はここで行います。</p></div>
     </section>
   </div>
-  <footer class="statusbar"><span class="status-left"><span class="status-dot"></span>ローカル実行<span id="message" role="status">ヒント：Ctrl + Enter でも実行できます。</span></span><span title="Windowsのメモリ上限はRubyと子孫の合計コミット量です。問題ページのメモリ制限値とは異なります。Linuxにはメモリ上限を設定しません。"><span id="execution-limit" title="選択ケースの実行時の打ち切り時間です。制限既知は問題の制限＋1秒（最低5秒・最大30秒）。正確な値は開始時に確定します。">既定上限 5 秒</span> <span class="separator">·</span> 入力上限 1 MiB・出力上限 合計 1 MiB</span></footer>
+  <footer class="statusbar"><span class="status-left"><span class="status-dot"></span>ローカル実行<span id="message" role="status">ヒント：Ctrl + Enter でも実行できます。</span></span><span title="メモリ上限は、Rubyとその子プロセスが使用中のメモリ（RSS）の合計で、問題のメモリ制限（不明なら1024 MiB）を使います。AtCoderの判定と同じ測り方ではありません。"><span id="execution-limit" title="選択ケースの実行時の打ち切り時間です。制限既知は問題の制限＋1秒（最低5秒・最大30秒）。正確な値は開始時に確定します。">既定上限 5 秒</span> <span class="separator">·</span> 入力上限 1 MiB・出力上限 合計 1 MiB</span></footer>
+  <dialog id="settings-dialog" aria-labelledby="settings-dialog-heading">
+    <h2 id="settings-dialog-heading">設定</h2>
+    <label><input id="copy-on-match" type="checkbox">全サンプル一致でコードをコピー</label>
+    <p class="dialog-help">比較するサンプルが実行ですべて一致になったら、開いているファイルのコードをクリップボードへコピーします。</p>
+    <div class="dialog-actions"><button id="settings-close">閉じる</button></div>
+  </dialog>
   <dialog id="contest-dialog" aria-labelledby="contest-dialog-heading">
     <h2 id="contest-dialog-heading">コンテスト・問題集を登録</h2>
     <label for="contest-url">コンテストまたは問題のURL</label>
