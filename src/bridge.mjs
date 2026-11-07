@@ -11,6 +11,7 @@ export const ide = {
   lspComplete: (code, line, character) => invoke('lsp_complete', { code, line, character }),
   lspStop: () => invoke('lsp_stop'),
   listContests: () => invoke('contest_list'),
+  submissionStates: contest => invoke('submission_states', { contest }),
   registerContest: url => invoke('contest_register', { url }),
   setContestHidden: (url, hidden) => invoke('contest_set_hidden', { url, hidden }),
   openTask: (url, label) => invoke('task_open', { url, label }),
@@ -35,6 +36,7 @@ export const ide = {
   browserReload: () => invoke('browser_reload'),
   onBrowserUrl: handler => window.__TAURI__.event.listen('browser-url', event => handler(event.payload)),
   onTaskPage: handler => window.__TAURI__.event.listen('task-page', event => handler(event.payload)),
+  onSubmissions: handler => window.__TAURI__.event.listen('submissions', event => handler(event.payload)),
   onRuntimeDownload: handler => window.__TAURI__.event.listen('runtime-download', event => handler(event.payload)),
   rubyInfo: () => invoke('ruby_info'),
   run(code, stdin, expectedOutput = null, tolerance = null, problemTimeLimitMs = null, problemMemoryLimitMib = null, notify = () => {}) {

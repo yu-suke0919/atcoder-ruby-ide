@@ -150,6 +150,13 @@ h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 .task-item { display: flex; gap: 6px; width: 100%; text-align: left; padding: 6px 8px; margin-bottom: 2px; white-space: normal; }
 .task-item .task-label { font-weight: 650; color: var(--text); flex-shrink: 0; }
 .task-item[aria-current="true"] { background: #2d2540; color: white; }
+/* Submission results (U5a): AC green, other results yellow, judging grey and pulsing. */
+.task-item[data-result="ac"] { box-shadow: inset 3px 0 #4ade80; }
+.task-item[data-result="ac"] .task-label { color: #4ade80; }
+.task-item[data-result="other"] { box-shadow: inset 3px 0 #facc15; }
+.task-item[data-result="other"] .task-label { color: #facc15; }
+.task-item[data-result="judging"] { box-shadow: inset 3px 0 #94a3b8; animation: judging 1.2s ease-in-out infinite alternate; }
+@keyframes judging { from { opacity: 1; } to { opacity: .6; } }
 .task-message { margin: 0; padding: 8px 12px; color: var(--muted); font-size: 11px; line-height: 1.6; }
 .task-message[data-error="true"] { color: #f5a3b2; }
 .workspace { display: flex; flex-direction: column; gap: 3px; padding: 8px; min-width: 0; min-height: 0; }

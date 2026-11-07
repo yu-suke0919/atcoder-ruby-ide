@@ -4,7 +4,7 @@ mod browser;
 
 use atcoder_ruby_ide::{
     fetch_page, http_client, AgentClient, Contest, Contests, DocumentResult, DocumentStore,
-    HomeWorkspace, RegisteredContest, Samples, TaskWorkspace, Workspaces,
+    HomeWorkspace, RegisteredContest, Samples, Submissions, TaskResult, TaskWorkspace, Workspaces,
 };
 use browser::Browser;
 use serde_json::{json, Value};
@@ -209,6 +209,18 @@ fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 async fn contest_list(app: tauri::AppHandle) -> Result<Vec<Contest>, String> {
     let contests = Contests::new(data_dir(&app)?);
     tauri::async_runtime::spawn_blocking(move || contests.list())
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// The colors of a contest's tasks from the submissions read so far (U5a).
+#[tauri::command]
+async fn submission_states(
+    app: tauri::AppHandle,
+    contest: String,
+) -> Result<std::collections::HashMap<String, TaskResult>, String> {
+    let submissions = Submissions::new(data_dir(&app)?);
+    tauri::async_runtime::spawn_blocking(move || submissions.states(&contest))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -420,6 +432,7 @@ fn main() {
             contest_list,
             contest_register,
             contest_set_hidden,
+            submission_states,
             task_open,
             samples_save,
             home_open,
