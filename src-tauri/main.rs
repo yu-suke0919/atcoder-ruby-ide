@@ -3,8 +3,9 @@
 mod browser;
 
 use atcoder_ruby_ide::{
-    fetch_page, http_client, AgentClient, Contest, Contests, DocumentResult, DocumentStore,
-    HomeWorkspace, RegisteredContest, Samples, Submissions, TaskResult, TaskWorkspace, Workspaces,
+    fetch_page, http_client, unix_now, AgentClient, Contest, Contests, DocumentResult,
+    DocumentStore, HomeWorkspace, RegisteredContest, Samples, Submissions, TaskResult,
+    TaskWorkspace, Workspaces,
 };
 use browser::Browser;
 use serde_json::{json, Value};
@@ -263,6 +264,22 @@ async fn contest_set_hidden(
     .map_err(|e| e.to_string())?
 }
 
+/// Hides the joined contests that ended a day ago and returns them (U6a).
+#[tauri::command]
+async fn contest_hide_ended(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<Contest>, String> {
+    let contests = Contests::new(data_dir(&app)?);
+    let lock = Arc::clone(&state.contest_lock);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = lock.lock().unwrap();
+        contests.hide_ended(unix_now())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Opens a task's workspace, or returns None while its page has not been read yet.
 #[tauri::command]
 async fn task_open(
@@ -432,6 +449,7 @@ fn main() {
             contest_list,
             contest_register,
             contest_set_hidden,
+            contest_hide_ended,
             submission_states,
             task_open,
             samples_save,

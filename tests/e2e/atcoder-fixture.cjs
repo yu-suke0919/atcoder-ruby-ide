@@ -47,4 +47,10 @@ function submissionsPage(contest, submissions) {
   return `<html><body><table class="table"><tbody>${rows}</tbody></table></body></html>`;
 }
 
-module.exports = { startAtCoder, taskListPage, taskPage, submissionsPage };
+// A contest's top page with the parts the app reads (tests/fixtures/contest-top/ has real ones):
+// the user menu says "(Contestant)" once registered, and the page's script holds the times.
+function contestTopPage(contest, { contestant = true, start, end }) {
+  return `<html><head><script>var userScreenName = "test_user";</script><script>var contestScreenName = "${contest}"; var startTime = moment("${start}"); var endTime = moment("${end}");</script></head><body><nav class="navbar"><ul class="nav navbar-nav navbar-right"><li class="dropdown"><a class="dropdown-toggle" href="#"><span class="glyphicon glyphicon-cog"></span> test_user (${contestant ? 'Contestant' : 'Guest'}) <span class="caret"></span></a></li></ul></nav><a class="contest-title" href="/contests/${contest}">テスト ${escape(contest)}</a></body></html>`;
+}
+
+module.exports = { startAtCoder, taskListPage, taskPage, submissionsPage, contestTopPage };

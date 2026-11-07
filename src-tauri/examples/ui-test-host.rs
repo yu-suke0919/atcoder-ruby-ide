@@ -2,8 +2,8 @@
 //! Ruby requests go through AgentClient to this program started again with `--agent`, which
 //! serves them like the real agent (docs/architecture.md#wslのエージェント).
 use atcoder_ruby_ide::{
-    agent::Agent, browser_target, fetch_page, http_client, read_task_page, submissions_page,
-    AgentClient, Contests, DocumentStore, Submissions, Workspaces,
+    agent::Agent, browser_target, contest_top, fetch_page, http_client, read_task_page,
+    submissions_page, unix_now, AgentClient, Contests, DocumentStore, Submissions, Workspaces,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -52,6 +52,22 @@ fn main() {
         fetch_page(&client, &url.replacen("https://atcoder.jp", &origin, 1), "")
     };
     let sink = Arc::new(Mutex::new(io::stdout()));
+    // The app reads every loaded contest top for a registration; here showing one fetches it.
+    let read_contest_top = |sink: &Sink, url: &str| {
+        if !url::Url::parse(url).is_ok_and(|url| contest_top(&url).is_some()) {
+            return;
+        }
+        let Ok(html) = page(url) else { return };
+        let payload = match contests.join(url, &html, unix_now()) {
+            Ok(None) => return,
+            Ok(Some(contest)) => json!({ "contest": contest }),
+            Err(error) => json!({ "error": error }),
+        };
+        send(
+            sink,
+            json!({"appEvent": "contest-joined", "payload": payload}),
+        );
+    };
     for line in io::stdin().lock().lines() {
         let request: Request = serde_json::from_str(&line.unwrap()).unwrap();
         let args = request.args;
@@ -92,6 +108,7 @@ fn main() {
                 args["url"].as_str().ok_or("URLを指定してください")?,
                 args["hidden"].as_bool().ok_or("hiddenを指定してください")?
             )?)),
+            "contest_hide_ended" => Ok(json!(contests.hide_ended(unix_now())?)),
             "task_open" => {
                 let url = args["url"].as_str().ok_or("URLを指定してください")?;
                 if workspaces.task(url)?.is_none() {
@@ -170,6 +187,7 @@ fn main() {
             "browser_home" => {
                 let url = args["url"].as_str().unwrap_or("https://atcoder.jp/");
                 send(&sink, json!({"appEvent": "browser-url", "payload": url}));
+                read_contest_top(&sink, url);
                 Ok(Value::Null)
             }
             "browser_open" => {
@@ -178,6 +196,7 @@ fn main() {
                     &sink,
                     json!({"appEvent": "browser-url", "payload": url.as_str()}),
                 );
+                read_contest_top(&sink, url.as_str());
                 // The app reads a shown submission list; while one is judging, AtCoder rewrites
                 // it in place, which this host follows by fetching the served page again.
                 if submissions_page(&url).is_some() {

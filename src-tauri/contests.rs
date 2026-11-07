@@ -66,7 +66,17 @@ pub struct Contest {
     pub url: String,
     pub title: String,
     pub hidden: bool,
+    /// Empty for a contest joined before its start, whose task list cannot be seen yet.
     pub tasks: Vec<ContestTask>,
+    /// Added or updated from a registration seen in the browser, until hidden a day after its end
+    /// (docs/problem-library.md#参加登録の読み取りu6a).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub joined: bool,
+    /// The times as the contest's top page writes them, `2026-11-07T21:00:00+09:00`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_time: Option<String>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,13 +93,119 @@ fn text(element: scraper::ElementRef<'_>) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
+const DAY_SECONDS: i64 = 24 * 60 * 60;
+
+/// Unix time of `2026-11-07T21:00:00+09:00`, the only form the contest pages use.
+fn unix_time(value: &str) -> Option<i64> {
+    let b = value.as_bytes();
+    let shape = "dddd-dd-ddTdd:dd:dd+dd:dd".as_bytes();
+    if b.len() != shape.len()
+        || !b.iter().zip(shape).all(|(c, s)| match s {
+            b'd' => c.is_ascii_digit(),
+            b'+' => *c == b'+' || *c == b'-',
+            _ => c == s,
+        })
+    {
+        return None;
+    }
+    let number = |range: std::ops::Range<usize>| value[range].parse::<i64>().unwrap();
+    let (year, month, day) = (number(0..4), number(5..7), number(8..10));
+    let (hour, minute, second) = (number(11..13), number(14..16), number(17..19));
+    let offset = (number(20..22) * 60 + number(23..25)) * if b[19] == b'-' { -1 } else { 1 };
+    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    let days_in_month = [
+        31,
+        if leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
+    if !(1..=12).contains(&month)
+        || !(1..=days_in_month[month as usize - 1]).contains(&day)
+        || hour > 23
+        || minute > 59
+        || second > 59
+    {
+        return None;
+    }
+    // Days since 1970-01-01 of a proleptic Gregorian date (Howard Hinnant's days_from_civil).
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = y.div_euclid(400);
+    let year_of_era = y - era * 400;
+    let day_of_year = (153 * ((month + 9) % 12) + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = era * 146_097 + day_of_era - 719_468;
+    Some(days * DAY_SECONDS + hour * 3600 + minute * 60 + second - offset * 60)
+}
+
+/// The current Unix time, which `Contests::join` and `Contests::hide_ended` compare with.
+pub fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs() as i64)
+}
+
+/// The contest URL when `url` is a contest's top page, `/contests/<id>`.
+pub fn contest_top(url: &Url) -> Option<String> {
+    let parts: Vec<_> = url.path().trim_end_matches('/').split('/').collect();
+    if !crate::is_allowed(url) || parts.len() != 3 || parts[1] != "contests" {
+        return None;
+    }
+    ContestKey::parse(&format!("https://atcoder.jp/contests/{}", parts[2]))
+        .ok()
+        .map(|key| key.url)
+}
+
+/// What a contest's top page says: its name, whether the user is registered and its times.
+struct ContestTop {
+    title: String,
+    contestant: bool,
+    start_time: String,
+    end_time: String,
+}
+fn parse_contest_top(html: &str) -> Option<ContestTop> {
+    let document = Html::parse_document(html);
+    let select = |value: &str| Selector::parse(value).unwrap();
+    let title = text(document.select(&select("a.contest-title")).next()?);
+    // The user menu reads "<name> (Contestant)" once registered and "<name> (Guest)" before.
+    let contestant = document
+        .select(&select(".navbar .dropdown-toggle"))
+        .any(|menu| text(menu).ends_with("(Contestant)"));
+    let time = |name: &str| {
+        let start = format!("var {name} = moment(\"");
+        let rest = &html[html.find(&start)? + start.len()..];
+        Some(rest[..rest.find('"')?].to_string())
+    };
+    Some(ContestTop {
+        title,
+        contestant,
+        start_time: time("startTime")?,
+        end_time: time("endTime")?,
+    })
+}
+
 fn validate(contest: &Contest, key: &ContestKey) -> Result<(), String> {
     if contest.url != key.url
         || contest.title.trim().is_empty()
         || contest.title.len() > 1024
-        || !(1..=1000).contains(&contest.tasks.len())
+        || contest.tasks.len() > 1000
     {
         return Err("コンテストの名前・URL・問題数が不正です（最大1,000問）。".into());
+    }
+    match (&contest.start_time, &contest.end_time) {
+        (None, None) => {}
+        (Some(start), Some(end))
+            if unix_time(start)
+                .zip(unix_time(end))
+                .is_some_and(|(s, e)| s <= e) => {}
+        _ => return Err("コンテストの開始・終了の時刻が不正です。".into()),
     }
     let mut urls = BTreeSet::new();
     let mut labels = BTreeSet::new();
@@ -159,6 +275,9 @@ pub fn parse_task_list(url: &str, html: &str) -> Result<Contest, String> {
         title,
         hidden: false,
         tasks,
+        joined: false,
+        start_time: None,
+        end_time: None,
     };
     validate(&contest, &key)?;
     Ok(contest)
@@ -259,7 +378,8 @@ impl Contests {
         contests.sort_by(|a, b| a.url.cmp(&b.url));
         Ok(contests)
     }
-    /// Registers a contest from its task list, keeping the hidden state of an earlier registration.
+    /// Registers a contest from its task list, keeping the hidden state, the registration and the
+    /// times of an earlier registration.
     pub fn register(
         &self,
         url: &str,
@@ -268,7 +388,12 @@ impl Contests {
         let key = ContestKey::parse(url)?;
         let html = fetch(&format!("{}/tasks?lang=ja", key.url))?;
         let mut contest = parse_task_list(&key.url, &html)?;
-        contest.hidden = self.load(&key).map(|old| old.hidden).unwrap_or(false);
+        if let Ok(old) = self.load(&key) {
+            contest.hidden = old.hidden;
+            contest.joined = old.joined;
+            contest.start_time = old.start_time;
+            contest.end_time = old.end_time;
+        }
         if let Some(task) = &key.task {
             if !contest.tasks.iter().any(|item| &item.url == task) {
                 return Err("問題がコンテストの問題一覧にありません。".into());
@@ -279,6 +404,65 @@ impl Contests {
             contest,
             task: key.task,
         })
+    }
+    /// Adds or updates the contest of a loaded top page at `page_url` when the user is registered
+    /// and it ended less than a day before `now` (Unix time). Returns the contest when it changed.
+    pub fn join(&self, page_url: &str, html: &str, now: i64) -> Result<Option<Contest>, String> {
+        let key = Url::parse(page_url)
+            .ok()
+            .and_then(|url| contest_top(&url))
+            .ok_or_else(|| "コンテストのトップではありません。".to_string())
+            .and_then(|url| ContestKey::parse(&url))?;
+        let Some(top) = parse_contest_top(html).filter(|top| top.contestant) else {
+            return Ok(None);
+        };
+        if !unix_time(&top.end_time).is_some_and(|end| now < end + DAY_SECONDS) {
+            return Ok(None);
+        }
+        let old = if key.path(&self.root).exists() {
+            Some(self.load(&key)?)
+        } else {
+            None
+        };
+        let contest = Contest {
+            title: top.title,
+            joined: true,
+            start_time: Some(top.start_time),
+            end_time: Some(top.end_time),
+            ..old.clone().unwrap_or(Contest {
+                url: key.url.clone(),
+                title: String::new(),
+                hidden: false,
+                tasks: vec![],
+                joined: false,
+                start_time: None,
+                end_time: None,
+            })
+        };
+        if old.as_ref() == Some(&contest) {
+            return Ok(None);
+        }
+        self.save(&contest)?;
+        Ok(Some(contest))
+    }
+    /// Hides the joined contests that ended a day before `now` (Unix time) and returns them. They
+    /// are no longer joined, so a contest the user shows again stays shown.
+    pub fn hide_ended(&self, now: i64) -> Result<Vec<Contest>, String> {
+        let mut hidden = Vec::new();
+        for mut contest in self.list()? {
+            let ended = contest
+                .end_time
+                .as_deref()
+                .and_then(unix_time)
+                .is_some_and(|end| now >= end + DAY_SECONDS);
+            if contest.joined && ended {
+                contest.hidden = true;
+                contest.joined = false;
+                self.save(&contest)?;
+                hidden.push(contest);
+            }
+        }
+        Ok(hidden)
     }
     pub fn set_hidden(&self, url: &str, hidden: bool) -> Result<Contest, String> {
         let key = ContestKey::parse(url)?;

@@ -1,5 +1,5 @@
 use atcoder_ruby_ide::{
-    browser_target, fetch_page, http_client, input_code, parse_task, parse_task_list,
+    browser_target, contest_top, fetch_page, http_client, input_code, parse_task, parse_task_list,
     reading_forms, submissions_page, Contest, ContestKey, Contests, DocumentStore, SampleCase,
     Samples, Submissions, Task, TaskResult, Workspaces,
 };
@@ -1196,4 +1196,204 @@ fn u5a_only_submission_lists_are_read_and_an_unreadable_record_is_kept() {
         std::fs::read_to_string(&file).unwrap(),
         "{\"submissions\": [], \"unknown\": 1}"
     );
+}
+
+const ABC483: &str = "https://atcoder.jp/contests/abc483";
+const ABC483_BEFORE_REGISTER: &str = include_str!("fixtures/contest-top/before-register.html");
+const ABC483_REGISTERED: &str = include_str!("fixtures/contest-top/registered.html");
+// 2026-11-07 21:00 and 22:40 JST, as Unix time.
+const ABC483_START: i64 = 1_794_052_800;
+const ABC483_END: i64 = 1_794_058_800;
+const DAY: i64 = 24 * 60 * 60;
+
+fn abc483_task_list() -> String {
+    let task = "/contests/abc483/tasks/abc483_a";
+    format!("<html><body><a class=\"contest-title\" href=\"/contests/abc483\">AtCoder Beginner Contest 483</a><table><tbody><tr><td><a href=\"{task}\">A</a></td><td><a href=\"{task}\">最初の問題</a></td></tr></tbody></table></body></html>")
+}
+
+#[test]
+fn u6a_only_contest_tops_are_read() {
+    for (url, contest) in [
+        (ABC483, Some(ABC483)),
+        ("https://atcoder.jp/contests/abc483/?lang=ja", Some(ABC483)),
+        ("https://atcoder.jp/contests/abc483/tasks", None),
+        ("https://atcoder.jp/contests/abc483/submissions/me", None),
+        ("https://atcoder.jp/contests/", None),
+        ("https://atcoder.jp/", None),
+        ("https://example.com/contests/abc483", None),
+    ] {
+        let url = url::Url::parse(url).unwrap();
+        assert_eq!(contest_top(&url).as_deref(), contest, "{url}");
+    }
+}
+
+#[test]
+fn u6a_a_registered_contest_top_adds_the_contest_with_its_times_and_no_tasks() {
+    let before = ABC483_START - 60 * 60;
+    let root = tempfile::tempdir().unwrap();
+    let contests = Contests::new(root.path());
+    // "(Guest)" before registering: nothing is added.
+    assert_eq!(
+        contests
+            .join(ABC483, ABC483_BEFORE_REGISTER, before)
+            .unwrap(),
+        None
+    );
+    assert!(contests.list().unwrap().is_empty());
+    let joined = contests
+        .join(&format!("{ABC483}?lang=ja"), ABC483_REGISTERED, before)
+        .unwrap()
+        .unwrap();
+    assert_eq!(joined.url, ABC483);
+    assert_eq!(joined.title, "AtCoder Beginner Contest 483");
+    assert!(joined.joined && !joined.hidden && joined.tasks.is_empty());
+    assert_eq!(
+        joined.start_time.as_deref(),
+        Some("2026-11-07T21:00:00+09:00")
+    );
+    assert_eq!(
+        joined.end_time.as_deref(),
+        Some("2026-11-07T22:40:00+09:00")
+    );
+    assert_eq!(contests.list().unwrap(), vec![joined.clone()]);
+    let saved: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(root.path().join("contests/abc483.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        saved.as_object().unwrap().keys().collect::<Vec<_>>(),
+        [
+            "endTime",
+            "hidden",
+            "joined",
+            "startTime",
+            "tasks",
+            "title",
+            "url"
+        ]
+    );
+    // The same page again changes nothing.
+    assert_eq!(
+        contests.join(ABC483, ABC483_REGISTERED, before).unwrap(),
+        None
+    );
+    // A page without the times is not enough.
+    let fresh = tempfile::tempdir().unwrap();
+    let untimed = ABC483_REGISTERED.replace("var startTime", "var shownTime");
+    assert_eq!(
+        Contests::new(fresh.path())
+            .join(ABC483, &untimed, before)
+            .unwrap(),
+        None
+    );
+    // Up to a day after the end the contest is added; later its page is ignored.
+    assert!(Contests::new(fresh.path())
+        .join(ABC483, ABC483_REGISTERED, ABC483_END + DAY - 1)
+        .unwrap()
+        .is_some());
+    let late = tempfile::tempdir().unwrap();
+    assert_eq!(
+        Contests::new(late.path())
+            .join(ABC483, ABC483_REGISTERED, ABC483_END + DAY)
+            .unwrap(),
+        None
+    );
+    assert!(!late.path().join("contests").exists());
+}
+
+#[test]
+fn u6a_joining_keeps_the_task_list_and_hidden_state_and_registering_again_keeps_the_times() {
+    let before = ABC483_START - 60 * 60;
+    let root = tempfile::tempdir().unwrap();
+    let contests = Contests::new(root.path());
+    let added = contests
+        .register(ABC483, |_| Ok(abc483_task_list()))
+        .unwrap()
+        .contest;
+    assert!(!added.joined && added.start_time.is_none() && added.end_time.is_none());
+    contests.set_hidden(ABC483, true).unwrap();
+    let joined = contests
+        .join(ABC483, ABC483_REGISTERED, before)
+        .unwrap()
+        .unwrap();
+    assert_eq!(joined.tasks, added.tasks);
+    assert!(joined.hidden && joined.joined);
+    let again = contests
+        .register(ABC483, |_| Ok(abc483_task_list()))
+        .unwrap()
+        .contest;
+    assert_eq!(again, joined);
+    // A delayed contest gets its new times.
+    let delayed =
+        ABC483_REGISTERED.replace("2026-11-07T22:40:00+09:00", "2026-11-07T22:50:00+09:00");
+    let moved = contests.join(ABC483, &delayed, before).unwrap().unwrap();
+    assert_eq!(moved.end_time.as_deref(), Some("2026-11-07T22:50:00+09:00"));
+    // An unreadable record is kept as it is.
+    let file = root.path().join("contests/abc483.json");
+    std::fs::write(&file, "{}").unwrap();
+    assert!(contests.join(ABC483, ABC483_REGISTERED, before).is_err());
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "{}");
+}
+
+#[test]
+fn u6a_joined_contests_are_hidden_once_a_day_after_their_end() {
+    let root = tempfile::tempdir().unwrap();
+    let contests = Contests::new(root.path());
+    contests
+        .join(ABC483, ABC483_REGISTERED, ABC483_START - 60)
+        .unwrap()
+        .unwrap();
+    contests
+        .register("https://atcoder.jp/contests/tessoku-book", |_| {
+            Ok(TESSOKU.to_string())
+        })
+        .unwrap();
+    assert!(contests
+        .hide_ended(ABC483_END + DAY - 1)
+        .unwrap()
+        .is_empty());
+    let hidden = contests.hide_ended(ABC483_END + DAY).unwrap();
+    assert_eq!(hidden.len(), 1);
+    assert_eq!(hidden[0].url, ABC483);
+    assert!(hidden[0].hidden && !hidden[0].joined);
+    assert_eq!(
+        contests
+            .list()
+            .unwrap()
+            .iter()
+            .map(|contest| contest.hidden)
+            .collect::<Vec<_>>(),
+        [true, false]
+    );
+    // Shown again by the user, it stays shown.
+    contests.set_hidden(ABC483, false).unwrap();
+    assert!(contests
+        .hide_ended(ABC483_END + 2 * DAY)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn u6a_saved_times_must_be_a_pair_in_order() {
+    let root = tempfile::tempdir().unwrap();
+    let contests = Contests::new(root.path());
+    let directory = root.path().join("contests");
+    std::fs::create_dir_all(&directory).unwrap();
+    let record = |start: &str, end: &str| {
+        format!(
+            "{{\"url\":\"{ABC483}\",\"title\":\"ABC483\",\"hidden\":false,\"tasks\":[],\"joined\":true{start}{end}}}"
+        )
+    };
+    let start = ",\"startTime\":\"2026-11-07T21:00:00+09:00\"";
+    let end = ",\"endTime\":\"2026-11-07T22:40:00+09:00\"";
+    std::fs::write(directory.join("abc483.json"), record(start, end)).unwrap();
+    assert_eq!(contests.list().unwrap().len(), 1);
+    for broken in [
+        record(start, ""),
+        record(start, ",\"endTime\":\"2026-11-07T20:00:00+09:00\""),
+        record(start, ",\"endTime\":\"2026-11-07 22:40\""),
+        record(start, ",\"endTime\":\"2026-13-07T22:40:00+09:00\""),
+    ] {
+        std::fs::write(directory.join("abc483.json"), &broken).unwrap();
+        assert!(contests.list().unwrap().is_empty(), "{broken}");
+    }
 }
