@@ -129,6 +129,9 @@ fn types(constraints: &[String]) -> (HashSet<String>, bool) {
             "文字",
             "または",
             "からなる",
+            // Decimals are read as strings, left to the user to convert (docs/review.md, R8).
+            "小数",
+            "実数",
         ]
         .iter()
         .any(|word| item.contains(word))
