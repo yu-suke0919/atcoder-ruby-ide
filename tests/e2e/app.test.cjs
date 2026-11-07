@@ -6,7 +6,7 @@ const { tmpdir } = require('node:os');
 const path = require('node:path');
 const { once } = require('node:events');
 const { runner, launch, close, requestClose, pause, memoryUse, rubyPath } = require('./support.cjs');
-const { taskPage, submissionsPage } = require('./atcoder-fixture.cjs');
+const { taskPage, submissionsPage, contestTopPage } = require('./atcoder-fixture.cjs');
 const { sampleCode, seedProblem: seedWorkspaceProblem, openProblem, selectTask, removeContest, waitInitialized } = require('./workspace.cjs');
 
 describe('Application', () => {
@@ -37,7 +37,7 @@ beforeEach(resetWorkspace);
 
 after(async () => {
   if (app) await close(app);
-  if (app) for (const contest of [testContest, `${testContest}-list`, `${testContest}-memory`, `${testContest}-race-a`, `${testContest}-race-b`, `${testContest}-subs`]) await removeContest(app, contest);
+  if (app) for (const contest of [testContest, `${testContest}-list`, `${testContest}-memory`, `${testContest}-race-a`, `${testContest}-race-b`, `${testContest}-subs`, `${testContest}-join`, `${testContest}-started`, `${testContest}-ended`]) await removeContest(app, contest);
   if (root) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
@@ -1286,6 +1286,50 @@ test('M20: the task list is colored by the submissions read from the shown submi
   await railIcon(contest).click();
   await colored('subs_a', 'ac');
   assert.equal(await result('subs_b'), 'other');
+});
+
+test('M17/U6a: a registered contest top adds the contest, says when it starts, lists its tasks once started and is hidden a day after its end', async () => {
+  const hour = 60 * 60 * 1000;
+  // AtCoder writes the times in JST.
+  const jst = ms => new Date(ms + 9 * hour).toISOString().replace(/\.\d+Z$/, '+09:00');
+  const now = Date.now();
+  const openTop = async contest => {
+    await page.locator('#browser-url').fill(`https://atcoder.jp/contests/${contest}`);
+    await page.locator('#browser-url').press('Enter');
+  };
+  const upcoming = `${testContest}-join`;
+  const start = jst(now + hour);
+  app.atcoder.pages.set(`/contests/${upcoming}`, contestTopPage(upcoming, { contestant: false, start, end: jst(now + 3 * hour) }));
+  await openTop(upcoming);
+  app.atcoder.pages.set(`/contests/${upcoming}`, contestTopPage(upcoming, { start, end: jst(now + 3 * hour) }));
+  await page.locator('#browser-reload').click();
+  if (runner !== 'native') await openTop(upcoming);
+  await railIcon(upcoming).waitFor();
+  const saved = JSON.parse(await readFile(path.join(app.dataDir, 'contests', `${upcoming}.json`), 'utf8'));
+  assert.deepEqual([saved.joined, saved.startTime, saved.tasks], [true, start, []]);
+  await railIcon(upcoming).click();
+  await page.locator('#task-message').filter({ hasText: `開始前です（開始 ${start.slice(0, 16).replace('T', ' ')}）` }).waitFor();
+  assert.equal(await page.locator('.task-item').count(), 0);
+  await page.screenshot({ path: 'test-results/contest-before-start.png' });
+  // Once started, selecting it fetches the task list once.
+  const started = `${testContest}-started`;
+  await seedWorkspaceProblem(app, started, 'started_a', { label: 'A', title: '始まった' });
+  app.atcoder.pages.set(`/contests/${started}`, contestTopPage(started, { start: jst(now - 60 * 1000), end: jst(now + 2 * hour) }));
+  await openTop(started);
+  await railIcon(started).click();
+  await page.locator('.task-item').first().waitFor();
+  assert.deepEqual(await page.locator('.task-item .task-label').allTextContents(), ['A']);
+  const fetched = JSON.parse(await readFile(path.join(app.dataDir, 'contests', `${started}.json`), 'utf8'));
+  assert.equal(fetched.joined, true);
+  // A joined contest a day after its end is hidden when the app starts.
+  const ended = `${testContest}-ended`;
+  const file = path.join(app.dataDir, 'contests', `${ended}.json`);
+  await writeFile(file, JSON.stringify({ url: `https://atcoder.jp/contests/${ended}`, title: `テスト ${ended}`, hidden: false, tasks: [], joined: true, startTime: jst(now - 3 * 24 * hour), endTime: jst(now - 25 * hour) }));
+  await page.reload(); await waitInitialized(page);
+  const hidden = JSON.parse(await readFile(file, 'utf8'));
+  assert.deepEqual([hidden.hidden, hidden.joined], [true, undefined]);
+  assert.equal(await railIcon(ended).count(), 0);
+  assert.equal(await railIcon(upcoming).count(), 1);
 });
 
 test('U2c: the URL field follows the shown page and opens only AtCoder pages', async () => {
