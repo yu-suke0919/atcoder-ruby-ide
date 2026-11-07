@@ -1,7 +1,7 @@
 use atcoder_ruby_ide::{
     browser_target, fetch_page, http_client, input_code, parse_task, parse_task_list,
-    reading_forms, Contest, ContestKey, Contests, DocumentStore, SampleCase, Samples, Task,
-    Workspaces,
+    reading_forms, submissions_page, Contest, ContestKey, Contests, DocumentStore, SampleCase,
+    Samples, Submissions, Task, TaskResult, Workspaces,
 };
 use std::path::Path;
 
@@ -1025,4 +1025,175 @@ fn live_atcoder_task_list_and_ended_task_pages_run_every_sample() {
         }
         std::thread::sleep(Duration::from_secs(1));
     }
+}
+
+// Pages of the user's submissions, saved while logged in (docs/problem-library.md#提出一覧の読み取りu5a).
+const WAITING: &str = include_str!("fixtures/submissions/waiting.html");
+const PROGRESS: &str = include_str!("fixtures/submissions/progress.html");
+const PROGRESS_TLE: &str = include_str!("fixtures/submissions/progress-tle.html");
+const SUBMISSIONS: &str = "https://atcoder.jp/contests/tessoku-book/submissions/me";
+const TESSOKU_CONTEST: &str = "https://atcoder.jp/contests/tessoku-book";
+fn tessoku_task(id: &str) -> String {
+    format!("{TESSOKU_CONTEST}/tasks/{id}")
+}
+/// One row of a saved page, by its submission ID.
+fn submission_row(page: &str, id: u64) -> String {
+    let link = format!("submissions/{id}\" class=\"submission-details-link");
+    let at = page.find(&link).unwrap();
+    let start = page[..at].rfind("<tr>").unwrap();
+    let end = at + page[at..].find("</tr>").unwrap() + "</tr>".len();
+    page[start..end].to_string()
+}
+fn submissions_list(rows: &[String]) -> String {
+    format!(
+        "<html><body><table><tbody>{}</tbody></table></body></html>",
+        rows.concat()
+    )
+}
+
+#[test]
+fn u5a_submissions_are_read_from_the_shown_list_with_judging_ones_marked() {
+    let root = tempfile::tempdir().unwrap();
+    let submissions = Submissions::new(root.path());
+    let waiting = submissions.read_page(SUBMISSIONS, WAITING).unwrap();
+    assert_eq!(waiting.contest, TESSOKU_CONTEST);
+    assert!(waiting.judging);
+    // A21 is waiting for judge but has an AC already; every task here has one.
+    assert_eq!(waiting.states.len(), 10);
+    assert!(waiting
+        .states
+        .values()
+        .all(|state| *state == TaskResult::Ac));
+    let stored =
+        std::fs::read_to_string(root.path().join("submissions/tessoku-book.json")).unwrap();
+    let stored: serde_json::Value = serde_json::from_str(&stored).unwrap();
+    let list = stored["submissions"].as_array().unwrap();
+    assert_eq!(list.len(), 20);
+    assert!(list
+        .windows(2)
+        .all(|pair| pair[0]["id"].as_u64() < pair[1]["id"].as_u64()));
+    let wj = list.iter().find(|s| s["id"] == 80643032).unwrap();
+    assert_eq!(wj["task"], tessoku_task("tessoku_book_u"));
+    assert_eq!(wj["result"], "WJ");
+    assert_eq!(wj["judging"], true);
+    assert_eq!(list.iter().filter(|s| s["result"] == "WA").count(), 5);
+    assert!(list
+        .iter()
+        .filter(|s| s["id"] != 80643032)
+        .all(|s| s["judging"] == false));
+    // Progress and a TLE found during the judge are still judging; the WJ one is now AC.
+    for page in [PROGRESS, PROGRESS_TLE] {
+        assert!(submissions.read_page(SUBMISSIONS, page).unwrap().judging);
+    }
+    let stored =
+        std::fs::read_to_string(root.path().join("submissions/tessoku-book.json")).unwrap();
+    let stored: serde_json::Value = serde_json::from_str(&stored).unwrap();
+    let list = stored["submissions"].as_array().unwrap();
+    assert_eq!(list.len(), 22);
+    let tle = list.iter().find(|s| s["id"] == 80643050).unwrap();
+    assert_eq!(
+        (tle["result"].as_str(), tle["judging"].as_bool()),
+        (Some("23/41 TLE"), Some(true))
+    );
+    assert_eq!(
+        list.iter().find(|s| s["id"] == 80643032).unwrap()["result"],
+        "AC"
+    );
+}
+
+#[test]
+fn u5a_a_task_is_ac_with_any_ac_else_judging_with_any_judging_else_other() {
+    let root = tempfile::tempdir().unwrap();
+    let submissions = Submissions::new(root.path());
+    let judging = submission_row(PROGRESS_TLE, 80643050);
+    let wrong = submission_row(PROGRESS_TLE, 80022162);
+    let four_boxes = tessoku_task("tessoku_book_n");
+    let update = submissions
+        .read_page(
+            SUBMISSIONS,
+            &submissions_list(&[judging.clone(), wrong.clone()]),
+        )
+        .unwrap();
+    assert!(update.judging);
+    assert_eq!(update.states[&four_boxes], TaskResult::Judging);
+    // The judge ends with TLE: the same submission is replaced, not added.
+    let finished = judging
+        .replace(
+            "colspan=\"3\" class=\"text-center waiting-judge\" data-id=\"80643050\"",
+            "class=\"text-center\"",
+        )
+        .replace("23/41 TLE", "TLE");
+    let update = submissions
+        .read_page(SUBMISSIONS, &submissions_list(&[finished, wrong]))
+        .unwrap();
+    assert!(!update.judging);
+    assert_eq!(update.states[&four_boxes], TaskResult::Other);
+    assert_eq!(submissions.states(TESSOKU_CONTEST).unwrap(), update.states);
+    // Submissions read before stay: an AC in the full list makes the task AC.
+    submissions.read_page(SUBMISSIONS, WAITING).unwrap();
+    let states = submissions.states(TESSOKU_CONTEST).unwrap();
+    assert_eq!(states[&four_boxes], TaskResult::Ac);
+    assert!(!states.contains_key(&tessoku_task("tessoku_book_b")));
+    assert!(submissions
+        .states("https://atcoder.jp/contests/abc001")
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn u5a_only_submission_lists_are_read_and_an_unreadable_record_is_kept() {
+    for (url, contest) in [
+        (SUBMISSIONS, Some(TESSOKU_CONTEST)),
+        (
+            "https://atcoder.jp/contests/tessoku-book/submissions/me?page=2",
+            Some(TESSOKU_CONTEST),
+        ),
+        (
+            "https://atcoder.jp/contests/abc482/submissions/me/",
+            Some("https://atcoder.jp/contests/abc482"),
+        ),
+        ("https://atcoder.jp/contests/tessoku-book/submissions", None),
+        (
+            "https://atcoder.jp/contests/tessoku-book/submissions/me/status/json",
+            None,
+        ),
+        (
+            "https://atcoder.jp/contests/tessoku-book/tasks/tessoku_book_a",
+            None,
+        ),
+        (
+            "https://example.com/contests/tessoku-book/submissions/me",
+            None,
+        ),
+    ] {
+        let url = url::Url::parse(url).unwrap();
+        assert_eq!(submissions_page(&url).as_deref(), contest, "{url}");
+    }
+    let root = tempfile::tempdir().unwrap();
+    let submissions = Submissions::new(root.path());
+    // No submissions yet: nothing to record or color.
+    let empty = submissions
+        .read_page(
+            SUBMISSIONS,
+            "<html><body><p>提出がありません</p></body></html>",
+        )
+        .unwrap();
+    assert!(empty.states.is_empty() && !empty.judging);
+    // Rows of another contest's tasks are skipped.
+    let other = submission_row(WAITING, 80642902)
+        .replace("/contests/tessoku-book/tasks/", "/contests/abc001/tasks/");
+    assert!(submissions
+        .read_page(SUBMISSIONS, &submissions_list(&[other]))
+        .unwrap()
+        .states
+        .is_empty());
+    let file = root.path().join("submissions/tessoku-book.json");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "{\"submissions\": [], \"unknown\": 1}").unwrap();
+    assert!(submissions.read_page(SUBMISSIONS, WAITING).is_err());
+    assert!(submissions.states(TESSOKU_CONTEST).is_err());
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "{\"submissions\": [], \"unknown\": 1}"
+    );
 }

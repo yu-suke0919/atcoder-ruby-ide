@@ -35,4 +35,16 @@ function taskPage({ samples = [], timeLimit = '2 sec', memoryLimit = '1024 MiB',
   return `<html><body><p>実行時間制限: ${timeLimit} / メモリ制限: ${memoryLimit}</p><div id="task-statement"><span class="lang-ja"><section><h3>問題文</h3><p>テスト用の問題です。</p></section>${format}${sections}</span></div></body></html>`;
 }
 
-module.exports = { startAtCoder, taskListPage, taskPage };
+// The user's submission list with the markup AtCoder uses (tests/fixtures/submissions/ has real ones).
+function submissionsPage(contest, submissions) {
+  const rows = submissions.map(({ id, task, result, judging = false }) => {
+    const label = result === 'AC' ? 'label-success' : judging && !/[A-Z]{2}/.test(result.replace('WJ', '')) ? 'label-default' : 'label-warning';
+    const status = judging
+      ? `<td colspan="3" class="text-center waiting-judge" data-id="${id}"><span class="label ${label}">${result}</span></td>`
+      : `<td class="text-center"><span class="label ${label}">${result}</span></td><td class="text-right">10 ms</td><td class="text-right">3000 KiB</td>`;
+    return `<tr><td class="no-break"><time class="fixtime-second">2026-11-07 15:49:58</time></td><td><a href="/contests/${contest}/tasks/${task}">${task}</a></td><td><a href="/users/test_user">test_user</a></td><td>Ruby 3.4 (ruby 3.4.5)</td><td class="text-right submission-score" data-id="${id}">0</td><td class="text-right">100 Byte</td>${status}<td class="text-center"><a href="/contests/${contest}/submissions/${id}" class="submission-details-link">詳細</a></td></tr>`;
+  }).join('');
+  return `<html><body><table class="table"><tbody>${rows}</tbody></table></body></html>`;
+}
+
+module.exports = { startAtCoder, taskListPage, taskPage, submissionsPage };

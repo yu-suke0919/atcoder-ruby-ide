@@ -6,7 +6,7 @@ const { tmpdir } = require('node:os');
 const path = require('node:path');
 const { once } = require('node:events');
 const { runner, launch, close, requestClose, pause, memoryUse, rubyPath } = require('./support.cjs');
-const { taskPage } = require('./atcoder-fixture.cjs');
+const { taskPage, submissionsPage } = require('./atcoder-fixture.cjs');
 const { sampleCode, seedProblem: seedWorkspaceProblem, openProblem, selectTask, removeContest, waitInitialized } = require('./workspace.cjs');
 
 describe('Application', () => {
@@ -37,7 +37,7 @@ beforeEach(resetWorkspace);
 
 after(async () => {
   if (app) await close(app);
-  if (app) for (const contest of [testContest, `${testContest}-list`, `${testContest}-memory`, `${testContest}-race-a`, `${testContest}-race-b`]) await removeContest(app, contest);
+  if (app) for (const contest of [testContest, `${testContest}-list`, `${testContest}-memory`, `${testContest}-race-a`, `${testContest}-race-b`, `${testContest}-subs`]) await removeContest(app, contest);
   if (root) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
@@ -1249,6 +1249,43 @@ test('U2c: dragging the borders resizes every pane, scales the icons, survives a
   } finally {
     await page.evaluate(key => localStorage.removeItem(key), LAYOUT_KEY);
   }
+});
+
+test('M20: the task list is colored by the submissions read from the shown submission list', async () => {
+  const contest = `${testContest}-subs`;
+  for (const [id, label] of [['subs_a', 'A'], ['subs_b', 'B'], ['subs_c', 'C'], ['subs_d', 'D']]) {
+    await seedWorkspaceProblem(app, contest, id, { label, title: `提出${label}` });
+  }
+  await page.locator('#contest-add').click();
+  await page.locator('#contest-url').fill(`https://atcoder.jp/contests/${contest}`);
+  await page.locator('#contest-register').click();
+  await page.waitForFunction(() => !document.querySelector('dialog[open]'));
+  const list = `/contests/${contest}/submissions/me`;
+  app.atcoder.pages.set(list, submissionsPage(contest, [
+    { id: 4, task: 'subs_c', result: 'WJ', judging: true },
+    { id: 3, task: 'subs_b', result: 'WA' },
+    { id: 2, task: 'subs_a', result: 'WA' },
+    { id: 1, task: 'subs_a', result: 'AC' },
+  ]));
+  const result = id => page.locator(`.task-item[data-url$="/tasks/${id}"]`).getAttribute('data-result');
+  const colored = (id, value) => page.waitForFunction(([id, value]) => document.querySelector(`.task-item[data-url$="/tasks/${id}"]`)?.dataset.result === value, [id, value]);
+  await page.locator('#browser-url').fill(`https://atcoder.jp${list}`);
+  await page.locator('#browser-url').press('Enter');
+  await colored('subs_c', 'judging');
+  assert.equal(await result('subs_a'), 'ac');
+  assert.equal(await result('subs_b'), 'other');
+  assert.equal(await result('subs_d'), null);
+  assert.equal(await page.locator('.task-item[data-url$="/tasks/subs_c"]').getAttribute('title'), 'ジャッジ中');
+  // AtCoder rewrites a judging row in place; the test host reads the served page again.
+  if (runner !== 'native') {
+    app.atcoder.pages.set(list, submissionsPage(contest, [{ id: 4, task: 'subs_c', result: 'AC' }]));
+    await colored('subs_c', 'ac');
+  }
+  // The colors are kept: after a reload they come back when the contest is selected.
+  await page.reload(); await waitInitialized(page);
+  await railIcon(contest).click();
+  await colored('subs_a', 'ac');
+  assert.equal(await result('subs_b'), 'other');
 });
 
 test('U2c: the URL field follows the shown page and opens only AtCoder pages', async () => {
