@@ -33,10 +33,11 @@ jobs:
         with:
           cache-on-failure: true
           key: wsl-agent
+      # The built Ruby, gems and Ruby LSP, kept so that the version stays the same (scripts/build-wsl-runtime.sh).
       - uses: actions/cache@v4
         with:
-          path: .cache
-          key: wsl-sources-${{ hashFiles('config/ruby-wsl.json', 'config/atcoder-runtime.json', 'config/ruby-lsp.json') }}
+          path: .cache/wsl
+          key: wsl-runtime-${{ hashFiles('config/ruby-wsl.json', 'config/atcoder-runtime.json', 'config/ruby-lsp.json', 'scripts/build-wsl-runtime.sh', 'scripts/prepare-gems.cjs', 'scripts/prepare-lsp.cjs', 'scripts/install-gems.rb', 'scripts/download-verified.cjs') }}
       - name: Install the Ruby build dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev libyaml-dev libffi-dev zlib1g-dev libgmp-dev
       - run: npm run prepare:wsl
