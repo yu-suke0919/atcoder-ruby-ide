@@ -37,7 +37,7 @@ beforeEach(resetWorkspace);
 
 after(async () => {
   if (app) await close(app);
-  if (app) for (const contest of [testContest, `${testContest}-list`, `${testContest}-memory`, `${testContest}-race-a`, `${testContest}-race-b`, `${testContest}-subs`, `${testContest}-join`, `${testContest}-started`, `${testContest}-ended`, `${testContest}-start`]) await removeContest(app, contest);
+  if (app) for (const contest of [testContest, `${testContest}-list`, `${testContest}-memory`, `${testContest}-race-a`, `${testContest}-race-b`, `${testContest}-subs`, `${testContest}-join`, `${testContest}-started`, `${testContest}-ended`, `${testContest}-start`, `${testContest}-colors`]) await removeContest(app, contest);
   if (root) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
@@ -1556,6 +1556,48 @@ test('M09: switching tabs stops editing while the open file is saved, so no edit
   assert.equal(editable, false);
   await page.waitForFunction(() => document.querySelector('#file-tabs [aria-selected="true"]').textContent === 'W_2');
   assert.equal(await readFile(path.join(problem.workspace, 'files', 'W_1.rb'), 'utf8'), 'puts :first');
+});
+
+test('R7: colors read when the contest was selected do not replace the colors of a later submission list', holdsReplies, async () => {
+  const contest = `${testContest}-colors`;
+  const task = await seedWorkspaceProblem(app, contest, 'colors_a', { label: 'A', title: '色' });
+  await openProblem(page, task);
+  await page.locator('#home-icon').click();
+  await page.locator('#problem-title').filter({ hasText: 'ホーム' }).waitFor();
+  const colored = `.task-item[data-url="${task.url}"][data-result="ac"]`;
+  const reply = holdReply('submission_states');
+  try {
+    await railIcon(contest).click();
+    await reply.handled;
+    const list = `/contests/${contest}/submissions/me`;
+    app.atcoder.pages.set(list, submissionsPage(contest, [{ id: 1, task: 'colors_a', result: 'AC' }]));
+    await page.locator('#browser-url').fill(`https://atcoder.jp${list}`);
+    await page.locator('#browser-url').press('Enter');
+    await page.locator(colored).waitFor();
+  } finally { reply.release(); }
+  // The held reply, read before the list, arrives now.
+  await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 500)));
+  assert.equal(await page.locator(colored).count(), 1);
+});
+
+test('R9: discarding a failed save to switch tabs puts the samples back as saved', async () => {
+  await page.locator('#home-icon').click();
+  await page.locator('#problem-title').filter({ hasText: 'ホーム' }).waitFor();
+  assert.equal(await page.locator('#tolerant-compare').isChecked(), false);
+  await page.locator('#tolerant-compare').check();
+  await page.locator('#tolerance').fill('0');
+  await page.locator('#code-editor').press('Control+s');
+  await waitSaveFailed();
+  const selected = name => page.waitForFunction(name => document.querySelector('#file-tabs [aria-selected="true"]')?.textContent === name, name);
+  await page.getByRole('tab', { name: 'home_2', exact: true }).click();
+  await page.locator('#save-failed-dialog').waitFor();
+  await page.locator('#save-failed-discard').click();
+  await selected('home_2');
+  assert.equal(await page.locator('#tolerant-compare').isChecked(), false);
+  assert.notEqual(await page.locator('#save-state').getAttribute('data-state'), 'failed');
+  await page.getByRole('tab', { name: 'home_1', exact: true }).click();
+  await selected('home_1');
+  assert.equal(await page.locator('#save-failed-dialog').isVisible(), false);
 });
 
 test('M03: going back to the saved content clears a failed save', async () => {
