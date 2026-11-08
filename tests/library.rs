@@ -1450,3 +1450,61 @@ fn r6_submissions_read_at_the_same_time_are_all_kept() {
         assert_eq!(saved["submissions"].as_array().unwrap().len(), 2);
     }
 }
+
+#[test]
+fn u5b_a_left_judging_list_is_fetched_until_judged_or_for_at_most_the_limit() {
+    use std::time::{Duration, Instant};
+    let root = tempfile::tempdir().unwrap();
+    let submissions = Submissions::new(root.path());
+    let judged = submissions_list(&[submission_row(PROGRESS, 80643032)]);
+    let mut pages = vec![
+        Err("offline".to_string()),
+        Ok(WAITING.to_string()),
+        Ok(judged),
+    ]
+    .into_iter();
+    let (mut fetched, mut judging) = (0, Vec::new());
+    submissions.follow_judging(
+        SUBMISSIONS,
+        Duration::from_millis(10),
+        Instant::now() + Duration::from_secs(10),
+        || {
+            fetched += 1;
+            pages.next().unwrap()
+        },
+        |update| judging.push(update.unwrap().judging),
+    );
+    // A failed fetch is tried again; the fetches stop once nothing is judging.
+    assert_eq!(fetched, 3);
+    assert_eq!(judging, [true, false]);
+    let stored: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(root.path().join("submissions/tessoku-book.json")).unwrap(),
+    )
+    .unwrap();
+    let wj = stored["submissions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == 80643032)
+        .unwrap()
+        .clone();
+    assert_eq!(
+        (wj["result"].as_str(), wj["judging"].as_bool()),
+        (Some("AC"), Some(false))
+    );
+    // A judge that does not end in time is no longer fetched after the limit.
+    let start = Instant::now();
+    let mut fetched = 0;
+    submissions.follow_judging(
+        SUBMISSIONS,
+        Duration::from_millis(10),
+        start + Duration::from_millis(55),
+        || {
+            fetched += 1;
+            Ok(WAITING.to_string())
+        },
+        |_| {},
+    );
+    assert!((1..=5).contains(&fetched), "{fetched}");
+    assert!(start.elapsed() < Duration::from_millis(500));
+}

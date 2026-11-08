@@ -37,7 +37,7 @@ beforeEach(resetWorkspace);
 
 after(async () => {
   if (app) await close(app);
-  if (app) for (const contest of [testContest, `${testContest}-list`, `${testContest}-memory`, `${testContest}-race-a`, `${testContest}-race-b`, `${testContest}-subs`, `${testContest}-join`, `${testContest}-started`, `${testContest}-ended`, `${testContest}-start`, `${testContest}-colors`]) await removeContest(app, contest);
+  if (app) for (const contest of [testContest, `${testContest}-list`, `${testContest}-memory`, `${testContest}-race-a`, `${testContest}-race-b`, `${testContest}-subs`, `${testContest}-join`, `${testContest}-started`, `${testContest}-ended`, `${testContest}-start`, `${testContest}-colors`, `${testContest}-follow`]) await removeContest(app, contest);
   if (root) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
@@ -1352,6 +1352,25 @@ test('M17/U6b: a joined contest that starts while the app runs fetches its tasks
   assert.deepEqual(await page.locator('.task-item .task-label').allTextContents(), ['A', 'B']);
   assert.equal(await page.locator('.task-item[aria-current="true"] .task-label').textContent(), 'A');
   assert.equal(await railIcon(contest).getAttribute('aria-pressed'), 'true');
+});
+
+test('M20/U5b: a judging submission keeps updating its color after another task is opened', async () => {
+  const contest = `${testContest}-follow`;
+  const a = await seedWorkspaceProblem(app, contest, 'follow_a', { label: 'A', title: '提出' });
+  const b = await seedWorkspaceProblem(app, contest, 'follow_b', { label: 'B', title: '次' });
+  await openProblem(page, a);
+  const colored = (id, value, timeout) => page.waitForFunction(([id, value]) => document.querySelector(`.task-item[data-url$="/tasks/${id}"]`)?.dataset.result === value, [id, value], { timeout });
+  // Submitting moves the task's page to the submission list.
+  const list = `/contests/${contest}/submissions/me`;
+  app.atcoder.pages.set(list, submissionsPage(contest, [{ id: 1, task: 'follow_a', result: 'WJ', judging: true }]));
+  await page.locator('#browser-url').fill(`https://atcoder.jp${list}`);
+  await page.locator('#browser-url').press('Enter');
+  await colored('follow_a', 'judging');
+  // The list is hidden behind the next task's page while the judge goes on.
+  await selectTask(page, b);
+  await page.locator('#problem-title').filter({ hasText: 'B - 次' }).waitFor();
+  app.atcoder.pages.set(list, submissionsPage(contest, [{ id: 1, task: 'follow_a', result: 'AC' }]));
+  await colored('follow_a', 'ac', 30000);
 });
 
 test('U2c: the URL field follows the shown page and opens only AtCoder pages', async () => {
