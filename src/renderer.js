@@ -503,9 +503,17 @@ async function showFile(name) {
   editor.focus();
 }
 // Unsaved edits of the open file are saved first, with editing stopped so none is made after the
-// save; a failed save asks before leaving them.
+// save; a failed save asks before leaving them. The samples stay with the problem, so discarding
+// puts them back as last saved (docs/review.md, R9).
 function leaveFileAction(action) {
-  return fileAction(async () => { if (await leaveProblem()) await action(); });
+  return fileAction(async () => {
+    if (await saveNow()) return action();
+    if (!await confirmSaveFailed()) return;
+    cases.revert();
+    saveError = null;
+    showCase();
+    await action();
+  });
 }
 async function switchFile(name) {
   if (fileLocked() || name === activeProblem.file) return;
@@ -667,13 +675,20 @@ function renderRail() {
 // The colors of each contest's tasks from the submissions read so far (U5a): ac, judging or other.
 const taskResults = new Map();
 const resultLabels = { ac: 'AC', judging: 'ジャッジ中', other: 'AC以外' };
+// Submission list events per contest: colors read before the latest event are out of date
+// (docs/review.md, R7).
+const resultEvents = new Map();
 async function loadTaskResults(contest) {
-  try { taskResults.set(contest, await ide.submissionStates(contest)); }
-  catch (error) { taskMessage(error.message, true); }
+  const events = resultEvents.get(contest) ?? 0;
+  try {
+    const states = await ide.submissionStates(contest);
+    if ((resultEvents.get(contest) ?? 0) === events) taskResults.set(contest, states);
+  } catch (error) { taskMessage(error.message, true); }
   if (contest === selectedContest) renderTasks();
 }
 ide.onSubmissions(update => {
   if (update.error) { message(update.error, true); return; }
+  resultEvents.set(update.contest, (resultEvents.get(update.contest) ?? 0) + 1);
   taskResults.set(update.contest, update.states);
   if (update.contest === selectedContest) renderTasks();
 }).catch(error => message(String(error), true));
