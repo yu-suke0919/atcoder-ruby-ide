@@ -9,8 +9,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 type Sink = Arc<Mutex<io::Stdout>>;
 fn send(sink: &Sink, value: Value) {
@@ -52,6 +53,8 @@ fn main() {
         fetch_page(&client, &url.replacen("https://atcoder.jp", &origin, 1), "")
     };
     let sink = Arc::new(Mutex::new(io::stdout()));
+    // Counts the pages shown, so a submission list knows when another page hides it.
+    let shown = Arc::new(AtomicU64::new(0));
     // The app reads every loaded contest top for a registration; here showing one fetches it.
     let read_contest_top = |sink: &Sink, url: &str| {
         if !url::Url::parse(url).is_ok_and(|url| contest_top(&url).is_some()) {
@@ -71,6 +74,12 @@ fn main() {
     for line in io::stdin().lock().lines() {
         let request: Request = serde_json::from_str(&line.unwrap()).unwrap();
         let args = request.args;
+        if matches!(
+            request.command.as_str(),
+            "browser_task" | "browser_home" | "browser_open" | "browser_close_tasks"
+        ) {
+            shown.fetch_add(1, Ordering::SeqCst);
+        }
         let result: Result<Value, String> = (|| match request.command.as_str() {
             "lsp_start" | "lsp_complete" | "lsp_stop" | "ruby_info" | "stop_ruby" => {
                 agent.request(&request.command, args)
@@ -198,21 +207,23 @@ fn main() {
                 );
                 read_contest_top(&sink, url.as_str());
                 // The app reads a shown submission list; while one is judging, AtCoder rewrites
-                // it in place, which this host follows by fetching the served page again.
+                // it in place, which this host follows by fetching the served page again. Once
+                // another page hides the list, the app fetches it (U5b), here more often.
                 if submissions_page(&url).is_some() {
                     let (sink, data, origin) = (Arc::clone(&sink), data.clone(), origin.clone());
+                    let (shown, opened) = (Arc::clone(&shown), shown.load(Ordering::SeqCst));
                     std::thread::spawn(move || {
                         let submissions = Submissions::new(&data);
-                        for _ in 0..150 {
-                            let read = http_client()
-                                .and_then(|client| {
-                                    fetch_page(
-                                        &client,
-                                        &url.as_str().replacen("https://atcoder.jp", &origin, 1),
-                                        "",
-                                    )
-                                })
-                                .and_then(|html| submissions.read_page(url.as_str(), &html));
+                        let fetch = || {
+                            http_client().and_then(|client| {
+                                fetch_page(
+                                    &client,
+                                    &url.as_str().replacen("https://atcoder.jp", &origin, 1),
+                                    "",
+                                )
+                            })
+                        };
+                        let report = |read: Result<_, String>| {
                             let payload = match &read {
                                 Ok(update) => json!(update),
                                 Err(error) => json!({"error": error}),
@@ -221,10 +232,27 @@ fn main() {
                                 &sink,
                                 json!({"appEvent": "submissions", "payload": payload}),
                             );
-                            if !read.is_ok_and(|update| update.judging) {
+                        };
+                        let since = Instant::now();
+                        loop {
+                            let read =
+                                fetch().and_then(|html| submissions.read_page(url.as_str(), &html));
+                            let judging = read.as_ref().is_ok_and(|update| update.judging);
+                            report(read);
+                            if !judging || since.elapsed() > Duration::from_secs(30) {
                                 break;
                             }
                             std::thread::sleep(Duration::from_millis(200));
+                            if shown.load(Ordering::SeqCst) != opened {
+                                submissions.follow_judging(
+                                    url.as_str(),
+                                    Duration::from_millis(200),
+                                    since + Duration::from_secs(30),
+                                    fetch,
+                                    report,
+                                );
+                                break;
+                            }
                         }
                     });
                 }
