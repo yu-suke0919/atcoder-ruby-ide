@@ -1,12 +1,13 @@
 //! The AtCoder pages in the right column: one home page and one page per task of the selected
 //! contest. Pages cannot call the app; the app reads a task page after it has loaded.
 use atcoder_ruby_ide::{
-    browser_target, contest_top, is_allowed, is_task_page, read_task_page, submissions_page,
-    unix_now, Contests, Submissions, Workspaces,
+    browser_target, contest_top, fetch_page, http_client, is_allowed, is_task_page, read_task_page,
+    submissions_page, unix_now, Contests, Submissions, Workspaces,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::webview::NewWindowResponse;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl};
 use url::Url;
@@ -38,6 +39,8 @@ pub struct Browser {
     hidden: Mutex<bool>,
     next: Mutex<u64>,
     args: Mutex<Option<String>>,
+    /// Contests whose submission list is being fetched while a submission is judged (U5b).
+    following: Mutex<HashSet<String>>,
 }
 
 /// The origin pages are loaded from. UI tests point it at a local server; normal runs use AtCoder.
@@ -121,12 +124,53 @@ fn read_if_needed(webview: &tauri::Webview, task_url: String) {
 }
 
 /// How often a shown submission list with a judging submission is read again (U5a).
-const JUDGING_READ_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3);
+const JUDGING_READ_INTERVAL: Duration = Duration::from_secs(3);
+/// How often and how long a hidden or left list is fetched while a submission is judged (U5b).
+const JUDGING_FETCH_INTERVAL: Duration = Duration::from_secs(10);
+const JUDGING_FETCH_LIMIT: Duration = Duration::from_secs(10 * 60);
+
+fn send_submissions(
+    app: &tauri::AppHandle,
+    read: Result<atcoder_ruby_ide::SubmissionUpdate, String>,
+) {
+    let _ = match read {
+        Ok(update) => app.emit_to("main", "submissions", &update),
+        Err(error) => app.emit_to("main", "submissions", serde_json::json!({ "error": error })),
+    };
+}
+
+/// Fetches the submission list `page` with the browser's cookies while a submission is judged,
+/// after its webview hid or left the list (U5b). One contest is fetched by one thread at a time.
+fn follow_submissions(app: &tauri::AppHandle, page: Url, since: Instant) {
+    let Some(contest) = submissions_page(&page) else {
+        return;
+    };
+    let browser = app.state::<Browser>();
+    if !browser.following.lock().unwrap().insert(contest.clone()) {
+        return;
+    }
+    let cookie = tauri::async_runtime::block_on(cookies(app)).unwrap_or_default();
+    let fetch = || {
+        let client = http_client()?;
+        fetch_page(&client, to_origin(page.as_str())?.as_str(), &cookie)
+    };
+    if let Ok(root) = app.path().app_local_data_dir() {
+        Submissions::new(root).follow_judging(
+            page.as_str(),
+            JUDGING_FETCH_INTERVAL,
+            since + JUDGING_FETCH_LIMIT,
+            fetch,
+            |read| send_submissions(app, read),
+        );
+    }
+    browser.following.lock().unwrap().remove(&contest);
+}
 
 /// Reads the shown submission list into the contest's submissions and tells the screen the colors.
 /// While a submission is judging, AtCoder rewrites the list in place, so it is read again as long
-/// as the page still shows it.
-fn read_submissions(webview: &tauri::Webview) {
+/// as the webview is shown and still shows it; otherwise the list is fetched (U5b). `since` is when
+/// the judging list was loaded, about when the submission was made.
+fn read_submissions(webview: &tauri::Webview, since: Instant) {
     let app = webview.app_handle().clone();
     let label = webview.label().to_string();
     let read = webview.eval_with_callback("document.documentElement.outerHTML", move |json| {
@@ -147,20 +191,16 @@ fn read_submissions(webview: &tauri::Webview) {
                 .app_local_data_dir()
                 .map_err(|e| e.to_string())
                 .and_then(|root| Submissions::new(root).read_page(page.as_str(), &html));
-            match result {
-                Ok(update) => {
-                    let _ = app.emit_to("main", "submissions", &update);
-                    if update.judging {
-                        std::thread::sleep(JUDGING_READ_INTERVAL);
-                        if let (Some(_), Some(webview)) = (shown_list(), app.get_webview(&label)) {
-                            read_submissions(&webview);
-                        }
-                    }
-                }
-                Err(error) => {
-                    let _ =
-                        app.emit_to("main", "submissions", serde_json::json!({ "error": error }));
-                }
+            let judging = result.as_ref().is_ok_and(|update| update.judging);
+            send_submissions(&app, result);
+            if !judging {
+                return;
+            }
+            std::thread::sleep(JUDGING_READ_INTERVAL);
+            let visible = *app.state::<Browser>().shown.lock().unwrap() == label;
+            match (shown_list(), app.get_webview(&label)) {
+                (Some(_), Some(webview)) if visible => read_submissions(&webview, since),
+                _ => follow_submissions(&app, page, since),
             }
         });
     });
@@ -219,7 +259,9 @@ fn builder(
         show_url(&webview, payload.url());
         if payload.event() == tauri::webview::PageLoadEvent::Finished {
             match from_origin(payload.url()) {
-                Some(url) if submissions_page(&url).is_some() => read_submissions(&webview),
+                Some(url) if submissions_page(&url).is_some() => {
+                    read_submissions(&webview, Instant::now())
+                }
                 Some(url) if contest_top(&url).is_some() => read_contest_top(&webview, url),
                 _ => {}
             }

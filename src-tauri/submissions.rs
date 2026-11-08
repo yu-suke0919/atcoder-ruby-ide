@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use url::Url;
 
 const MAX_SUBMISSIONS: usize = 10_000;
@@ -181,6 +182,28 @@ impl Submissions {
             states: states(&record.submissions),
             judging,
         })
+    }
+    /// Follows a judging submission whose list is hidden or left (U5b): every `interval` until
+    /// `until`, fetches the list at `page_url`, records it and reports the read, stopping once
+    /// nothing is judging. A failed fetch is tried again at the next interval.
+    pub fn follow_judging(
+        &self,
+        page_url: &str,
+        interval: Duration,
+        until: Instant,
+        mut fetch: impl FnMut() -> Result<String, String>,
+        mut report: impl FnMut(Result<SubmissionUpdate, String>),
+    ) {
+        while Instant::now() + interval <= until {
+            std::thread::sleep(interval);
+            let Ok(html) = fetch() else { continue };
+            let read = self.read_page(page_url, &html);
+            let judging = read.as_ref().is_ok_and(|update| update.judging);
+            report(read);
+            if !judging {
+                return;
+            }
+        }
     }
     /// The colors of the contest's tasks from the submissions read so far.
     pub fn states(&self, contest: &str) -> Result<HashMap<String, TaskResult>, String> {
