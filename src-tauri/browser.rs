@@ -16,6 +16,9 @@ use url::Url;
 pub const HOME: &str = "home";
 /// The るりま window over the AtCoder pages (D3).
 const RURIMA: &str = "rurima";
+/// How much of the browser column the るりま window takes when fully shown; the AtCoder page
+/// stays visible below it.
+const RURIMA_HEIGHT: f64 = 0.8;
 const ATCODER: &str = "https://atcoder.jp";
 
 #[derive(Clone, Copy, Default, Deserialize)]
@@ -449,7 +452,7 @@ impl Browser {
         let rurima = app
             .get_webview(RURIMA)
             .map_or(0.0, |_| *self.rurima.lock().unwrap());
-        let top = (bounds.height * rurima).round();
+        let top = (bounds.height * RURIMA_HEIGHT * rurima).round();
         let place = |webview: &tauri::Webview, y: f64, height: f64| {
             if visible && height >= 1.0 {
                 let _ = webview.set_position(LogicalPosition::new(bounds.x, y));

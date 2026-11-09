@@ -32,7 +32,9 @@ pub fn browser_target(input: &str) -> Result<Url, String> {
 pub const RURIMA_ORIGINS: &[&str] = &["https://docs.ruby-lang.org", "https://www.google.com"];
 /// The first page of the るりま window: the reference of Ruby 3.4, the Ruby AtCoder uses.
 pub const RURIMA_HOME: &str = "https://docs.ruby-lang.org/ja/3.4/doc/index.html";
-const RURIMA_SITE: &str = "site:docs.ruby-lang.org/ja/3.4/";
+/// Added after the words: the title of every page of the reference for Ruby 3.4, and the site.
+/// Google ignored a site with a path, `site:docs.ruby-lang.org/ja/3.4/`, for some words.
+const RURIMA_SEARCH: &str = "\"Ruby 3.4 リファレンスマニュアル\" site:docs.ruby-lang.org";
 const MAX_SEARCH_CHARS: usize = 200;
 
 /// Whether the るりま window may open a URL.
@@ -71,7 +73,7 @@ pub fn rurima_target(input: &str) -> Result<Url, String> {
     let words: String = words.chars().take(MAX_SEARCH_CHARS).collect();
     Url::parse_with_params(
         "https://www.google.com/search",
-        &[("q", format!("{RURIMA_SITE} {words}"))],
+        &[("q", format!("{words} {RURIMA_SEARCH}"))],
     )
     .map_err(|e| e.to_string())
 }
