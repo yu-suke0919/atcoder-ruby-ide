@@ -166,6 +166,37 @@ const INPUT_FORMATS: &[(&str, &str, &str, &str)] = &[
         "n = gets.to_i\na = gets.split.map(&:to_i)\nq = gets.to_i\nq.times do\n  query = gets.split.map(&:to_i)\nend\n",
         "2\n3 1\n2\n1 5\n3 2\n",
     ),
+    // D2: formats the ABC460-479 survey found without code or with wrong code.
+    (
+        "abc460_b",
+        "$T$\n$\\mathrm{case}_1$\n$\\mathrm{case}_2$\n$\\vdots$\n$\\mathrm{case}_T$\n$X_1$ $Y_1$ $R_1$ $X_2$ $Y_2$ $R_2$",
+        "t = gets.to_i\nt.times do\n  x1, y1, r1, x2, y2, r2 = gets.split.map(&:to_i)\nend\n",
+        "2\n0 0 2 2 3 2\n0 0 2 2 3 1\n",
+    ),
+    (
+        "abc462_b",
+        "$N$\n$K_1$ $A_{1,1}$ $A_{1,2}$ $\\ldots$ $A_{1,K_1}$\n$K_2$ $A_{2,1}$ $A_{2,2}$ $\\ldots$ $A_{2,K_2}$\n$\\vdots$\n$K_N$ $A_{N,1}$ $A_{N,2}$ $\\ldots$ $A_{N,K_N}$",
+        "n = gets.to_i\nn.times do\n  k, *a = gets.split.map(&:to_i)\nend\n",
+        "4\n1 2\n1 3\n1 2\n3 1 2 3\n",
+    ),
+    (
+        "abc463_b",
+        "$N$ $X$\n$S_1$\n$S_2$\n$\\vdots$\n$S_N$",
+        "n, x = gets.split\nn = n.to_i\nn.times do\n  s = gets.chomp\nend\n",
+        "3 A\nxoxox\nxxooo\noxxxx\n",
+    ),
+    (
+        "abc465_f",
+        "$N$\n$S_1$ $V_1$\n$\\dots$\n$S_N$ $V_N$\n$Q$\n$\\mathrm{query}_1$\n$\\vdots$\n$\\mathrm{query}_Q$",
+        "n = gets.to_i\nn.times do\n  s, v = gets.split\n  v = v.to_i\nend\nq = gets.to_i\nq.times do\n  query = gets.split\nend\n",
+        "2\n000000 1\n314159 2\n2\n150001 269944\n000000 999999\n",
+    ),
+    (
+        "abc473_f",
+        "$N$\n$S$\n$Q$\n${\\rm Query}_1$\n${\\rm Query}_2$\n$\\vdots$\n${\\rm Query}_Q$",
+        "n = gets.to_i\ns = gets.chomp\nq = gets.to_i\nq.times do\n  query = gets.split\nend\n",
+        "10\nAABBAABABB\n2\n2 1 10\n1 5 B\n",
+    ),
 ];
 
 #[test]
@@ -197,6 +228,33 @@ fn input_formats_are_read_from_the_loaded_page_and_become_reading_code() {
         )
         .as_deref(),
         Some("n, s = gets.split\nn = n.to_i\n")
+    );
+    // Values numbered on one line are read into one local each (D2, ABC460 B and ABC467 D).
+    assert_eq!(
+        input_code("$P_x$ $P_y$ $Q_x$ $Q_y$", &[]).as_deref(),
+        Some("px, py, qx, qy = gets.split.map(&:to_i)\n")
+    );
+    assert_eq!(
+        input_code("$N_1$ $N_2$ $M$", &[]).as_deref(),
+        Some("n1, n2, m = gets.split.map(&:to_i)\n")
+    );
+    // Cells written as `$...$` groups with nothing between them are one string (D2, ABC305 C).
+    assert_eq!(
+        input_code(
+            "$H$ $W$\n$S_{1,1}$$S_{1,2}$$\\dots$$S_{1,W}$\n$\\vdots$\n$S_{H,1}$$S_{H,2}$$\\dots$$S_{H,W}$",
+            &[]
+        )
+        .as_deref(),
+        Some("h, w = gets.split.map(&:to_i)\nh.times do\n  s = gets.chomp\nend\n")
+    );
+    // A choice of numbers stays an integer; a choice of letters is a string (D2).
+    assert_eq!(
+        input_code("$c$", &constraints(&["$c$ は $1$, $2$ のいずれか"])).as_deref(),
+        Some("c = gets.to_i\n")
+    );
+    assert_eq!(
+        input_code("$c$", &constraints(&["$c$ は B、Y、R のいずれか"])).as_deref(),
+        Some("c = gets.chomp\n")
     );
     // Decimals are read as strings, left to the user to convert (review R8, ABC169 C).
     assert_eq!(
@@ -269,6 +327,24 @@ fn rows_read_in_a_loop_can_be_switched_to_arrays_and_back() {
             &["入力はすべて整数"]
         )[0][1],
         "queries = Array.new(q) { gets.split.map(&:to_i) }"
+    );
+    // Rows that start with their length, and rows inside each test case, indented as written.
+    assert_eq!(
+        forms("$N$\n$K_1$ $A_{1,1}$ $\\ldots$ $A_{1,K_1}$\n$\\vdots$\n$K_N$ $A_{N,1}$ $\\ldots$ $A_{N,K_N}$", &[]),
+        [[
+            "n.times do\n  k, *a = gets.split.map(&:to_i)\nend".to_string(),
+            "ka = Array.new(n) { gets.split.map(&:to_i) }".to_string()
+        ]]
+    );
+    assert_eq!(
+        forms(
+            "$T$\n$\\text{case}_1$\n$\\vdots$\n$\\text{case}_T$\n$N$\n$u_1$ $v_1$\n$\\vdots$\n$u_N$ $v_N$",
+            &[]
+        ),
+        [[
+            "  n.times do\n    u, v = gets.split.map(&:to_i)\n  end".to_string(),
+            "  uv = Array.new(n) { gets.split.map(&:to_i) }".to_string()
+        ]]
     );
     // Lines read at once have nothing to switch.
     assert!(forms("$N$\n$A_1$ $\\ldots$ $A_N$", &[]).is_empty());

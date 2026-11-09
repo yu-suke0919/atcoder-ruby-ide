@@ -64,7 +64,18 @@ fn items(tex: &str) -> Option<Vec<Item>> {
             rest = rest[found.len()..].trim_start();
             continue;
         }
-        let (name, after) = if let Some(wrapper) = WRAPPERS.iter().find(|w| rest.starts_with(**w)) {
+        // `{\rm Query}`: a name in roman type written as a group (D2).
+        let roman = rest.strip_prefix('{').and_then(|inner| {
+            let end = inner.find('}')?;
+            let name = inner[..end].trim().strip_prefix("\\rm")?.trim();
+            name.chars()
+                .all(|c| c.is_ascii_alphabetic())
+                .then(|| (name.to_string(), &inner[end + 1..]))
+                .filter(|(name, _)| !name.is_empty())
+        });
+        let (name, after) = if let Some(roman) = roman {
+            roman
+        } else if let Some(wrapper) = WRAPPERS.iter().find(|w| rest.starts_with(**w)) {
             let inner = rest[wrapper.len()..].trim_start().strip_prefix('{')?;
             let end = inner.find('}')?;
             (inner[..end].trim().to_string(), &inner[end + 1..])
@@ -90,10 +101,14 @@ fn line(text: &str) -> Option<Line> {
     let mut items_of_line = Vec::new();
     let mut joined = false;
     let mut rest = text;
+    let mut groups = 0;
     while let Some(start) = rest.find('$') {
         for word in rest[..start].split_whitespace() {
             items_of_line.extend(items(word)?);
         }
+        // `$S_{1,1}$$S_{1,2}$`: groups with nothing between them are joined too (D2).
+        joined |= groups > 0 && start == 0;
+        groups += 1;
         let end = rest[start + 1..].find('$')? + start + 1;
         let group = items(&rest[start + 1..end])?;
         joined |= group
@@ -122,19 +137,29 @@ fn types(constraints: &[String]) -> (HashSet<String>, bool) {
             all_integers |= item.contains("すべて") || item.contains("全て");
             continue;
         }
-        if ![
-            "文字列",
-            "英小文字",
-            "英大文字",
-            "文字",
-            "または",
-            "からなる",
-            // Decimals are read as strings, left to the user to convert (docs/review.md, R8).
-            "小数",
-            "実数",
-        ]
-        .iter()
-        .any(|word| item.contains(word))
+        // A choice of letters or symbols, `$X$ は A、B、C のいずれか`, is a string; a choice of
+        // numbers, `$c$ は $1$, $2$ のいずれか`, stays an integer (D2).
+        let letters = item.contains("いずれか")
+            && item.split_once('は').is_some_and(|(_, choices)| {
+                choices
+                    .split('$')
+                    .step_by(2)
+                    .any(|text| text.chars().any(|c| c.is_ascii_graphic() && c != ','))
+            });
+        if !letters
+            && ![
+                "文字列",
+                "英小文字",
+                "英大文字",
+                "文字",
+                "または",
+                "からなる",
+                // Decimals are read as strings, left to the user to convert (docs/review.md, R8).
+                "小数",
+                "実数",
+            ]
+            .iter()
+            .any(|word| item.contains(word))
         {
             continue;
         }
@@ -308,9 +333,10 @@ fn block<T: PartialEq>(
         written += 1;
         used += 1;
     }
+    // Some tasks write `\dots` where the rows in between are meant (D2).
     let rows = lines
         .get(used)
-        .is_some_and(|line| line.items == [Item::Rows]);
+        .is_some_and(|line| line.items == [Item::Rows] || line.items == [Item::Ellipsis]);
     if !rows {
         return Some((written.to_string(), used));
     }
@@ -322,6 +348,10 @@ fn block<T: PartialEq>(
 /// Reads one line into one local per variable, converting only the integers.
 fn read_values(types: &Types, names: &[String]) -> Option<Vec<String>> {
     let locals = names.iter().map(|n| local(n)).collect::<Option<Vec<_>>>()?;
+    read_into(types, names, &locals)
+}
+/// Reads one line into the locals given, one per variable `names`, converting only the integers.
+fn read_into(types: &Types, names: &[String], locals: &[String]) -> Option<Vec<String>> {
     let mixed = names.iter().any(|n| types.string(n)) && names.iter().any(|n| !types.string(n));
     if !mixed {
         return Some(vec![format!(
@@ -331,7 +361,7 @@ fn read_values(types: &Types, names: &[String]) -> Option<Vec<String>> {
         )]);
     }
     let mut code = vec![format!("{} = gets.split", locals.join(", "))];
-    for (name, local) in names.iter().zip(&locals) {
+    for (name, local) in names.iter().zip(locals) {
         if !types.string(name) {
             code.push(format!("{local} = {local}.to_i"));
         }
@@ -339,35 +369,86 @@ fn read_values(types: &Types, names: &[String]) -> Option<Vec<String>> {
     Some(code)
 }
 
-/// Rows read one by one in a loop: `n.times do ... end`.
-fn rows_loop(rows: &str, body: Vec<String>) -> String {
+/// Rows read one by one in a loop: `n.times do ... end`. The body may hold blocks of lines.
+fn rows_loop(rows: &str, body: &[String]) -> String {
     let count = if rows.contains(' ') {
         format!("({rows})")
     } else {
         rows.to_string()
     };
-    let body: Vec<_> = body.iter().map(|line| format!("  {line}")).collect();
-    format!("{count}.times do\n{}\nend", body.join("\n"))
+    format!("{count}.times do\n{}\nend", indent(&body.join("\n")))
+}
+fn indent(code: &str) -> String {
+    code.lines()
+        .map(|line| format!("  {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-/// A part of the reading code. Rows also have an array form to switch to.
-struct Block {
-    code: String,
-    array: Option<String>,
-}
-
-fn blocks(format: &str, constraints: &[String]) -> Option<Vec<Block>> {
-    let lines = format
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(line)
+/// One line of numbered values such as `X_1 Y_1 R_1 X_2 Y_2 R_2`, `P_x P_y Q_x Q_y` or
+/// `N_1 N_2 M` (D2): each variable with its number or letter, read into locals like `x1`.
+fn numbered(line: &Line) -> Option<Vec<(String, String)>> {
+    let values = line
+        .items
+        .iter()
+        .map(|item| match item {
+            Item::Var { name, index } => match index.as_slice() {
+                [] => Some((name.clone(), String::new())),
+                [number] if number.chars().all(|c| c.is_ascii_alphanumeric()) => {
+                    Some((name.clone(), number.to_ascii_lowercase()))
+                }
+                _ => None,
+            },
+            _ => None,
+        })
         .collect::<Option<Vec<_>>>()?;
-    let (strings, all_integers) = types(constraints);
-    let types = Types {
-        strings,
-        all_integers,
+    // The same number throughout is one row of a block, such as `t_1 x_1 y_1`.
+    values
+        .iter()
+        .any(|(_, number)| *number != values[0].1)
+        .then_some(values)
+}
+
+/// A row that starts with its length, `K_i A_{i,1} A_{i,2} ... A_{i,K_i}` (D2): the length's
+/// variable, the list's variable and the row.
+fn counted(line: &Line) -> Option<((String, String), String)> {
+    let [Item::Var { name: count, index }, rest @ ..] = line.items.as_slice() else {
+        return None;
     };
-    let mut blocks = Vec::new();
+    let [row] = index.as_slice() else {
+        return None;
+    };
+    let mut list = None;
+    let mut ellipsis = false;
+    for item in rest {
+        match item {
+            Item::Ellipsis => ellipsis = true,
+            Item::Var { name, index } if index.len() == 2 && index[0] == *row => {
+                if *list.get_or_insert(name) != name {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+    }
+    let list = list.filter(|_| ellipsis)?;
+    Some(((count.clone(), list.clone()), row.clone()))
+}
+
+/// The reading code: its blocks of lines, and the rows' loop and array forms to switch between.
+#[derive(Default)]
+struct Reading {
+    code: Vec<String>,
+    forms: Vec<[String; 2]>,
+}
+
+fn read_lines(lines: &[Line], types: &Types) -> Option<Reading> {
+    let mut reading = Reading::default();
+    let rows_block = |reading: &mut Reading, rows: &str, body: Vec<String>, array: String| {
+        let code = rows_loop(rows, &body);
+        reading.forms.push([code.clone(), array]);
+        reading.code.push(code);
+    };
     let mut at = 0;
     while at < lines.len() {
         let current = &lines[at];
@@ -380,16 +461,19 @@ fn blocks(format: &str, constraints: &[String]) -> Option<Vec<Block>> {
             })
             .collect::<Option<Vec<_>>>();
         if let Some(names) = scalars.filter(|names| !names.is_empty()) {
-            for code in read_values(&types, &names)? {
-                blocks.push(Block { code, array: None });
-            }
+            reading.code.extend(read_values(types, &names)?);
+            at += 1;
+        } else if let Some(values) = numbered(current) {
+            let names: Vec<_> = values.iter().map(|(name, _)| name.clone()).collect();
+            let locals = values
+                .iter()
+                .map(|(name, number)| Some(format!("{}{number}", local(name)?)))
+                .collect::<Option<Vec<_>>>()?;
+            reading.code.extend(read_into(types, &names, &locals)?);
             at += 1;
         } else if let Some(name) = list(current) {
             let read = types.split(types.string(&name));
-            blocks.push(Block {
-                code: format!("{} = {read}", local(&name)?),
-                array: None,
-            });
+            reading.code.push(format!("{} = {read}", local(&name)?));
             at += 1;
         } else if let Some((name, _, joined)) = row(current).filter(|(_, r, _)| r == "1") {
             let (rows, used) = block(&lines[at..], &name, |line| {
@@ -401,18 +485,38 @@ fn blocks(format: &str, constraints: &[String]) -> Option<Vec<Block>> {
                 types.split(types.string(&name))
             };
             let name = local(&name)?;
-            blocks.push(Block {
-                code: rows_loop(&rows, vec![format!("{name} = {read}")]),
-                array: Some(format!("{name} = Array.new({rows}) {{ {read} }}")),
-            });
+            let array = format!("{name} = Array.new({rows}) {{ {read} }}");
+            rows_block(&mut reading, &rows, vec![format!("{name} = {read}")], array);
+            at += used;
+        } else if let Some(((count, list), _)) = counted(current).filter(|(_, r)| r == "1") {
+            let (rows, used) = block(&lines[at..], &(count.clone(), list.clone()), counted)?;
+            let read = types.split(types.string(&list));
+            let (count, list) = (local(&count)?, local(&list)?);
+            let array = format!("{count}{list} = Array.new({rows}) {{ {read} }}");
+            rows_block(
+                &mut reading,
+                &rows,
+                vec![format!("{count}, *{list} = {read}")],
+                array,
+            );
             at += used;
         } else if let Some((names, _)) = tuple(current).filter(|(_, index)| index == "1") {
+            let (rows, used) = block(&lines[at..], &names, tuple)?;
             if names.iter().any(|name| {
                 ["case", "test", "testcase"].contains(&name.to_ascii_lowercase().as_str())
             }) {
-                return None;
+                // Test cases (D2): the lines after them are the format of one test case, read
+                // inside the loop. Without them (pages read before D2) there is no code.
+                let case = read_lines(&lines[at + used..], types)?;
+                reading.code.push(rows_loop(&rows, &case.code));
+                reading.forms.extend(
+                    case.forms
+                        .into_iter()
+                        .map(|[code, array]| [indent(&code), indent(&array)]),
+                );
+                at = lines.len();
+                continue;
             }
-            let (rows, used) = block(&lines[at..], &names, tuple)?;
             let target = match names.as_slice() {
                 [name] if Types::query(name) => "queries".to_string(),
                 _ => names
@@ -421,40 +525,41 @@ fn blocks(format: &str, constraints: &[String]) -> Option<Vec<Block>> {
                     .collect::<Option<Vec<_>>>()?
                     .concat(),
             };
-            blocks.push(Block {
-                code: rows_loop(&rows, read_values(&types, &names)?),
-                array: Some(format!(
-                    "{target} = Array.new({rows}) {{ {} }}",
-                    types.line(&names)?
-                )),
-            });
+            let array = format!("{target} = Array.new({rows}) {{ {} }}", types.line(&names)?);
+            rows_block(&mut reading, &rows, read_values(types, &names)?, array);
             at += used;
         } else {
             return None;
         }
     }
-    (!blocks.is_empty()).then_some(blocks)
+    (!reading.code.is_empty()).then_some(reading)
+}
+
+fn parse(format: &str, constraints: &[String]) -> Option<Reading> {
+    let lines = format
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(line)
+        .collect::<Option<Vec<_>>>()?;
+    let (strings, all_integers) = types(constraints);
+    read_lines(
+        &lines,
+        &Types {
+            strings,
+            all_integers,
+        },
+    )
 }
 
 /// The reading code for an input format, or None when some line is not understood. Rows are
 /// read in a loop, so they can be used as they are read.
 pub fn input_code(format: &str, constraints: &[String]) -> Option<String> {
-    let blocks = blocks(format, constraints)?;
-    Some(
-        blocks
-            .iter()
-            .map(|block| block.code.as_str())
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n",
-    )
+    Some(parse(format, constraints)?.code.join("\n") + "\n")
 }
 
 /// The rows of the reading code as `[loop, array]`: the editor switches one for the other.
 pub fn reading_forms(format: &str, constraints: &[String]) -> Vec<[String; 2]> {
-    blocks(format, constraints)
+    parse(format, constraints)
+        .map(|reading| reading.forms)
         .unwrap_or_default()
-        .into_iter()
-        .filter_map(|block| Some([block.code, block.array?]))
-        .collect()
 }
