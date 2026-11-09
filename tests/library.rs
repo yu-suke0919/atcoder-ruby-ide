@@ -1601,16 +1601,19 @@ fn d3_rurima_searches_its_full_text_on_google_and_opens_only_rurima_or_google() 
     };
     assert_eq!(
         rurima_target("each_slice").unwrap().as_str(),
-        "https://www.google.com/search?q=site%3Adocs.ruby-lang.org%2Fja%2F3.4%2F+each_slice"
+        "https://www.google.com/search?q=each_slice+%22Ruby+3.4+%E3%83%AA%E3%83%95%E3%82%A1%E3%83%AC%E3%83%B3%E3%82%B9%E3%83%9E%E3%83%8B%E3%83%A5%E3%82%A2%E3%83%AB%22+site%3Adocs.ruby-lang.org"
     );
     // Spaces are folded and the words are cut at 200 characters.
     assert_eq!(
         query("  最大公約数 \n gcd "),
-        "site:docs.ruby-lang.org/ja/3.4/ 最大公約数 gcd"
+        "最大公約数 gcd \"Ruby 3.4 リファレンスマニュアル\" site:docs.ruby-lang.org"
     );
     assert_eq!(
         query(&"あ".repeat(300)),
-        format!("site:docs.ruby-lang.org/ja/3.4/ {}", "あ".repeat(200))
+        format!(
+            "{} \"Ruby 3.4 リファレンスマニュアル\" site:docs.ruby-lang.org",
+            "あ".repeat(200)
+        )
     );
     assert!(rurima_target(" \n ").is_err());
     // The pages of the reference and of the search open as they are, with https added.

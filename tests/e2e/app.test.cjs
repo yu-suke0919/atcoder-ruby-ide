@@ -1374,7 +1374,7 @@ test('M20/U5b: a judging submission keeps updating its color after another task 
 });
 
 test('D3: the るりま window slides over the AtCoder page and searches the full text from the URL field, F1 and the right-click menu', async () => {
-  const google = words => `https://www.google.com/search?${new URLSearchParams({ q: `site:docs.ruby-lang.org/ja/3.4/ ${words}` })}`;
+  const google = words => `https://www.google.com/search?${new URLSearchParams({ q: `${words} "Ruby 3.4 リファレンスマニュアル" site:docs.ruby-lang.org` })}`;
   const toggle = page.locator('#rurima-toggle');
   const url = page.locator('#browser-url');
   const shows = value => page.waitForFunction(value => document.getElementById('browser-url').value === value, value);
