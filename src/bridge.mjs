@@ -64,6 +64,8 @@ export const ide = {
   saveCode: (code, revision) => invoke('document_save', { code, revision }),
   resetSession: () => invoke('session_reset'),
   setTitle: title => appWindow.setTitle(title),
+  // Flashes the taskbar button until the window comes to the front.
+  requestAttention: () => appWindow.requestUserAttention(window.__TAURI__.window.UserAttentionType.Critical),
   onCloseRequested: handler => appWindow.onCloseRequested(handler),
   destroy: () => appWindow.destroy()
 };
