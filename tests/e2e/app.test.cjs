@@ -1379,8 +1379,9 @@ test('D3: the るりま window slides over the AtCoder page and searches the ful
   const url = page.locator('#browser-url');
   const shows = value => page.waitForFunction(value => document.getElementById('browser-url').value === value, value);
   const atcoder = await url.inputValue();
+  // The window is made on first use, which takes a while in the real app.
   await toggle.click();
-  assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
+  await page.locator('#rurima-toggle[aria-pressed="true"]').waitFor();
   await shows('https://docs.ruby-lang.org/ja/3.4/doc/index.html');
   // Words in the URL field are searched for.
   await url.fill('最大公約数');
