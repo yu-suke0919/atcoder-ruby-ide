@@ -33,6 +33,8 @@ async function launch(root, { hostEnv = {} } = {}) {
   env.ATCODER_IDE_TEST_PORT = String(port);
   const atcoder = await startAtCoder();
   env.ATCODER_IDE_TEST_ORIGIN = atcoder.origin;
+  // The るりま window loads its pages from the same server (D3).
+  env.ATCODER_IDE_TEST_RURIMA_ORIGIN = atcoder.origin;
   env.NO_PROXY = '127.0.0.1'; // Tests that block the proxy still reach the local AtCoder server.
   env.WEBVIEW2_USER_DATA_FOLDER = path.join(root, 'webview-profile');
   await assert.rejects(execute(system('where.exe'), ['ruby'], { env }), error => error.code === 1);

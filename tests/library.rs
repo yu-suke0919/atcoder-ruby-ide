@@ -1,7 +1,7 @@
 use atcoder_ruby_ide::{
-    browser_target, contest_top, fetch_page, http_client, input_code, parse_task, parse_task_list,
-    reading_forms, submissions_page, Contest, ContestKey, Contests, DocumentStore, SampleCase,
-    Samples, Submissions, Task, TaskResult, Workspaces,
+    browser_target, contest_top, fetch_page, http_client, input_code, is_rurima_page, parse_task,
+    parse_task_list, reading_forms, rurima_target, submissions_page, Contest, ContestKey, Contests,
+    DocumentStore, SampleCase, Samples, Submissions, Task, TaskResult, Workspaces,
 };
 use std::path::Path;
 
@@ -1507,4 +1507,71 @@ fn u5b_a_left_judging_list_is_fetched_until_judged_or_for_at_most_the_limit() {
     );
     assert!((1..=5).contains(&fetched), "{fetched}");
     assert!(start.elapsed() < Duration::from_millis(500));
+}
+
+#[test]
+fn d3_rurima_searches_its_full_text_on_google_and_opens_only_rurima_or_google() {
+    let query = |text: &str| -> String {
+        let url = rurima_target(text).unwrap();
+        assert_eq!(
+            url.as_str().split('?').next(),
+            Some("https://www.google.com/search")
+        );
+        url.query_pairs()
+            .find(|(key, _)| key == "q")
+            .unwrap()
+            .1
+            .into_owned()
+    };
+    assert_eq!(
+        rurima_target("each_slice").unwrap().as_str(),
+        "https://www.google.com/search?q=site%3Adocs.ruby-lang.org%2Fja%2F3.4%2F+each_slice"
+    );
+    // Spaces are folded and the words are cut at 200 characters.
+    assert_eq!(
+        query("  最大公約数 \n gcd "),
+        "site:docs.ruby-lang.org/ja/3.4/ 最大公約数 gcd"
+    );
+    assert_eq!(
+        query(&"あ".repeat(300)),
+        format!("site:docs.ruby-lang.org/ja/3.4/ {}", "あ".repeat(200))
+    );
+    assert!(rurima_target(" \n ").is_err());
+    // The pages of the reference and of the search open as they are, with https added.
+    for url in [
+        "https://docs.ruby-lang.org/ja/3.4/class/Array.html",
+        "https://www.google.com/search?q=gcd",
+    ] {
+        assert_eq!(rurima_target(url).unwrap().as_str(), url);
+    }
+    assert_eq!(
+        rurima_target("docs.ruby-lang.org/ja/3.4/doc/index.html")
+            .unwrap()
+            .as_str(),
+        "https://docs.ruby-lang.org/ja/3.4/doc/index.html"
+    );
+    // Other sites do not open, and are not searched for either.
+    for url in [
+        "https://example.com/",
+        "http://docs.ruby-lang.org/ja/",
+        "https://atcoder.jp/",
+    ] {
+        assert!(rurima_target(url).is_err(), "{url}");
+    }
+    for (url, allowed) in [
+        ("https://docs.ruby-lang.org/ja/3.4/doc/index.html", true),
+        (
+            "https://www.google.com/url?q=https://docs.ruby-lang.org/",
+            true,
+        ),
+        ("http://docs.ruby-lang.org/ja/", false),
+        ("https://atcoder.jp/", false),
+        ("https://example.com/", false),
+    ] {
+        assert_eq!(
+            is_rurima_page(&url::Url::parse(url).unwrap()),
+            allowed,
+            "{url}"
+        );
+    }
 }

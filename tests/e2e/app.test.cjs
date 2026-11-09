@@ -1373,6 +1373,47 @@ test('M20/U5b: a judging submission keeps updating its color after another task 
   await colored('follow_a', 'ac', 30000);
 });
 
+test('D3: the るりま window slides over the AtCoder page and searches the full text from the URL field, F1 and the right-click menu', async () => {
+  const google = words => `https://www.google.com/search?${new URLSearchParams({ q: `site:docs.ruby-lang.org/ja/3.4/ ${words}` })}`;
+  const toggle = page.locator('#rurima-toggle');
+  const url = page.locator('#browser-url');
+  const shows = value => page.waitForFunction(value => document.getElementById('browser-url').value === value, value);
+  const atcoder = await url.inputValue();
+  await toggle.click();
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
+  await shows('https://docs.ruby-lang.org/ja/3.4/doc/index.html');
+  // Words in the URL field are searched for.
+  await url.fill('最大公約数');
+  await url.press('Enter');
+  await shows(google('最大公約数'));
+  // F1 searches for the word at the editor's cursor, or for the selected text.
+  await page.locator('.cm-line').first().click();
+  await page.keyboard.press('Home');
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('F1');
+  await shows(google('gets'));
+  await page.locator('.cm-line').first().click();
+  await page.keyboard.press('Home');
+  for (let i = 0; i < 6; i++) await page.keyboard.press('Shift+ArrowRight');
+  await page.keyboard.press('F1');
+  await shows(google('a = ge'));
+  // The right-click menu of Windows sends the selected text.
+  if (runner !== 'native') {
+    await page.evaluate(() => window.__testEvent('rurima-search', 'each_slice'));
+    await shows(google('each_slice'));
+  }
+  // Pressed again, the window goes up and the AtCoder page is shown again.
+  await toggle.click();
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+  await shows(atcoder);
+  // Opening home also puts it away.
+  await toggle.click();
+  await shows(google(runner !== 'native' ? 'each_slice' : 'a = ge'));
+  await page.locator('#home-icon').click();
+  await page.locator('#problem-title').filter({ hasText: 'ホーム' }).waitFor();
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+});
+
 test('U2c: the URL field follows the shown page and opens only AtCoder pages', async () => {
   const field = page.locator('#browser-url');
   const showing = url => page.waitForFunction(expected => document.getElementById('browser-url').value === expected, url);
