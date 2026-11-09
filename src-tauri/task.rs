@@ -319,12 +319,33 @@ fn after_heading<'a>(body: ElementRef<'a>, titles: &[&str], name: &str) -> Optio
         .find(|e| e.value().name() == name)
 }
 
+/// The input section's first `pre`. With test cases (D2), the format of one test case follows
+/// in the `pre` after the paragraph that says so, and is added after it.
 fn input_format(body: ElementRef<'_>) -> Option<String> {
     let pre = after_heading(body, &["入力", "Input"], "pre")?;
-    let mut text = String::new();
-    tex_text(pre, &mut text);
-    let lines: Vec<_> = text.lines().map(str::trim).collect();
-    let format = lines.join("\n").trim().to_string();
+    let format = |pre: ElementRef<'_>| {
+        let mut text = String::new();
+        tex_text(pre, &mut text);
+        let lines: Vec<_> = text.lines().map(str::trim).collect();
+        lines.join("\n").trim().to_string()
+    };
+    let mut parts = vec![format(pre)];
+    let mut said = false;
+    for element in pre.next_siblings().filter_map(ElementRef::wrap) {
+        match element.value().name() {
+            "h3" => break,
+            "p" => {
+                let text = element.text().collect::<String>();
+                said = text.contains("テストケース") || text.to_lowercase().contains("test case");
+            }
+            "pre" if said => {
+                parts.push(format(element));
+                break;
+            }
+            _ => {}
+        }
+    }
+    let format = parts.join("\n").trim().to_string();
     (!format.is_empty()).then_some(format)
 }
 

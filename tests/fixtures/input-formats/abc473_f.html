@@ -1,0 +1,240 @@
+<div id="task-statement">
+			
+
+
+	
+	
+
+			
+			<span class="lang">
+<span class="lang-ja">
+<p>配点 : <var>525</var> 点</p>
+
+<div class="part">
+<section>
+<h3>問題文</h3><p>長さ <var>N</var> の <code>A</code>, <code>B</code> からなる文字列 <var>S</var> が与えられます。<br />
+以下のクエリを合計 <var>Q</var> 個処理してください。</p>
+<pre>1 <var>i</var> <var>c</var>
+</pre>
+<p>タイプ <var>1</var> : <var>S</var> の <var>i</var> 文字目を <var>c</var> に変更する。</p>
+<pre>2 <var>l</var> <var>r</var>
+</pre>
+<p>タイプ <var>2</var> :<br />
+文字列 <var>T</var> を、現在の文字列 <var>S</var> の <var>l</var> 文字目から <var>r</var> 文字目までを抜き出した文字列とする。<br />
+文字列 <var>T</var> が以下の操作で得られる文字列であれば <code>Yes</code> 、そうでなければ <code>No</code> と出力する。</p>
+<blockquote>
+<ul>
+<li>空文字列から始め、以下の <var>2</var> つの操作を好きな順序で <var>0</var> 回以上何回でも行う。<ul>
+<li>文字列の(先頭・末尾を含めた)任意の箇所を選択し、そこに <code>A</code> を挿入する。</li>
+<li>文字列の(先頭・末尾を含めた)任意の箇所を選択し、そこに <code>AB</code> を挿入する。</li>
+</ul>
+</li>
+</ul>
+</blockquote>
+</section>
+</div>
+
+<div class="part">
+<section>
+<h3>制約</h3><ul>
+<li><var>N</var> は <var>1 \le N \le 5 \times 10^5</var> を満たす整数</li>
+<li><var>S</var> は <code>A</code>, <code>B</code> からなる長さ <var>N</var> の文字列</li>
+<li><var>Q</var> は <var>1 \le Q \le 2 \times 10^5</var> を満たす整数</li>
+<li>与えられるクエリはタイプ <var>1,2</var> のいずれかである</li>
+<li>タイプ <var>1</var> のクエリは以下の制約を満たす<ul>
+<li><var>i</var> は <var>1 \le i \le N</var> を満たす整数</li>
+<li><var>c</var> は <code>A</code>, <code>B</code> のいずれか</li>
+</ul>
+</li>
+<li>タイプ <var>2</var> のクエリは以下の制約を満たす<ul>
+<li><var>l,r</var> は <var>1 \le l \le r \le N</var> を満たす整数</li>
+</ul>
+</li>
+</ul>
+</section>
+</div>
+
+<hr />
+<div class="io-style">
+<div class="part">
+<section>
+<h3>入力</h3><p>入力は以下の形式で標準入力から与えられる。</p>
+<pre><var>N</var>
+<var>S</var>
+<var>Q</var>
+<var>{\rm Query}_1</var>
+<var>{\rm Query}_2</var>
+<var>\vdots</var>
+<var>{\rm Query}_Q</var>
+</pre>
+<p>但し、 <var>{\rm Query}_i</var> は <var>i</var> 個目のクエリを表し、クエリの入力は問題文中の形式に従う。</p>
+</section>
+</div>
+
+<div class="part">
+<section>
+<h3>出力</h3><p>タイプ <var>2</var> のクエリが入力されるごとに、答えを <var>1</var> 行に出力せよ。</p>
+</section>
+</div>
+</div>
+
+<hr />
+<div class="part">
+<section>
+<h3>入力例 1</h3><pre>10
+AABBAABABB
+6
+2 1 10
+1 5 B
+2 1 10
+2 6 8
+1 3 A
+2 1 10
+</pre>
+</section>
+</div>
+
+<div class="part">
+<section>
+<h3>出力例 1</h3><pre>Yes
+No
+Yes
+Yes
+</pre>
+<p>この入力には <var>6</var> 個のクエリが含まれます。</p>
+<ul>
+<li>最初、 <var>S=</var> <code>AABBAABABB</code> です。</li>
+<li><var>1</var> つ目のクエリについて、 <var>S</var> の <var>1</var> 文字目から <var>10</var> 文字目までを抜き出した <var>T=</var> <code>AABBAABABB</code> は以下の手順を踏むことで得ることができるため、 <code>Yes</code> と出力します。<ul>
+<li>空文字列から始める。</li>
+<li>空文字列の先頭に <code>AB</code> を挿入し、文字列が <code>AB</code> となる。</li>
+<li><code>AB</code> の <var>1</var> 文字目の直後に <code>AB</code> を挿入し、文字列が <code>AABB</code> となる。</li>
+<li><code>AABB</code> の末尾に <code>AB</code> を挿入し、文字列が <code>AABBAB</code> となる。</li>
+<li><code>AABBAB</code> の <var>5</var> 文字目の直後に <code>AB</code> を挿入し、文字列が <code>AABBAABB</code> となる。</li>
+<li><code>AABBAABB</code> の <var>7</var> 文字目の直後に <code>AB</code> を挿入し、文字列が <code>AABBAABABB</code> となる。</li>
+</ul>
+</li>
+<li><var>2</var> つ目のクエリについて、 <var>S</var> の <var>5</var> 文字目を <code>B</code> に変更します。その結果、 <var>S=</var> <code>AABBBABABB</code> となります。</li>
+<li><var>3</var> つ目のクエリについて、 <var>S</var> の <var>1</var> 文字目から <var>10</var> 文字目までを抜き出した <var>T=</var> <code>AABBBABABB</code> は問題文中の操作では得られないため、 <code>No</code> と出力します。</li>
+<li><var>4</var> つ目のクエリについて、 <var>S</var> の <var>6</var> 文字目から <var>8</var> 文字目までを抜き出した <var>T=</var> <code>ABA</code> は問題文中の操作で得ることができるため、 <code>Yes</code> と出力します。</li>
+<li><var>5</var> つ目のクエリについて、 <var>S</var> の <var>3</var> 文字目を <code>A</code> に変更します。その結果、 <var>S=</var> <code>AAABBABABB</code> となります。</li>
+<li><var>6</var> つ目のクエリについて、 <var>S</var> の <var>1</var> 文字目から <var>10</var> 文字目までを抜き出した <var>T=</var> <code>AAABBABABB</code> は問題文中の操作で得ることができるため、 <code>Yes</code> と出力します。</li>
+</ul></section>
+</div>
+</span>
+<span class="lang-en">
+<p>Score : <var>525</var> points</p>
+
+<div class="part">
+<section>
+<h3>Problem Statement</h3><p>You are given a string <var>S</var> of length <var>N</var> consisting of <code>A</code> and <code>B</code>.<br />
+Process a total of <var>Q</var> queries of the following types.</p>
+<pre>1 <var>i</var> <var>c</var>
+</pre>
+<p>Type <var>1</var>: Change the <var>i</var>-th character of <var>S</var> to <var>c</var>.</p>
+<pre>2 <var>l</var> <var>r</var>
+</pre>
+<p>Type <var>2</var>:<br />
+Let string <var>T</var> be the string obtained by extracting the <var>l</var>-th through <var>r</var>-th characters of the current string <var>S</var>.<br />
+If it is possible to obtain string <var>T</var> by the following operation, output <code>Yes</code>; otherwise, output <code>No</code>.</p>
+<blockquote>
+<ul>
+<li>Starting from the empty string, perform the following two operations any number of times, possibly zero, in any order.<ul>
+<li>Choose any position in the string (possibly the beginning or the end) and insert <code>A</code> there.</li>
+<li>Choose any position in the string (possibly the beginning or the end) and insert <code>AB</code> there.</li>
+</ul>
+</li>
+</ul>
+</blockquote>
+</section>
+</div>
+
+<div class="part">
+<section>
+<h3>Constraints</h3><ul>
+<li><var>N</var> is an integer satisfying <var>1 \le N \le 5 \times 10^5</var>.</li>
+<li><var>S</var> is a string of length <var>N</var> consisting of <code>A</code> and <code>B</code>.</li>
+<li><var>Q</var> is an integer satisfying <var>1 \le Q \le 2 \times 10^5</var>.</li>
+<li>Each given query is of type <var>1</var> or <var>2</var>.</li>
+<li>Queries of type <var>1</var> satisfy the following constraints:<ul>
+<li><var>i</var> is an integer satisfying <var>1 \le i \le N</var>, and</li>
+<li><var>c</var> is <code>A</code> or <code>B</code>.</li>
+</ul>
+</li>
+<li>Queries of type <var>2</var> satisfy the following constraints:<ul>
+<li><var>l</var> and <var>r</var> are integers satisfying <var>1 \le l \le r \le N</var>.</li>
+</ul>
+</li>
+</ul>
+</section>
+</div>
+
+<hr />
+<div class="io-style">
+<div class="part">
+<section>
+<h3>Input</h3><p>The input is given from Standard Input in the following format:</p>
+<pre><var>N</var>
+<var>S</var>
+<var>Q</var>
+<var>{\rm Query}_1</var>
+<var>{\rm Query}_2</var>
+<var>\vdots</var>
+<var>{\rm Query}_Q</var>
+</pre>
+<p>Here, <var>{\rm Query}_i</var> represents the <var>i</var>-th query, and the input format for a query follows the format described in the problem statement.</p>
+</section>
+</div>
+
+<div class="part">
+<section>
+<h3>Output</h3><p>Each time a query of type <var>2</var> is given, output the answer on one line.</p>
+</section>
+</div>
+</div>
+
+<hr />
+<div class="part">
+<section>
+<h3>Sample Input 1</h3><pre>10
+AABBAABABB
+6
+2 1 10
+1 5 B
+2 1 10
+2 6 8
+1 3 A
+2 1 10
+</pre>
+</section>
+</div>
+
+<div class="part">
+<section>
+<h3>Sample Output 1</h3><pre>Yes
+No
+Yes
+Yes
+</pre>
+<p>This input contains six queries.</p>
+<ul>
+<li>Initially, <var>S=</var> <code>AABBAABABB</code>.</li>
+<li>For the <var>1</var>-st query, <var>T=</var> <code>AABBAABABB</code>, obtained by extracting the <var>1</var>-st through <var>10</var>-th characters of <var>S</var>, can be obtained by the following steps, so output <code>Yes</code>.<ul>
+<li>Start from the empty string.</li>
+<li>Insert <code>AB</code> at the beginning of the empty string, making the string <code>AB</code>.</li>
+<li>Insert <code>AB</code> right after the <var>1</var>-st character of <code>AB</code>, making the string <code>AABB</code>.</li>
+<li>Insert <code>AB</code> at the end of <code>AABB</code>, making the string <code>AABBAB</code>.</li>
+<li>Insert <code>AB</code> right after the <var>5</var>-th character of <code>AABBAB</code>, making the string <code>AABBAABB</code>.</li>
+<li>Insert <code>AB</code> right after the <var>7</var>-th character of <code>AABBAABB</code>, making the string <code>AABBAABABB</code>.</li>
+</ul>
+</li>
+<li>For the <var>2</var>-nd query, change the <var>5</var>-th character of <var>S</var> to <code>B</code>. As a result, <var>S=</var> <code>AABBBABABB</code>.</li>
+<li>For the <var>3</var>-rd query, <var>T=</var> <code>AABBBABABB</code>, obtained by extracting the <var>1</var>-st through <var>10</var>-th characters of <var>S</var>, cannot be obtained by the operation described in the problem statement, so output <code>No</code>.</li>
+<li>For the <var>4</var>-th query, <var>T=</var> <code>ABA</code>, obtained by extracting the <var>6</var>-th through <var>8</var>-th characters of <var>S</var>, can be obtained by the operation described in the problem statement, so output <code>Yes</code>.</li>
+<li>For the <var>5</var>-th query, change the <var>3</var>-rd character of <var>S</var> to <code>A</code>. As a result, <var>S=</var> <code>AAABBABABB</code>.</li>
+<li>For the <var>6</var>-th query, <var>T=</var> <code>AAABBABABB</code>, obtained by extracting the <var>1</var>-st through <var>10</var>-th characters of <var>S</var>, can be obtained by the operation described in the problem statement, so output <code>Yes</code>.</li>
+</ul></section>
+</div>
+</span>
+</span>
+
+		</div>
