@@ -647,6 +647,44 @@ $('browser-url').addEventListener('keydown', async event => {
     $('browser-url').blur();
   } catch (error) { browserMessage(error.message); }
 });
+// The るりま window slides down over the AtCoder page and back up (D3). Each step waits for the
+// previous one, so the window ends where the last step puts it.
+let rurimaOpen = false;
+let rurimaSliding = Promise.resolve();
+function slideRurima(open) {
+  if (rurimaOpen === open) return rurimaSliding;
+  rurimaOpen = open;
+  $('rurima-toggle').setAttribute('aria-pressed', String(open));
+  $('browser-url').placeholder = open ? '語を入れてEnterでるりまを全文検索' : '';
+  rurimaSliding = rurimaSliding.then(async () => {
+    const start = performance.now();
+    for (;;) {
+      const done = Math.min(1, (performance.now() - start) / 180);
+      const shown = 1 - (1 - done) ** 3;
+      await ide.rurimaSlide(open ? shown : 1 - shown).catch(() => {});
+      if (done >= 1) break;
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    }
+  });
+  return rurimaSliding;
+}
+// Opens the window with the words searched for, or with the page it showed last.
+async function openRurima(query = null) {
+  try { await ide.rurimaShow(query); }
+  catch (error) { browserMessage(error.message); return; }
+  browserMessage('');
+  await slideRurima(true);
+}
+$('rurima-toggle').addEventListener('click', () => (rurimaOpen ? slideRurima(false) : openRurima()));
+// F1 searches for the selected text (in the editor, the word at the cursor without a selection).
+document.addEventListener('keydown', event => {
+  if (event.key !== 'F1') return;
+  event.preventDefault();
+  const text = $('editor-host').contains(document.activeElement) ? editor.searchText : String(window.getSelection() ?? '');
+  openRurima(text.trim() ? text : null);
+});
+// The right-click item 「るりまを全文検索」 of Windows sends the selected text.
+ide.onRurimaSearch(text => openRurima(text)).catch(error => message(String(error), true));
 // Leaving the field shows the page's URL again, as browsers do.
 $('browser-url').addEventListener('blur', () => { $('browser-url').value = browserUrl; });
 $('browser-back').addEventListener('click', () => ide.browserHistory(false).catch(error => browserMessage(error.message)));
@@ -828,6 +866,7 @@ async function setHidden(url, hidden) {
 let pagesContest = null;
 async function selectContest(url) {
   hideMenu();
+  await slideRurima(false);
   if (url !== selectedContest) {
     selectedContest = url;
     if (url) loadTaskResults(url);
@@ -848,6 +887,7 @@ async function selectContest(url) {
 async function selectHome() {
   hideMenu();
   if (running || fileBusy || closing) return;
+  await slideRurima(false);
   await fileAction(async () => {
     if (!activeProblem?.home && !await leaveProblem()) return;
     selectedContest = HOME;
@@ -864,6 +904,7 @@ $('home-icon').addEventListener('click', selectHome);
 // Shows the task page; its workspace opens once the page has been read.
 async function openTask(task) {
   if (running || fileBusy || closing) return;
+  await slideRurima(false);
   if (activeProblem?.url === task.url) {
     // The open problem keeps its edits; only its page is shown again.
     pendingTask = null;

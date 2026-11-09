@@ -182,6 +182,8 @@ h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 .browser-column { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .browser-toolbar { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--border); background: #151a24; flex-shrink: 0; }
 .browser-toolbar button { padding: 4px 8px; font-size: 13px; }
+.rurima-toggle { white-space: nowrap; }
+.rurima-toggle[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
 #browser-url { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font: 12px Consolas, monospace; }
 .browser-message { margin: 0; padding: 4px 10px; color: #f5a3b2; font-size: 11px; flex-shrink: 0; }
 .browser-message:empty { display: none; }

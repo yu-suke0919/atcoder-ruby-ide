@@ -62,6 +62,9 @@ dependencies = [
  "tauri-plugin-window-state",
  "tempfile",
  "url",
+ "webview2-com",
+ "windows",
+ "windows-core",
  "windows-sys 0.61.2",
 ]
 

@@ -33,6 +33,8 @@ fn main() {
             "browser_open",
             "browser_history",
             "browser_reload",
+            "rurima_show",
+            "rurima_slide",
         ]),
     ))
     .expect("failed to run tauri-build");

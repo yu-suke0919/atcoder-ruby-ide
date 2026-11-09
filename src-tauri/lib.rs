@@ -35,7 +35,10 @@ pub use document::{DocumentResult, DocumentStore};
 pub use input_code::{input_code, reading_forms};
 #[cfg(unix)]
 pub use lsp::{LspInfo, RubyLsp};
-pub use navigation::{browser_target, is_allowed, ALLOWED_ORIGINS};
+pub use navigation::{
+    browser_target, is_allowed, is_rurima_page, rurima_target, ALLOWED_ORIGINS, RURIMA_HOME,
+    RURIMA_ORIGINS,
+};
 #[cfg(unix)]
 pub use runner::{Output, PreparedRun, RunRequest, RunResult, Runner};
 pub use samples::{load_samples, save_samples, ProblemSample, SampleCase, Samples};
