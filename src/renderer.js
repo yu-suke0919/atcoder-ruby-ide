@@ -820,10 +820,27 @@ async function loadMissingTasks(url) {
 // 5 seconds for up to a minute.
 const appStartedAt = Date.now();
 const startedContests = new Set();
+// A minute before the start, the top bar says so and the taskbar flashes, once per contest while
+// the app runs (U6c). The notice goes at the start, when the first task opens.
+const announcedContests = new Set();
+let noticeContest = null;
+function hideStartNotice() {
+  noticeContest = null;
+  $('contest-notice').hidden = true;
+}
+$('contest-notice-close').addEventListener('click', hideStartNotice);
 function checkStarts() {
   const now = Date.now();
   for (const contest of contests) {
     const start = contest.joined && contest.startTime ? Date.parse(contest.startTime) : NaN;
+    if (now >= start - 60 * 1000 && now < start && !announcedContests.has(contest.url)) {
+      announcedContests.add(contest.url);
+      noticeContest = contest.url;
+      $('contest-notice-text').textContent = `${contest.title}があと1分で始まります（開始 ${contest.startTime.slice(11, 16)}）`;
+      $('contest-notice').hidden = false;
+      ide.requestAttention().catch(() => {});
+    }
+    if (contest.url === noticeContest && now >= start) hideStartNotice();
     if (start >= appStartedAt && start <= now && !startedContests.has(contest.url)) {
       startedContests.add(contest.url);
       openStartedContest(contest.url, start);

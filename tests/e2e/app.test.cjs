@@ -37,7 +37,7 @@ beforeEach(resetWorkspace);
 
 after(async () => {
   if (app) await close(app);
-  if (app) for (const contest of [testContest, `${testContest}-list`, `${testContest}-memory`, `${testContest}-race-a`, `${testContest}-race-b`, `${testContest}-subs`, `${testContest}-join`, `${testContest}-started`, `${testContest}-ended`, `${testContest}-start`, `${testContest}-colors`, `${testContest}-follow`]) await removeContest(app, contest);
+  if (app) for (const contest of [testContest, `${testContest}-list`, `${testContest}-memory`, `${testContest}-race-a`, `${testContest}-race-b`, `${testContest}-subs`, `${testContest}-join`, `${testContest}-started`, `${testContest}-ended`, `${testContest}-start`, `${testContest}-colors`, `${testContest}-follow`, `${testContest}-notice`]) await removeContest(app, contest);
   if (root) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
@@ -1413,6 +1413,23 @@ test('D3: the るりま window slides over the AtCoder page and searches the ful
   await page.locator('#home-icon').click();
   await page.locator('#problem-title').filter({ hasText: 'ホーム' }).waitFor();
   assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+});
+
+test('M17/U6c: a joined contest about to start is announced in the app and flashes the taskbar', async () => {
+  const contest = `${testContest}-notice`;
+  await seedWorkspaceProblem(app, contest, 'notice_a', { label: 'A', title: '知らせ' });
+  const start = Date.now() + 5000;
+  app.atcoder.pages.set(`/contests/${contest}`, contestTopPage(contest, { start: jst(start), end: jst(start + 2 * hour) }));
+  await openTop(contest);
+  // Joined less than a minute before the start: it is announced at once.
+  const notice = page.locator('#contest-notice');
+  await notice.filter({ hasText: `テスト ${contest}があと1分で始まります（開始 ${jst(start).slice(11, 16)}）` }).waitFor();
+  if (runner !== 'native') assert.deepEqual(await page.evaluate(() => window.__attention), [1]);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.screenshot({ path: 'test-results/contest-notice-1280.png' });
+  // At the start the notice goes and the first task opens (U6b).
+  await page.locator('#problem-title').filter({ hasText: 'A - 知らせ' }).waitFor({ timeout: 30000 });
+  await notice.waitFor({ state: 'hidden' });
 });
 
 test('U2c: the URL field follows the shown page and opens only AtCoder pages', async () => {

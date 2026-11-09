@@ -104,6 +104,8 @@ async function launch(root, { hostEnv = {} } = {}) {
       };
       const appWindow = {
         setTitle: async title => { document.title = title; },
+        // Records the taskbar flashes the app asks for.
+        requestUserAttention: async type => { window.__attention = [...(window.__attention || []), type]; },
         onCloseRequested: async handler => { handlers.add(handler); return () => handlers.delete(handler); },
         destroy: () => window.__testDestroy(),
         close: async () => {
@@ -120,7 +122,7 @@ async function launch(root, { hostEnv = {} } = {}) {
       window.__TAURI__ = {
         core: { Channel, invoke: (command, args = {}) => window.__testInvoke(command, { ...args, ...(args.onEvent ? { onEvent: args.onEvent.id } : {}) }) },
         event: { listen: async (name, handler) => { if (!listeners.has(name)) listeners.set(name, new Set()); listeners.get(name).add(handler); return () => listeners.get(name).delete(handler); } },
-        window: { getCurrentWindow: () => appWindow }
+        window: { getCurrentWindow: () => appWindow, UserAttentionType: { Critical: 1, Informational: 2 } }
       };
     });
     await app.page.goto(`http://127.0.0.1:${app.server.address().port}/`);
