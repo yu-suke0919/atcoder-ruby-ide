@@ -649,62 +649,99 @@ $('browser-url').addEventListener('keydown', async event => {
 });
 // The るりま window (D3) is drawn here around its page, which lies over the screen like the
 // AtCoder pages; nothing can be drawn over those, so while the window is out the AtCoder page is
-// hidden behind a darkened picture of it. Each step of the slide waits for the previous one, so
-// the window's page ends where the last step puts it.
+// hidden behind a picture of it, darkened as the window comes out. One loop moves the window
+// toward the last press, so presses never stack up, and it never waits on a reply: the page is
+// placed by the latest position, sent once the previous one is answered or has taken too long.
+const RURIMA_SLIDE_MS = 180;
+const RURIMA_SHADE = 0.5;
 let rurimaOpen = false;
-let rurimaMoving = false;
-let rurimaSliding = Promise.resolve();
+let rurimaReveal = 0;
+let rurimaMoving = null;
 let rurimaPicture = null;
 let rurimaUrl = '';
-function placeRurima() {
+let rurimaPlace = null;
+let rurimaPlacing = false;
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+function placeRurima(open = true) {
   const rect = $('rurima-host').getBoundingClientRect();
-  return ide.rurimaLayout(true, rect.x, rect.y, rect.width, rect.height).catch(() => {});
+  rurimaPlace = [open, rect.x, rect.y, rect.width, rect.height];
+  if (rurimaPlacing) return;
+  rurimaPlacing = true;
+  (async () => {
+    while (rurimaPlace) {
+      const place = rurimaPlace;
+      rurimaPlace = null;
+      await Promise.race([ide.rurimaLayout(...place).catch(() => {}), delay(300)]);
+    }
+    rurimaPlacing = false;
+  })();
 }
 new ResizeObserver(() => { if (rurimaOpen && !rurimaMoving) placeRurima(); }).observe($('rurima-host'));
+// A picture that cannot be shown leaves the darkened background instead of a broken image.
+$('rurima-snapshot').addEventListener('error', () => $('rurima-snapshot').removeAttribute('src'));
 async function pictureAtCoderPage() {
-  let bytes = null;
-  try { bytes = await ide.browserSnapshot(); } catch {}
+  const bytes = await Promise.race([ide.browserSnapshot().catch(() => null), delay(1500)]);
   if (rurimaPicture) URL.revokeObjectURL(rurimaPicture);
   rurimaPicture = bytes?.byteLength ? URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' })) : null;
   if (rurimaPicture) $('rurima-snapshot').src = rurimaPicture;
   else $('rurima-snapshot').removeAttribute('src');
 }
+// The next frame, or a short wait when frames do not come.
+const nextFrame = () => new Promise(resolve => {
+  const timer = setTimeout(resolve, 50);
+  requestAnimationFrame(() => { clearTimeout(timer); resolve(); });
+});
+function showRurimaReveal() {
+  const shown = 1 - (1 - rurimaReveal) ** 3;
+  $('rurima-panel').style.setProperty('--reveal', String(shown));
+  $('rurima-shade').style.opacity = String(RURIMA_SHADE * shown);
+}
+async function moveRurima() {
+  let last = performance.now();
+  while (true) {
+    // Coming out from fully put away: the AtCoder page is pictured first, then hidden.
+    if (rurimaOpen && $('rurima-layer').hidden) {
+      await pictureAtCoderPage();
+      showRurimaReveal();
+      $('rurima-layer').hidden = false;
+      last = performance.now();
+    }
+    const now = performance.now();
+    const step = (now - last) / RURIMA_SLIDE_MS;
+    last = now;
+    rurimaReveal = rurimaOpen ? Math.min(1, rurimaReveal + step) : Math.max(0, rurimaReveal - step);
+    showRurimaReveal();
+    if (!rurimaOpen && rurimaReveal === 0) {
+      placeRurima(false);
+      $('rurima-layer').hidden = true;
+      return;
+    }
+    placeRurima();
+    if (rurimaOpen && rurimaReveal === 1) return;
+    await nextFrame();
+  }
+}
 function slideRurima(open) {
-  if (rurimaOpen === open) return rurimaSliding;
   rurimaOpen = open;
   $('rurima-toggle').setAttribute('aria-pressed', String(open));
   // The AtCoder page is put aside while the window is out, and so are its controls.
   for (const id of ['browser-back', 'browser-forward', 'browser-reload', 'browser-url']) $(id).disabled = open;
-  rurimaSliding = rurimaSliding.then(async () => {
-    rurimaMoving = true;
-    if (open) {
-      await pictureAtCoderPage();
-      $('rurima-layer').hidden = false;
-    }
-    const start = performance.now();
-    for (;;) {
-      const done = Math.min(1, (performance.now() - start) / 180);
-      const shown = 1 - (1 - done) ** 3;
-      $('rurima-panel').style.setProperty('--reveal', String(open ? shown : 1 - shown));
-      await placeRurima();
-      if (done >= 1) break;
-      await new Promise(resolve => requestAnimationFrame(resolve));
-    }
-    if (!open) {
-      await ide.rurimaLayout(false, 0, 0, 0, 0).catch(() => {});
-      $('rurima-layer').hidden = true;
-    }
-    rurimaMoving = false;
-  });
-  return rurimaSliding;
+  rurimaMoving ??= moveRurima().finally(() => { rurimaMoving = null; });
+  return rurimaMoving;
 }
-// Opens the window with the words searched for, or with the page it showed last.
+// Opens the window with the words searched for, or with the page it showed last. The press counts
+// at once, so presses made while the window's page is being made still decide where it ends.
 async function openRurima(query = null) {
   if (query?.trim()) $('rurima-search').value = query.trim().split(/\s+/).join(' ');
-  try { await ide.rurimaShow(query); }
-  catch (error) { browserMessage(error.message); return; }
-  browserMessage('');
-  await slideRurima(true);
+  const moving = slideRurima(true);
+  try {
+    await ide.rurimaShow(query);
+    browserMessage('');
+  } catch (error) {
+    browserMessage(error.message);
+    slideRurima(false);
+  }
+  await moving;
 }
 ide.onRurimaUrl(url => {
   rurimaUrl = url;

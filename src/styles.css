@@ -190,9 +190,11 @@ h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 .rurima-toggle { white-space: nowrap; color: #c9c9ff; border-color: #33a; }
 .rurima-toggle:hover, .rurima-toggle[aria-pressed="true"] { background: #33a; color: #fff; border-color: #33a; }
 .browser-host { position: relative; }
-.rurima-layer { position: absolute; inset: 0; overflow: hidden; background: #05070a; }
+.rurima-layer { position: absolute; inset: 0; overflow: hidden; background: #0c1016; }
 .rurima-layer[hidden] { display: none; }
-.rurima-snapshot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; filter: brightness(0.45); }
+.rurima-snapshot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+/* Darkens the page behind as the window comes out: white turns grey when it is fully out. */
+.rurima-shade { position: absolute; inset: 0; background: #000; opacity: 0; }
 .rurima-snapshot:not([src]) { display: none; }
 .rurima-panel { --reveal: 0; position: absolute; top: 12px; left: 10%; width: 80%; height: calc((80% - 12px) * var(--reveal)); display: flex; flex-direction: column; overflow: hidden; background: var(--panel); border: 2px solid #33a; border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
 .rurima-bar, .rurima-search-bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px; flex-shrink: 0; }
