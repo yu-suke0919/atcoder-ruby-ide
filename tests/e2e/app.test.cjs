@@ -1704,6 +1704,10 @@ test('D3: the るりま window follows the last press without stacking, never st
   const toggle = page.locator('#rurima-toggle');
   const layer = page.locator('#rurima-layer');
   const out = () => page.waitForFunction(() => document.getElementById('rurima-panel').style.getPropertyValue('--reveal') === '1');
+  // The real app sends a JPEG picture of the AtCoder page; the screen's CSP must let it be shown.
+  const picture = [...await page.screenshot({ type: 'jpeg', clip: { x: 0, y: 0, width: 40, height: 30 } })];
+  const request = app.request;
+  app.request = async (name, args = {}) => (name === 'browser_snapshot' ? picture : request(name, args));
   // Pressed five times at once, it ends out, at once, without going up and down five times.
   for (let i = 0; i < 5; i++) await toggle.click();
   assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
@@ -1713,6 +1717,9 @@ test('D3: the るりま window follows the last press without stacking, never st
   await toggle.click();
   assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
   await out();
+  try {
+    await page.waitForFunction(() => document.getElementById('rurima-snapshot').naturalWidth === 40, null, { timeout: 3000 });
+  } finally { app.request = request; }
   // Fully out, the page behind is as dark as white turning grey.
   assert.equal(await page.locator('#rurima-shade').evaluate(shade => getComputedStyle(shade).opacity), '0.5');
   // A reply that never comes does not keep the window out.
