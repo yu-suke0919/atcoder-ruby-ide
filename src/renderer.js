@@ -682,7 +682,9 @@ $('rurima-snapshot').addEventListener('error', () => $('rurima-snapshot').remove
 async function pictureAtCoderPage() {
   const bytes = await Promise.race([ide.browserSnapshot().catch(() => null), delay(1500)]);
   if (rurimaPicture) URL.revokeObjectURL(rurimaPicture);
-  rurimaPicture = bytes?.byteLength ? URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' })) : null;
+  // The app sends the bytes as an ArrayBuffer; the UI test host as an array of numbers.
+  const jpeg = bytes ? new Uint8Array(bytes) : null;
+  rurimaPicture = jpeg?.length ? URL.createObjectURL(new Blob([jpeg], { type: 'image/jpeg' })) : null;
   if (rurimaPicture) $('rurima-snapshot').src = rurimaPicture;
   else $('rurima-snapshot').removeAttribute('src');
 }
