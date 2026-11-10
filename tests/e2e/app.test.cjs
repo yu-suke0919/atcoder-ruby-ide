@@ -1700,6 +1700,30 @@ test('R9: discarding a failed save to switch tabs puts the samples back as saved
   assert.equal(await page.locator('#save-failed-dialog').isVisible(), false);
 });
 
+test('D3: the るりま window follows the last press without stacking, never stalls on a slow reply, and darkens the page as it comes out', holdsReplies, async () => {
+  const toggle = page.locator('#rurima-toggle');
+  const layer = page.locator('#rurima-layer');
+  const out = () => page.waitForFunction(() => document.getElementById('rurima-panel').style.getPropertyValue('--reveal') === '1');
+  // Pressed five times at once, it ends out, at once, without going up and down five times.
+  for (let i = 0; i < 5; i++) await toggle.click();
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
+  await out();
+  // Two more presses leave it where it was.
+  await toggle.click();
+  await toggle.click();
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
+  await out();
+  // Fully out, the page behind is as dark as white turning grey.
+  assert.equal(await page.locator('#rurima-shade').evaluate(shade => getComputedStyle(shade).opacity), '0.5');
+  // A reply that never comes does not keep the window out.
+  const reply = holdReply('rurima_layout');
+  try {
+    await toggle.click();
+    await layer.waitFor({ state: 'hidden', timeout: 2000 });
+  } finally { reply.release(); }
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+});
+
 test('M03: going back to the saved content clears a failed save', async () => {
   await page.locator('#tolerant-compare').check();
   await page.locator('#tolerance').fill('0');
