@@ -1383,7 +1383,13 @@ test('D3: the るりま window slides over the AtCoder page and searches the ful
   await toggle.click();
   await page.locator('#rurima-toggle[aria-pressed="true"]').waitFor();
   await shows('https://docs.ruby-lang.org/ja/3.4/doc/index.html');
-  // Words in the URL field are searched for.
+  // The search field between the URL field and the window searches the full text.
+  const search = page.locator('#rurima-search');
+  await search.fill('split');
+  await page.screenshot({ path: 'test-results/rurima-search.png' });
+  await search.press('Enter');
+  await shows(google('split'));
+  // Words in the URL field are searched for too.
   await url.fill('最大公約数');
   await url.press('Enter');
   await shows(google('最大公約数'));
@@ -1393,6 +1399,7 @@ test('D3: the るりま window slides over the AtCoder page and searches the ful
   for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight');
   await page.keyboard.press('F1');
   await shows(google('gets'));
+  assert.equal(await search.inputValue(), 'gets');
   await page.locator('.cm-line').first().click();
   await page.keyboard.press('Home');
   for (let i = 0; i < 6; i++) await page.keyboard.press('Shift+ArrowRight');
@@ -1407,6 +1414,7 @@ test('D3: the るりま window slides over the AtCoder page and searches the ful
   await toggle.click();
   assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
   await shows(atcoder);
+  assert.equal(await search.isVisible(), false);
   // Opening home also puts it away.
   await toggle.click();
   await shows(google(runner !== 'native' ? 'each_slice' : 'a = ge'));
