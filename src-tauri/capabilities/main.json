@@ -38,6 +38,9 @@
     "allow-browser-history",
     "allow-browser-reload",
     "allow-rurima-show",
-    "allow-rurima-slide"
+    "allow-rurima-layout",
+    "allow-rurima-history",
+    "allow-rurima-reload",
+    "allow-browser-snapshot"
   ]
 }

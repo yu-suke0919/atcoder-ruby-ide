@@ -76,9 +76,16 @@
     <div class="splitter" data-split="browser" role="separator" aria-orientation="vertical" aria-label="エディタとブラウザの境目" title="ドラッグで幅を変更、ダブルクリックで元に戻す"></div>
     <section class="browser-column" aria-label="AtCoder のページ">
       <div class="browser-toolbar"><button id="browser-back" title="戻る" aria-label="戻る">←</button><button id="browser-forward" title="進む" aria-label="進む">→</button><button id="browser-reload" title="更新" aria-label="更新">↻</button><input id="browser-url" type="text" aria-label="URL" spellcheck="false" autocomplete="off"><button id="rurima-toggle" class="rurima-toggle" aria-pressed="false" title="るりま（Rubyリファレンスマニュアル）を開いて全文検索する（F1）">るりま</button></div>
-      <form id="rurima-search-bar" class="rurima-search-bar" role="search" hidden><input id="rurima-search" type="search" aria-label="るりまを全文検索" placeholder="るりまを全文検索（語を入れてEnter）" spellcheck="false" autocomplete="off"><button id="rurima-search-go" type="submit">検索</button></form>
       <p id="browser-message" class="browser-message" role="status"></p>
-      <div id="browser-host" class="browser-host"><p>AtCoder のページを表示します。ログイン・参加登録・提出はここで行います。</p></div>
+      <div id="browser-host" class="browser-host"><p>AtCoder のページを表示します。ログイン・参加登録・提出はここで行います。</p>
+        <div id="rurima-layer" class="rurima-layer" hidden><img id="rurima-snapshot" class="rurima-snapshot" alt="">
+          <section id="rurima-panel" class="rurima-panel" aria-label="るりま（Rubyリファレンスマニュアル）">
+            <div class="rurima-bar"><button id="rurima-back" title="戻る" aria-label="るりまで戻る">←</button><button id="rurima-forward" title="進む" aria-label="るりまで進む">→</button><button id="rurima-reload" title="更新" aria-label="るりまを更新">↻</button><input id="rurima-url" type="text" aria-label="るりまのURL" spellcheck="false" autocomplete="off"></div>
+            <form id="rurima-search-bar" class="rurima-search-bar" role="search"><input id="rurima-search" type="search" aria-label="るりまを全文検索" placeholder="るりまを全文検索（語を入れてEnter）" spellcheck="false" autocomplete="off"><button type="submit">検索</button></form>
+            <div id="rurima-host" class="rurima-host"></div>
+          </section>
+        </div>
+      </div>
     </section>
   </div>
   <footer class="statusbar"><span class="status-left"><span class="status-dot"></span>ローカル実行<span id="message" role="status">ヒント：Ctrl + Enter でも実行できます。</span></span><span title="メモリ上限は、Rubyとその子プロセスが使用中のメモリ（RSS）の合計で、問題のメモリ制限（不明なら1024 MiB）を使います。AtCoderの判定と同じ測り方ではありません。"><span id="execution-limit" title="選択ケースの実行時の打ち切り時間です。制限既知は問題の制限＋1秒（最低5秒・最大30秒）。正確な値は開始時に確定します。">既定上限 5 秒</span> <span class="separator">·</span> 入力上限 1 MiB・出力上限 合計 1 MiB</span></footer>

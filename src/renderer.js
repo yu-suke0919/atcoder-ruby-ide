@@ -647,27 +647,54 @@ $('browser-url').addEventListener('keydown', async event => {
     $('browser-url').blur();
   } catch (error) { browserMessage(error.message); }
 });
-// The るりま window slides down over the AtCoder page and back up (D3). Each step waits for the
-// previous one, so the window ends where the last step puts it.
+// The るりま window (D3) is drawn here around its page, which lies over the screen like the
+// AtCoder pages; nothing can be drawn over those, so while the window is out the AtCoder page is
+// hidden behind a darkened picture of it. Each step of the slide waits for the previous one, so
+// the window's page ends where the last step puts it.
 let rurimaOpen = false;
+let rurimaMoving = false;
 let rurimaSliding = Promise.resolve();
+let rurimaPicture = null;
+let rurimaUrl = '';
+function placeRurima() {
+  const rect = $('rurima-host').getBoundingClientRect();
+  return ide.rurimaLayout(true, rect.x, rect.y, rect.width, rect.height).catch(() => {});
+}
+new ResizeObserver(() => { if (rurimaOpen && !rurimaMoving) placeRurima(); }).observe($('rurima-host'));
+async function pictureAtCoderPage() {
+  let bytes = null;
+  try { bytes = await ide.browserSnapshot(); } catch {}
+  if (rurimaPicture) URL.revokeObjectURL(rurimaPicture);
+  rurimaPicture = bytes?.byteLength ? URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' })) : null;
+  if (rurimaPicture) $('rurima-snapshot').src = rurimaPicture;
+  else $('rurima-snapshot').removeAttribute('src');
+}
 function slideRurima(open) {
   if (rurimaOpen === open) return rurimaSliding;
   rurimaOpen = open;
   $('rurima-toggle').setAttribute('aria-pressed', String(open));
-  // The search field sits between the URL field and the window while it is out.
-  if (open) $('rurima-search-bar').hidden = false;
-  $('browser-url').placeholder = open ? '語を入れてEnterでるりまを全文検索' : '';
+  // The AtCoder page is put aside while the window is out, and so are its controls.
+  for (const id of ['browser-back', 'browser-forward', 'browser-reload', 'browser-url']) $(id).disabled = open;
   rurimaSliding = rurimaSliding.then(async () => {
+    rurimaMoving = true;
+    if (open) {
+      await pictureAtCoderPage();
+      $('rurima-layer').hidden = false;
+    }
     const start = performance.now();
     for (;;) {
       const done = Math.min(1, (performance.now() - start) / 180);
       const shown = 1 - (1 - done) ** 3;
-      await ide.rurimaSlide(open ? shown : 1 - shown).catch(() => {});
+      $('rurima-panel').style.setProperty('--reveal', String(open ? shown : 1 - shown));
+      await placeRurima();
       if (done >= 1) break;
       await new Promise(resolve => requestAnimationFrame(resolve));
     }
-    if (!rurimaOpen) $('rurima-search-bar').hidden = true;
+    if (!open) {
+      await ide.rurimaLayout(false, 0, 0, 0, 0).catch(() => {});
+      $('rurima-layer').hidden = true;
+    }
+    rurimaMoving = false;
   });
   return rurimaSliding;
 }
@@ -679,6 +706,22 @@ async function openRurima(query = null) {
   browserMessage('');
   await slideRurima(true);
 }
+ide.onRurimaUrl(url => {
+  rurimaUrl = url;
+  if (document.activeElement !== $('rurima-url')) $('rurima-url').value = url;
+}).catch(error => message(String(error), true));
+// The window's URL field opens a page of the reference or of the search, or searches for words.
+$('rurima-url').addEventListener('keydown', event => {
+  if (event.isComposing) return;
+  if (event.key === 'Escape') { $('rurima-url').blur(); return; }
+  if (event.key === 'Enter') { openRurima($('rurima-url').value); $('rurima-url').blur(); }
+});
+$('rurima-url').addEventListener('blur', () => { $('rurima-url').value = rurimaUrl; });
+$('rurima-back').addEventListener('click', () => ide.rurimaHistory(false).catch(error => browserMessage(error.message)));
+$('rurima-forward').addEventListener('click', () => ide.rurimaHistory(true).catch(error => browserMessage(error.message)));
+$('rurima-reload').addEventListener('click', () => ide.rurimaReload().catch(error => browserMessage(error.message)));
+// The darkened page around the window puts it away.
+$('rurima-layer').addEventListener('click', event => { if (!$('rurima-panel').contains(event.target)) slideRurima(false); });
 $('rurima-toggle').addEventListener('click', () => (rurimaOpen ? slideRurima(false) : openRurima()));
 $('rurima-search-bar').addEventListener('submit', event => {
   event.preventDefault();

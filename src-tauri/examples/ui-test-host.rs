@@ -56,11 +56,8 @@ fn main() {
     let sink = Arc::new(Mutex::new(io::stdout()));
     // Counts the pages shown, so a submission list knows when another page hides it.
     let shown = Arc::new(AtomicU64::new(0));
-    // The るりま window (D3): whether it is shown, its page, and the AtCoder page under it. The
-    // URL field shows the page the controls work on, as the app reports it.
+    // The page of the るりま window (D3).
     let mut rurima: Option<String> = None;
-    let mut rurima_shown = false;
-    let mut atcoder_url = String::from("https://atcoder.jp/");
     // The app reads every loaded contest top for a registration; here showing one fetches it.
     let read_contest_top = |sink: &Sink, url: &str| {
         if !url::Url::parse(url).is_ok_and(|url| contest_top(&url).is_some()) {
@@ -186,10 +183,7 @@ fn main() {
             }
             "browser_task" => {
                 let url = args["url"].as_str().ok_or("URLを指定してください")?;
-                atcoder_url = url.to_string();
-                if !rurima_shown {
-                    send(&sink, json!({"appEvent": "browser-url", "payload": url}));
-                }
+                send(&sink, json!({"appEvent": "browser-url", "payload": url}));
                 if workspaces.task(url)?.is_none() {
                     let error = page(url)
                         .and_then(|html| read_task_page(&workspaces, url, &html))
@@ -204,47 +198,26 @@ fn main() {
             // There are no pages here: the shown URL changes as the real browser reports it.
             "browser_home" => {
                 let url = args["url"].as_str().unwrap_or("https://atcoder.jp/");
-                atcoder_url = url.to_string();
-                if !rurima_shown {
-                    send(&sink, json!({"appEvent": "browser-url", "payload": url}));
-                }
+                send(&sink, json!({"appEvent": "browser-url", "payload": url}));
                 read_contest_top(&sink, url);
                 Ok(Value::Null)
             }
+            // The るりま window reports its page as the real one does when a page loads (D3).
             "rurima_show" => {
                 let target = args["query"].as_str().map(rurima_target).transpose()?;
                 let url = target
                     .map(|url| url.to_string())
                     .or(rurima.take())
                     .unwrap_or_else(|| RURIMA_HOME.to_string());
-                if rurima_shown {
-                    send(&sink, json!({"appEvent": "browser-url", "payload": url}));
-                }
+                send(&sink, json!({"appEvent": "rurima-url", "payload": url}));
                 rurima = Some(url);
                 Ok(Value::Null)
             }
-            "rurima_slide" => {
-                let now = args["fraction"].as_f64().unwrap_or(0.0) > 0.0;
-                if now != rurima_shown {
-                    rurima_shown = now;
-                    let url = if now {
-                        rurima.clone().unwrap_or_default()
-                    } else {
-                        atcoder_url.clone()
-                    };
-                    send(&sink, json!({"appEvent": "browser-url", "payload": url}));
-                }
-                Ok(Value::Null)
-            }
-            "browser_open" if rurima_shown => {
-                let url = rurima_target(args["url"].as_str().unwrap_or_default())?.to_string();
-                send(&sink, json!({"appEvent": "browser-url", "payload": url}));
-                rurima = Some(url);
+            "rurima_layout" | "rurima_history" | "rurima_reload" | "browser_snapshot" => {
                 Ok(Value::Null)
             }
             "browser_open" => {
                 let url = browser_target(args["url"].as_str().unwrap_or_default())?;
-                atcoder_url = url.to_string();
                 send(
                     &sink,
                     json!({"appEvent": "browser-url", "payload": url.as_str()}),

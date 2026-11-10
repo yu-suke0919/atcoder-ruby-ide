@@ -186,12 +186,23 @@ h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 .browser-column { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .browser-toolbar { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--border); background: #151a24; flex-shrink: 0; }
 .browser-toolbar button { padding: 4px 8px; font-size: 13px; }
-.rurima-toggle { white-space: nowrap; }
-.rurima-search-bar { display: flex; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--border); background: #1b2130; flex-shrink: 0; }
-.rurima-search-bar[hidden] { display: none; }
-#rurima-search { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--accent); border-radius: 5px; padding: 5px 8px; font-size: 12px; }
+/* The るりま window (D3): the blue of its pages' title, rounded like the panes. */
+.rurima-toggle { white-space: nowrap; color: #c9c9ff; border-color: #33a; }
+.rurima-toggle:hover, .rurima-toggle[aria-pressed="true"] { background: #33a; color: #fff; border-color: #33a; }
+.browser-host { position: relative; }
+.rurima-layer { position: absolute; inset: 0; overflow: hidden; background: #05070a; }
+.rurima-layer[hidden] { display: none; }
+.rurima-snapshot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; filter: brightness(0.45); }
+.rurima-snapshot:not([src]) { display: none; }
+.rurima-panel { --reveal: 0; position: absolute; top: 12px; left: 10%; width: 80%; height: calc((80% - 12px) * var(--reveal)); display: flex; flex-direction: column; overflow: hidden; background: var(--panel); border: 2px solid #33a; border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
+.rurima-bar, .rurima-search-bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px; flex-shrink: 0; }
+.rurima-bar { background: #33a; }
+.rurima-bar button { padding: 4px 8px; font-size: 13px; color: #fff; background: transparent; border-color: rgba(255, 255, 255, 0.4); }
+.rurima-search-bar { border-bottom: 1px solid #33a; }
 .rurima-search-bar button { padding: 4px 10px; font-size: 13px; }
-.rurima-toggle[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+#rurima-url, #rurima-search { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid #5a5ad0; border-radius: 5px; padding: 5px 8px; font-size: 12px; }
+#rurima-url { font-family: Consolas, monospace; }
+.rurima-host { flex: 1; min-height: 0; margin: 0 6px 6px; background: #fff; }
 #browser-url { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font: 12px Consolas, monospace; }
 .browser-message { margin: 0; padding: 4px 10px; color: #f5a3b2; font-size: 11px; flex-shrink: 0; }
 .browser-message:empty { display: none; }

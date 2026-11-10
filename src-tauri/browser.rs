@@ -16,9 +16,6 @@ use url::Url;
 pub const HOME: &str = "home";
 /// The るりま window over the AtCoder pages (D3).
 const RURIMA: &str = "rurima";
-/// How much of the browser column's height and width the るりま window takes when fully shown;
-/// the AtCoder page stays visible around it.
-const RURIMA_SIZE: f64 = 0.8;
 const ATCODER: &str = "https://atcoder.jp";
 
 #[derive(Clone, Copy, Default, Deserialize)]
@@ -47,8 +44,9 @@ pub struct Browser {
     args: Mutex<Option<String>>,
     /// Contests whose submission list is being fetched while a submission is judged (U5b).
     following: Mutex<HashSet<String>>,
-    /// How much of the るりま window is shown, from 0 (put away) to 1 (D3).
-    rurima: Mutex<f64>,
+    /// Where the るりま window's page lies while the window is out (D3). The screen draws the
+    /// window around it, and the AtCoder pages are hidden behind a picture of them.
+    rurima: Mutex<Option<Bounds>>,
 }
 
 /// The origin pages are loaded from. UI tests point it at a local server; normal runs use AtCoder.
@@ -103,25 +101,30 @@ fn rurima_from_origin(url: &Url) -> Option<Url> {
     is_rurima_page(&url).then_some(url)
 }
 
-/// Tells the screen which URL the page the controls work on has.
+/// Tells the screen which URL the shown page, or the るりま window, has.
 fn show_url(webview: &tauri::Webview, url: &Url) {
-    let browser = webview.state::<Browser>();
-    if browser.active() != webview.label() {
+    if webview.label() == RURIMA {
+        if let Some(url) = rurima_from_origin(url) {
+            let _ = webview.emit_to("main", "rurima-url", url.as_str());
+        }
         return;
     }
-    let url = if webview.label() == RURIMA {
-        rurima_from_origin(url)
-    } else {
-        from_origin(url)
-    };
-    if let Some(url) = url {
+    let browser = webview.state::<Browser>();
+    if *browser.shown.lock().unwrap() != webview.label() {
+        return;
+    }
+    if let Some(url) = from_origin(url) {
         let _ = webview.emit_to("main", "browser-url", url.as_str());
     }
 }
-/// The page the controls work on: the るりま window while it is shown, else the shown page.
 fn shown(app: &tauri::AppHandle, browser: &Browser) -> Result<tauri::Webview, String> {
-    app.get_webview(&browser.active())
+    let label = browser.shown.lock().unwrap().clone();
+    app.get_webview(&label)
         .ok_or_else(|| "ブラウザを準備できません。".into())
+}
+fn rurima(app: &tauri::AppHandle) -> Result<tauri::Webview, String> {
+    app.get_webview(RURIMA)
+        .ok_or_else(|| "るりまの窓を準備できません。".into())
 }
 fn show_current_url(app: &tauri::AppHandle, browser: &Browser) {
     if let Ok(webview) = shown(app, browser) {
@@ -303,33 +306,6 @@ fn rurima_builder(app: &tauri::AppHandle, url: Url) -> WebviewBuilder<tauri::Wry
     builder
 }
 
-/// Puts a webview over the other pages. On Windows each webview is a child window made by wry,
-/// the host of its WebView2, and a window made later lies over the earlier ones.
-#[cfg(windows)]
-fn bring_to_front(webview: &tauri::Webview) {
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::UI::WindowsAndMessaging::{
-        SetWindowPos, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    };
-    let raised = webview.with_webview(|platform| unsafe {
-        let mut window = HWND::default();
-        if platform.controller().ParentWindow(&mut window).is_ok() {
-            let _ = SetWindowPos(
-                window,
-                Some(HWND_TOP),
-                0,
-                0,
-                0,
-                0,
-                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
-            );
-        }
-    });
-    if let Err(error) = raised {
-        eprintln!("cannot put the るりま window on top: {error}");
-    }
-}
-
 /// Adds 「るりまを全文検索」 to the right-click menu of a webview when text is selected; choosing
 /// it sends the text to the screen as `rurima-search` (D3). Tauri has no menu of its own for
 /// this, so the item goes into WebView2's menu. The page itself is not touched.
@@ -459,32 +435,20 @@ impl Browser {
         Ok(())
     }
 
-    /// The label of the page the controls work on: the るりま window while it is shown.
-    fn active(&self) -> String {
-        if *self.rurima.lock().unwrap() > 0.0 {
-            RURIMA.into()
-        } else {
-            self.shown.lock().unwrap().clone()
-        }
-    }
-
-    /// Places the shown page over the browser column and hides the others. The るりま window
-    /// lies over the page from the top of the column, centered, as tall as it is shown, so it
-    /// slides down (D3).
+    /// Places the shown page over the browser column and hides the others. While the るりま
+    /// window is out, the AtCoder pages are hidden and its page lies where the screen asks (D3).
     fn apply(&self, app: &tauri::AppHandle) {
         let shown = self.shown.lock().unwrap().clone();
         let hidden = *self.hidden.lock().unwrap();
         let bounds = *self.bounds.lock().unwrap();
-        let visible = !hidden && bounds.width > 0.0 && bounds.height > 0.0;
-        let rurima = app
-            .get_webview(RURIMA)
-            .map_or(0.0, |_| *self.rurima.lock().unwrap());
-        let place = |webview: &tauri::Webview, x: f64, width: f64, height: f64| {
-            if visible && height >= 1.0 {
-                let _ = webview.set_position(LogicalPosition::new(x, bounds.y));
-                let _ = webview.set_size(LogicalSize::new(width, height));
+        let rurima = *self.rurima.lock().unwrap();
+        let place = |webview: &tauri::Webview, at: Option<Bounds>| match at {
+            Some(at) if !hidden && at.width >= 1.0 && at.height >= 1.0 => {
+                let _ = webview.set_position(LogicalPosition::new(at.x, at.y));
+                let _ = webview.set_size(LogicalSize::new(at.width, at.height));
                 let _ = webview.show();
-            } else {
+            }
+            _ => {
                 let _ = webview.hide();
             }
         };
@@ -495,21 +459,11 @@ impl Browser {
             let Some(webview) = app.get_webview(&label) else {
                 continue;
             };
-            if label == shown {
-                place(&webview, bounds.x, bounds.width, bounds.height);
-            } else {
-                let _ = webview.hide();
-            }
+            let at = (label == shown && rurima.is_none()).then_some(bounds);
+            place(&webview, at);
         }
         if let Some(webview) = app.get_webview(RURIMA) {
-            let margin = (bounds.width * (1.0 - RURIMA_SIZE) / 2.0).round();
-            let height = (bounds.height * RURIMA_SIZE * rurima).round();
-            place(
-                &webview,
-                bounds.x + margin,
-                bounds.width - 2.0 * margin,
-                height,
-            );
+            place(&webview, rurima);
         }
     }
 }
@@ -630,19 +584,14 @@ pub async fn browser_close_tasks(
     Ok(())
 }
 
-/// Opens a URL typed in the URL field in the shown page. In the るりま window, words that are not
-/// a URL are searched for (D3).
+/// Opens a URL typed in the URL field in the shown page.
 #[tauri::command]
 pub async fn browser_open(
     app: tauri::AppHandle,
     browser: tauri::State<'_, Browser>,
     url: String,
 ) -> Result<(), String> {
-    let url = if browser.active() == RURIMA {
-        rurima_to_origin(&rurima_target(&url)?)
-    } else {
-        to_origin(browser_target(&url)?.as_str())?
-    };
+    let url = to_origin(browser_target(&url)?.as_str())?;
     shown(&app, &browser)?
         .navigate(url)
         .map_err(|e| e.to_string())
@@ -650,7 +599,7 @@ pub async fn browser_open(
 
 /// Opens the るりま window's page for `query`: words to search for, or a page of the reference
 /// or of the search. The window is made on first use, with the reference's top when there is no
-/// query; `rurima_slide` shows it (D3).
+/// query; `rurima_layout` places it (D3).
 #[tauri::command]
 pub async fn rurima_show(
     app: tauri::AppHandle,
@@ -681,37 +630,123 @@ pub async fn rurima_show(
         }
     }
     browser.apply(&app);
-    show_current_url(&app, &browser);
     Ok(())
 }
 
-/// Shows `fraction` (0 to 1) of the るりま window from the top of the browser column; the screen
-/// sends a few in a row to slide it down or up (D3).
+/// Puts the るりま window's page where the screen draws it, or, with `open` false, puts the
+/// window away and shows the AtCoder page again. The screen sends a few in a row to slide the
+/// window down or up (D3).
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
-pub async fn rurima_slide(
+pub async fn rurima_layout(
     app: tauri::AppHandle,
     browser: tauri::State<'_, Browser>,
-    fraction: f64,
+    open: bool,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
 ) -> Result<(), String> {
-    let fraction = if fraction.is_finite() {
-        fraction.clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    let was = std::mem::replace(&mut *browser.rurima.lock().unwrap(), fraction);
-    // A page made later lies over the window, so the window is put on top as it comes out.
-    #[cfg(windows)]
-    if was == 0.0 && fraction > 0.0 {
-        if let Some(webview) = app.get_webview(RURIMA) {
-            bring_to_front(&webview);
-        }
-    }
+    *browser.rurima.lock().unwrap() = open.then_some(Bounds {
+        x,
+        y,
+        width,
+        height,
+    });
     browser.apply(&app);
-    // The controls change pages when the window comes or goes.
-    if (was > 0.0) != (fraction > 0.0) {
-        show_current_url(&app, &browser);
-    }
     Ok(())
+}
+
+/// Goes back or forward in the るりま window's history.
+#[tauri::command]
+pub async fn rurima_history(app: tauri::AppHandle, forward: bool) -> Result<(), String> {
+    let script = if forward {
+        "history.forward()"
+    } else {
+        "history.back()"
+    };
+    rurima(&app)?.eval(script).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn rurima_reload(app: tauri::AppHandle) -> Result<(), String> {
+    rurima(&app)?.reload().map_err(|e| e.to_string())
+}
+
+/// A JPEG picture of the shown AtCoder page, drawn darkened behind the るりま window: the page
+/// itself lies over the screen, so nothing can be drawn over it (D3). Empty where WebView2's
+/// `CapturePreview` is not available.
+#[tauri::command]
+pub async fn browser_snapshot(
+    app: tauri::AppHandle,
+    browser: tauri::State<'_, Browser>,
+) -> Result<tauri::ipc::Response, String> {
+    let webview = shown(&app, &browser)?;
+    #[cfg(windows)]
+    {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        webview
+            .with_webview(move |platform| capture(platform, sender))
+            .map_err(|e| e.to_string())?;
+        let picture = tauri::async_runtime::spawn_blocking(move || {
+            receiver
+                .recv_timeout(Duration::from_secs(3))
+                .unwrap_or_default()
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        Ok(tauri::ipc::Response::new(picture))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = webview;
+        Ok(tauri::ipc::Response::new(Vec::new()))
+    }
+}
+
+/// Sends the JPEG bytes of the page, or nothing when it cannot be taken.
+#[cfg(windows)]
+fn capture(platform: tauri::webview::PlatformWebview, sender: std::sync::mpsc::Sender<Vec<u8>>) {
+    use webview2_com::CapturePreviewCompletedHandler;
+    use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_JPEG;
+    use windows::Win32::System::Com::STREAM_SEEK_SET;
+    use windows::Win32::UI::Shell::SHCreateMemStream;
+    let taken = unsafe {
+        (|| -> windows_core::Result<()> {
+            let core = platform.controller().CoreWebView2()?;
+            let stream = SHCreateMemStream(None).ok_or_else(windows_core::Error::empty)?;
+            let target = stream.clone();
+            let send = sender.clone();
+            let done = CapturePreviewCompletedHandler::create(Box::new(move |result| {
+                let mut bytes = Vec::new();
+                if result.is_ok() && target.Seek(0, STREAM_SEEK_SET, None).is_ok() {
+                    let mut buffer = [0u8; 64 * 1024];
+                    loop {
+                        let mut read = 0u32;
+                        let status = target.Read(
+                            buffer.as_mut_ptr().cast(),
+                            buffer.len() as u32,
+                            Some(&mut read),
+                        );
+                        if status.is_err() || read == 0 {
+                            break;
+                        }
+                        bytes.extend_from_slice(&buffer[..read as usize]);
+                    }
+                }
+                let _ = send.send(bytes);
+                Ok(())
+            }));
+            core.CapturePreview(
+                COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_JPEG,
+                &stream,
+                &done,
+            )
+        })()
+    };
+    if taken.is_err() {
+        let _ = sender.send(Vec::new());
+    }
 }
 
 /// Goes back or forward in the shown page's history.

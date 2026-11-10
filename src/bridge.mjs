@@ -36,7 +36,12 @@ export const ide = {
   browserHistory: forward => invoke('browser_history', { forward }),
   browserReload: () => invoke('browser_reload'),
   rurimaShow: query => invoke('rurima_show', { query }),
-  rurimaSlide: fraction => invoke('rurima_slide', { fraction }),
+  rurimaLayout: (open, x, y, width, height) => invoke('rurima_layout', { open, x, y, width, height }),
+  rurimaHistory: forward => invoke('rurima_history', { forward }),
+  rurimaReload: () => invoke('rurima_reload'),
+  // A picture of the shown AtCoder page as JPEG bytes; empty or null where it cannot be taken.
+  browserSnapshot: () => invoke('browser_snapshot'),
+  onRurimaUrl: handler => window.__TAURI__.event.listen('rurima-url', event => handler(event.payload)),
   onRurimaSearch: handler => window.__TAURI__.event.listen('rurima-search', event => handler(event.payload)),
   onBrowserUrl: handler => window.__TAURI__.event.listen('browser-url', event => handler(event.payload)),
   onTaskPage: handler => window.__TAURI__.event.listen('task-page', event => handler(event.payload)),
