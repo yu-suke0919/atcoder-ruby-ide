@@ -210,6 +210,13 @@ export function createEditor(parent, initial, onChange, onCursor, completionClie
       view.dispatch({ selection: { anchor: position }, effects: EditorView.scrollIntoView(position, { y: 'center' }) });
       view.focus();
     },
+    // What F1 searches for in るりま (D3): the selected text, or else the word at the cursor.
+    get searchText() {
+      const { from, to, head } = view.state.selection.main;
+      if (from !== to) return view.state.sliceDoc(from, to);
+      const word = view.state.wordAt(head);
+      return word ? view.state.sliceDoc(word.from, word.to) : '';
+    },
     get cursor() { const pos = view.state.selection.main.head; const line = view.state.doc.lineAt(pos); return { line: line.number, column: pos - line.from + 1 }; },
     set readOnly(value) { if (readOnly === value) return; readOnly = value; if (value) closeCompletion(view); view.dispatch({ effects: writable.reconfigure(editable()) }); },
     focus() { view.focus(); },

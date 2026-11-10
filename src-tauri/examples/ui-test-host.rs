@@ -3,7 +3,8 @@
 //! serves them like the real agent (docs/architecture.md#wslのエージェント).
 use atcoder_ruby_ide::{
     agent::Agent, browser_target, contest_top, fetch_page, http_client, read_task_page,
-    submissions_page, unix_now, AgentClient, Contests, DocumentStore, Submissions, Workspaces,
+    rurima_target, submissions_page, unix_now, AgentClient, Contests, DocumentStore, Submissions,
+    Workspaces, RURIMA_HOME,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -55,6 +56,8 @@ fn main() {
     let sink = Arc::new(Mutex::new(io::stdout()));
     // Counts the pages shown, so a submission list knows when another page hides it.
     let shown = Arc::new(AtomicU64::new(0));
+    // The page of the るりま window (D3).
+    let mut rurima: Option<String> = None;
     // The app reads every loaded contest top for a registration; here showing one fetches it.
     let read_contest_top = |sink: &Sink, url: &str| {
         if !url::Url::parse(url).is_ok_and(|url| contest_top(&url).is_some()) {
@@ -197,6 +200,20 @@ fn main() {
                 let url = args["url"].as_str().unwrap_or("https://atcoder.jp/");
                 send(&sink, json!({"appEvent": "browser-url", "payload": url}));
                 read_contest_top(&sink, url);
+                Ok(Value::Null)
+            }
+            // The るりま window reports its page as the real one does when a page loads (D3).
+            "rurima_show" => {
+                let target = args["query"].as_str().map(rurima_target).transpose()?;
+                let url = target
+                    .map(|url| url.to_string())
+                    .or(rurima.take())
+                    .unwrap_or_else(|| RURIMA_HOME.to_string());
+                send(&sink, json!({"appEvent": "rurima-url", "payload": url}));
+                rurima = Some(url);
+                Ok(Value::Null)
+            }
+            "rurima_layout" | "rurima_history" | "rurima_reload" | "browser_snapshot" => {
                 Ok(Value::Null)
             }
             "browser_open" => {

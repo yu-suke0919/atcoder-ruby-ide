@@ -647,6 +647,134 @@ $('browser-url').addEventListener('keydown', async event => {
     $('browser-url').blur();
   } catch (error) { browserMessage(error.message); }
 });
+// The るりま window (D3) is drawn here around its page, which lies over the screen like the
+// AtCoder pages; nothing can be drawn over those, so while the window is out the AtCoder page is
+// hidden behind a picture of it, darkened as the window comes out. One loop moves the window
+// toward the last press, so presses never stack up, and it never waits on a reply: the page is
+// placed by the latest position, sent once the previous one is answered or has taken too long.
+const RURIMA_SLIDE_MS = 180;
+const RURIMA_SHADE = 0.5;
+let rurimaOpen = false;
+let rurimaReveal = 0;
+let rurimaMoving = null;
+let rurimaPicture = null;
+let rurimaUrl = '';
+let rurimaPlace = null;
+let rurimaPlacing = false;
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+function placeRurima(open = true) {
+  const rect = $('rurima-host').getBoundingClientRect();
+  rurimaPlace = [open, rect.x, rect.y, rect.width, rect.height];
+  if (rurimaPlacing) return;
+  rurimaPlacing = true;
+  (async () => {
+    while (rurimaPlace) {
+      const place = rurimaPlace;
+      rurimaPlace = null;
+      await Promise.race([ide.rurimaLayout(...place).catch(() => {}), delay(300)]);
+    }
+    rurimaPlacing = false;
+  })();
+}
+new ResizeObserver(() => { if (rurimaOpen && !rurimaMoving) placeRurima(); }).observe($('rurima-host'));
+// A picture that cannot be shown leaves the darkened background instead of a broken image.
+$('rurima-snapshot').addEventListener('error', () => $('rurima-snapshot').removeAttribute('src'));
+async function pictureAtCoderPage() {
+  const bytes = await Promise.race([ide.browserSnapshot().catch(() => null), delay(1500)]);
+  if (rurimaPicture) URL.revokeObjectURL(rurimaPicture);
+  // The app sends the bytes as an ArrayBuffer; the UI test host as an array of numbers.
+  const jpeg = bytes ? new Uint8Array(bytes) : null;
+  rurimaPicture = jpeg?.length ? URL.createObjectURL(new Blob([jpeg], { type: 'image/jpeg' })) : null;
+  if (rurimaPicture) $('rurima-snapshot').src = rurimaPicture;
+  else $('rurima-snapshot').removeAttribute('src');
+}
+// The next frame, or a short wait when frames do not come.
+const nextFrame = () => new Promise(resolve => {
+  const timer = setTimeout(resolve, 50);
+  requestAnimationFrame(() => { clearTimeout(timer); resolve(); });
+});
+function showRurimaReveal() {
+  const shown = 1 - (1 - rurimaReveal) ** 3;
+  $('rurima-panel').style.setProperty('--reveal', String(shown));
+  $('rurima-shade').style.opacity = String(RURIMA_SHADE * shown);
+}
+async function moveRurima() {
+  let last = performance.now();
+  while (true) {
+    // Coming out from fully put away: the AtCoder page is pictured first, then hidden.
+    if (rurimaOpen && $('rurima-layer').hidden) {
+      await pictureAtCoderPage();
+      showRurimaReveal();
+      $('rurima-layer').hidden = false;
+      last = performance.now();
+    }
+    const now = performance.now();
+    const step = (now - last) / RURIMA_SLIDE_MS;
+    last = now;
+    rurimaReveal = rurimaOpen ? Math.min(1, rurimaReveal + step) : Math.max(0, rurimaReveal - step);
+    showRurimaReveal();
+    if (!rurimaOpen && rurimaReveal === 0) {
+      placeRurima(false);
+      $('rurima-layer').hidden = true;
+      return;
+    }
+    placeRurima();
+    if (rurimaOpen && rurimaReveal === 1) return;
+    await nextFrame();
+  }
+}
+function slideRurima(open) {
+  rurimaOpen = open;
+  $('rurima-toggle').setAttribute('aria-pressed', String(open));
+  // The AtCoder page is put aside while the window is out, and so are its controls.
+  for (const id of ['browser-back', 'browser-forward', 'browser-reload', 'browser-url']) $(id).disabled = open;
+  rurimaMoving ??= moveRurima().finally(() => { rurimaMoving = null; });
+  return rurimaMoving;
+}
+// Opens the window with the words searched for, or with the page it showed last. The press counts
+// at once, so presses made while the window's page is being made still decide where it ends.
+async function openRurima(query = null) {
+  if (query?.trim()) $('rurima-search').value = query.trim().split(/\s+/).join(' ');
+  const moving = slideRurima(true);
+  try {
+    await ide.rurimaShow(query);
+    browserMessage('');
+  } catch (error) {
+    browserMessage(error.message);
+    slideRurima(false);
+  }
+  await moving;
+}
+ide.onRurimaUrl(url => {
+  rurimaUrl = url;
+  if (document.activeElement !== $('rurima-url')) $('rurima-url').value = url;
+}).catch(error => message(String(error), true));
+// The window's URL field opens a page of the reference or of the search, or searches for words.
+$('rurima-url').addEventListener('keydown', event => {
+  if (event.isComposing) return;
+  if (event.key === 'Escape') { $('rurima-url').blur(); return; }
+  if (event.key === 'Enter') { openRurima($('rurima-url').value); $('rurima-url').blur(); }
+});
+$('rurima-url').addEventListener('blur', () => { $('rurima-url').value = rurimaUrl; });
+$('rurima-back').addEventListener('click', () => ide.rurimaHistory(false).catch(error => browserMessage(error.message)));
+$('rurima-forward').addEventListener('click', () => ide.rurimaHistory(true).catch(error => browserMessage(error.message)));
+$('rurima-reload').addEventListener('click', () => ide.rurimaReload().catch(error => browserMessage(error.message)));
+// The darkened page around the window puts it away.
+$('rurima-layer').addEventListener('click', event => { if (!$('rurima-panel').contains(event.target)) slideRurima(false); });
+$('rurima-toggle').addEventListener('click', () => (rurimaOpen ? slideRurima(false) : openRurima()));
+$('rurima-search-bar').addEventListener('submit', event => {
+  event.preventDefault();
+  if ($('rurima-search').value.trim()) openRurima($('rurima-search').value);
+});
+// F1 searches for the selected text (in the editor, the word at the cursor without a selection).
+document.addEventListener('keydown', event => {
+  if (event.key !== 'F1') return;
+  event.preventDefault();
+  const text = $('editor-host').contains(document.activeElement) ? editor.searchText : String(window.getSelection() ?? '');
+  openRurima(text.trim() ? text : null);
+});
+// The right-click item 「るりまを全文検索」 of Windows sends the selected text.
+ide.onRurimaSearch(text => openRurima(text)).catch(error => message(String(error), true));
 // Leaving the field shows the page's URL again, as browsers do.
 $('browser-url').addEventListener('blur', () => { $('browser-url').value = browserUrl; });
 $('browser-back').addEventListener('click', () => ide.browserHistory(false).catch(error => browserMessage(error.message)));
@@ -845,6 +973,7 @@ async function setHidden(url, hidden) {
 let pagesContest = null;
 async function selectContest(url) {
   hideMenu();
+  await slideRurima(false);
   if (url !== selectedContest) {
     selectedContest = url;
     if (url) loadTaskResults(url);
@@ -865,6 +994,7 @@ async function selectContest(url) {
 async function selectHome() {
   hideMenu();
   if (running || fileBusy || closing) return;
+  await slideRurima(false);
   await fileAction(async () => {
     if (!activeProblem?.home && !await leaveProblem()) return;
     selectedContest = HOME;
@@ -881,6 +1011,7 @@ $('home-icon').addEventListener('click', selectHome);
 // Shows the task page; its workspace opens once the page has been read.
 async function openTask(task) {
   if (running || fileBusy || closing) return;
+  await slideRurima(false);
   if (activeProblem?.url === task.url) {
     // The open problem keeps its edits; only its page is shown again.
     pendingTask = null;

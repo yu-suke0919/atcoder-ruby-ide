@@ -435,6 +435,11 @@ fn main() {
                 contest_lock: Arc::new(Mutex::new(())),
             });
             Browser::create_home(app, browser_args.clone())?;
+            // The screen's own text can be searched for in るりま from the right-click menu too.
+            #[cfg(windows)]
+            if let Some(main) = app.get_webview("main") {
+                browser::add_search_menu(&main);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -466,7 +471,12 @@ fn main() {
             browser::browser_close_tasks,
             browser::browser_open,
             browser::browser_history,
-            browser::browser_reload
+            browser::browser_reload,
+            browser::rurima_show,
+            browser::rurima_layout,
+            browser::rurima_history,
+            browser::rurima_reload,
+            browser::browser_snapshot
         ])
         .build(context)
         .expect("アプリを起動できませんでした")

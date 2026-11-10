@@ -26,3 +26,74 @@ pub fn browser_target(input: &str) -> Result<Url, String> {
         )
     })
 }
+
+/// Origins the るりま window may open (D3): the reference, and the search engine that searches
+/// its full text.
+pub const RURIMA_ORIGINS: &[&str] = &["https://docs.ruby-lang.org", "https://www.google.com"];
+/// The first page of the るりま window: the reference of Ruby 3.4, the Ruby AtCoder uses.
+pub const RURIMA_HOME: &str = "https://docs.ruby-lang.org/ja/3.4/doc/index.html";
+/// Added after the words. Narrowing to a path such as `/ja/latest/` was not applied by Google.
+const RURIMA_SEARCH: &str = "site:docs.ruby-lang.org";
+const RURIMA_VERSION: &str = "3.4";
+const MAX_SEARCH_CHARS: usize = 200;
+
+/// Whether the るりま window may open a URL.
+pub fn is_rurima_page(url: &Url) -> bool {
+    RURIMA_ORIGINS
+        .iter()
+        .any(|origin| Url::parse(origin).is_ok_and(|origin| origin.origin() == url.origin()))
+}
+
+/// The Ruby 3.4 page, AtCoder's Ruby, for a page of another version of the Japanese reference
+/// (`/ja/latest/…`, `/ja/4.0/…`). Every version names the latest one's page as the canonical one,
+/// so Google lists mostly those.
+pub fn rurima_page(url: &Url) -> Option<Url> {
+    if url.origin() != Url::parse(RURIMA_ORIGINS[0]).ok()?.origin() {
+        return None;
+    }
+    let (version, rest) = url.path().strip_prefix("/ja/")?.split_once('/')?;
+    let other = version == "latest" || version.starts_with(|c: char| c.is_ascii_digit());
+    if !other || version == RURIMA_VERSION {
+        return None;
+    }
+    let mut page = url.clone();
+    page.set_path(&format!("/ja/{RURIMA_VERSION}/{rest}"));
+    Some(page)
+}
+
+/// What the るりま window opens for text typed or selected: a page of the reference or of the
+/// search as it is (a missing scheme means HTTPS), or else the full-text search for the words.
+pub fn rurima_target(input: &str) -> Result<Url, String> {
+    let words = input.split_whitespace().collect::<Vec<_>>().join(" ");
+    if words.is_empty() {
+        return Err("検索する語を入れてください。".into());
+    }
+    let page = if words.contains("://") {
+        Some(Url::parse(&words).ok())
+    } else if !words.contains(' ')
+        && RURIMA_ORIGINS
+            .iter()
+            .any(|origin| words.starts_with(origin.trim_start_matches("https://")))
+    {
+        Some(Url::parse(&format!("https://{words}")).ok())
+    } else {
+        None
+    };
+    if let Some(page) = page {
+        return page
+            .filter(is_rurima_page)
+            .map(|page| rurima_page(&page).unwrap_or(page))
+            .ok_or_else(|| {
+                format!(
+                    "るりまの窓で開けるのは {} のページだけです。",
+                    RURIMA_ORIGINS.join("、")
+                )
+            });
+    }
+    let words: String = words.chars().take(MAX_SEARCH_CHARS).collect();
+    Url::parse_with_params(
+        "https://www.google.com/search",
+        &[("q", format!("{words} {RURIMA_SEARCH}"))],
+    )
+    .map_err(|e| e.to_string())
+}
