@@ -2,8 +2,8 @@
 //! contest. Pages cannot call the app; the app reads a task page after it has loaded.
 use atcoder_ruby_ide::{
     browser_target, contest_top, fetch_page, http_client, is_allowed, is_rurima_page, is_task_page,
-    read_task_page, rurima_target, submissions_page, unix_now, Contests, Submissions, Workspaces,
-    RURIMA_HOME,
+    read_task_page, rurima_page, rurima_target, submissions_page, unix_now, Contests, Submissions,
+    Workspaces, RURIMA_HOME,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -287,9 +287,24 @@ fn read_contest_top(webview: &tauri::Webview, page: Url) {
 
 /// The るりま window opens only the reference and the search for its full text (D3).
 fn rurima_builder(app: &tauri::AppHandle, url: Url) -> WebviewBuilder<tauri::Wry> {
-    let app_for_window = app.clone();
+    let (app_for_window, app_for_page) = (app.clone(), app.clone());
     let mut builder = WebviewBuilder::new(RURIMA, WebviewUrl::External(url))
-        .on_navigation(|url| rurima_from_origin(url).is_some())
+        .on_navigation(move |url| match rurima_from_origin(url) {
+            // Google lists only the latest version's pages; Ruby 3.4's is opened instead.
+            Some(page) => match rurima_page(&page) {
+                Some(version) => {
+                    let app = app_for_page.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Some(webview) = app.get_webview(RURIMA) {
+                            let _ = webview.navigate(rurima_to_origin(&version));
+                        }
+                    });
+                    false
+                }
+                None => true,
+            },
+            None => false,
+        })
         .on_new_window(move |url, _| {
             if rurima_from_origin(&url).is_some() {
                 if let Some(webview) = app_for_window.get_webview(RURIMA) {

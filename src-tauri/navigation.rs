@@ -32,9 +32,11 @@ pub fn browser_target(input: &str) -> Result<Url, String> {
 pub const RURIMA_ORIGINS: &[&str] = &["https://docs.ruby-lang.org", "https://www.google.com"];
 /// The first page of the るりま window: the reference of Ruby 3.4, the Ruby AtCoder uses.
 pub const RURIMA_HOME: &str = "https://docs.ruby-lang.org/ja/3.4/doc/index.html";
-/// Added after the words: the title of every page of the reference for Ruby 3.4, and the site.
-/// Google ignored a site with a path, `site:docs.ruby-lang.org/ja/3.4/`, for some words.
-const RURIMA_SEARCH: &str = "\"Ruby 3.4 リファレンスマニュアル\" site:docs.ruby-lang.org";
+/// Added after the words. Every version's pages name the latest version's page as the canonical
+/// one, so Google lists only those; `rurima_page` opens them as Ruby 3.4's.
+const RURIMA_SEARCH: &str = "site:docs.ruby-lang.org/ja/latest/";
+const RURIMA_LATEST: &str = "/ja/latest/";
+const RURIMA_VERSION: &str = "/ja/3.4/";
 const MAX_SEARCH_CHARS: usize = 200;
 
 /// Whether the るりま window may open a URL.
@@ -42,6 +44,17 @@ pub fn is_rurima_page(url: &Url) -> bool {
     RURIMA_ORIGINS
         .iter()
         .any(|origin| Url::parse(origin).is_ok_and(|origin| origin.origin() == url.origin()))
+}
+
+/// The Ruby 3.4 page, AtCoder's Ruby, for a page of the latest version of the reference.
+pub fn rurima_page(url: &Url) -> Option<Url> {
+    if url.origin() != Url::parse(RURIMA_ORIGINS[0]).ok()?.origin() {
+        return None;
+    }
+    let rest = url.path().strip_prefix(RURIMA_LATEST)?;
+    let mut page = url.clone();
+    page.set_path(&format!("{RURIMA_VERSION}{rest}"));
+    Some(page)
 }
 
 /// What the るりま window opens for text typed or selected: a page of the reference or of the
@@ -63,12 +76,15 @@ pub fn rurima_target(input: &str) -> Result<Url, String> {
         None
     };
     if let Some(page) = page {
-        return page.filter(is_rurima_page).ok_or_else(|| {
-            format!(
-                "るりまの窓で開けるのは {} のページだけです。",
-                RURIMA_ORIGINS.join("、")
-            )
-        });
+        return page
+            .filter(is_rurima_page)
+            .map(|page| rurima_page(&page).unwrap_or(page))
+            .ok_or_else(|| {
+                format!(
+                    "るりまの窓で開けるのは {} のページだけです。",
+                    RURIMA_ORIGINS.join("、")
+                )
+            });
     }
     let words: String = words.chars().take(MAX_SEARCH_CHARS).collect();
     Url::parse_with_params(
