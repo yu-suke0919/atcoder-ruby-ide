@@ -1,7 +1,8 @@
 use atcoder_ruby_ide::{
     browser_target, contest_top, fetch_page, http_client, input_code, is_rurima_page, parse_task,
-    parse_task_list, reading_forms, rurima_target, submissions_page, Contest, ContestKey, Contests,
-    DocumentStore, SampleCase, Samples, Submissions, Task, TaskResult, Workspaces,
+    parse_task_list, reading_forms, rurima_page, rurima_target, submissions_page, Contest,
+    ContestKey, Contests, DocumentStore, SampleCase, Samples, Submissions, Task, TaskResult,
+    Workspaces,
 };
 use std::path::Path;
 
@@ -1601,21 +1602,48 @@ fn d3_rurima_searches_its_full_text_on_google_and_opens_only_rurima_or_google() 
     };
     assert_eq!(
         rurima_target("each_slice").unwrap().as_str(),
-        "https://www.google.com/search?q=each_slice+%22Ruby+3.4+%E3%83%AA%E3%83%95%E3%82%A1%E3%83%AC%E3%83%B3%E3%82%B9%E3%83%9E%E3%83%8B%E3%83%A5%E3%82%A2%E3%83%AB%22+site%3Adocs.ruby-lang.org"
+        "https://www.google.com/search?q=each_slice+site%3Adocs.ruby-lang.org%2Fja%2Flatest%2F"
     );
     // Spaces are folded and the words are cut at 200 characters.
     assert_eq!(
         query("  最大公約数 \n gcd "),
-        "最大公約数 gcd \"Ruby 3.4 リファレンスマニュアル\" site:docs.ruby-lang.org"
+        "最大公約数 gcd site:docs.ruby-lang.org/ja/latest/"
     );
     assert_eq!(
         query(&"あ".repeat(300)),
-        format!(
-            "{} \"Ruby 3.4 リファレンスマニュアル\" site:docs.ruby-lang.org",
-            "あ".repeat(200)
-        )
+        format!("{} site:docs.ruby-lang.org/ja/latest/", "あ".repeat(200))
     );
     assert!(rurima_target(" \n ").is_err());
+    // Google lists only the latest version's pages; they open as Ruby 3.4's, AtCoder's Ruby.
+    for (latest, page) in [
+        (
+            "https://docs.ruby-lang.org/ja/latest/class/Rational.html",
+            Some("https://docs.ruby-lang.org/ja/3.4/class/Rational.html"),
+        ),
+        (
+            "https://docs.ruby-lang.org/ja/latest/method/Array/i/each_slice.html#x",
+            Some("https://docs.ruby-lang.org/ja/3.4/method/Array/i/each_slice.html#x"),
+        ),
+        (
+            "https://docs.ruby-lang.org/ja/3.4/class/Rational.html",
+            None,
+        ),
+        ("https://docs.ruby-lang.org/en/latest/Array.html", None),
+        ("https://www.google.com/search?q=latest", None),
+    ] {
+        let url = url::Url::parse(latest).unwrap();
+        assert_eq!(
+            rurima_page(&url).as_ref().map(url::Url::as_str),
+            page,
+            "{latest}"
+        );
+    }
+    assert_eq!(
+        rurima_target("https://docs.ruby-lang.org/ja/latest/class/Rational.html")
+            .unwrap()
+            .as_str(),
+        "https://docs.ruby-lang.org/ja/3.4/class/Rational.html"
+    );
     // The pages of the reference and of the search open as they are, with https added.
     for url in [
         "https://docs.ruby-lang.org/ja/3.4/class/Array.html",
