@@ -1373,25 +1373,32 @@ test('M20/U5b: a judging submission keeps updating its color after another task 
   await colored('follow_a', 'ac', 30000);
 });
 
-test('D3: the るりま window slides over the AtCoder page and searches the full text from the URL field, F1 and the right-click menu', async () => {
+test('D3: the るりま window slides over the darkened AtCoder page with its own URL field and search field, and searches from F1 and the right-click menu', async () => {
   const google = words => `https://www.google.com/search?${new URLSearchParams({ q: `${words} "Ruby 3.4 リファレンスマニュアル" site:docs.ruby-lang.org` })}`;
   const toggle = page.locator('#rurima-toggle');
-  const url = page.locator('#browser-url');
-  const shows = value => page.waitForFunction(value => document.getElementById('browser-url').value === value, value);
-  const atcoder = await url.inputValue();
+  const layer = page.locator('#rurima-layer');
+  const rurimaUrl = page.locator('#rurima-url');
+  const search = page.locator('#rurima-search');
+  const shows = value => page.waitForFunction(value => document.getElementById('rurima-url').value === value, value);
+  const atcoder = await page.locator('#browser-url').inputValue();
   // The window is made on first use, which takes a while in the real app.
   await toggle.click();
   await page.locator('#rurima-toggle[aria-pressed="true"]').waitFor();
+  await layer.waitFor();
   await shows('https://docs.ruby-lang.org/ja/3.4/doc/index.html');
-  // The search field between the URL field and the window searches the full text.
-  const search = page.locator('#rurima-search');
+  // The AtCoder page stays behind it, with its controls put aside.
+  assert.equal(await page.locator('#browser-url').inputValue(), atcoder);
+  assert.equal(await page.locator('#browser-url').isDisabled(), true);
+  // The search field inside the window searches the full text.
   await search.fill('split');
-  await page.screenshot({ path: 'test-results/rurima-search.png' });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.waitForFunction(() => document.getElementById('rurima-panel').style.getPropertyValue('--reveal') === '1');
+  await page.screenshot({ path: 'test-results/rurima-window-1280.png' });
   await search.press('Enter');
   await shows(google('split'));
-  // Words in the URL field are searched for too.
-  await url.fill('最大公約数');
-  await url.press('Enter');
+  // Words in the window's URL field are searched for too.
+  await rurimaUrl.fill('最大公約数');
+  await rurimaUrl.press('Enter');
   await shows(google('最大公約数'));
   // F1 searches for the word at the editor's cursor, or for the selected text.
   await page.locator('.cm-line').first().click();
@@ -1410,16 +1417,23 @@ test('D3: the るりま window slides over the AtCoder page and searches the ful
     await page.evaluate(() => window.__testEvent('rurima-search', 'each_slice'));
     await shows(google('each_slice'));
   }
-  // Pressed again, the window goes up and the AtCoder page is shown again.
+  // Pressed again, the window goes up and the AtCoder page comes back.
   await toggle.click();
+  await layer.waitFor({ state: 'hidden' });
   assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
-  await shows(atcoder);
-  assert.equal(await search.isVisible(), false);
-  // Opening home also puts it away.
+  assert.equal(await page.locator('#browser-url').isDisabled(), false);
+  // The darkened page around the window puts it away too, and so does opening home.
   await toggle.click();
+  await layer.waitFor();
   await shows(google(runner !== 'native' ? 'each_slice' : 'a = ge'));
+  const box = await layer.boundingBox();
+  await page.mouse.click(box.x + 5, box.y + box.height - 5);
+  await layer.waitFor({ state: 'hidden' });
+  await toggle.click();
+  await layer.waitFor();
   await page.locator('#home-icon').click();
   await page.locator('#problem-title').filter({ hasText: 'ホーム' }).waitFor();
+  await layer.waitFor({ state: 'hidden' });
   assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
 });
 
