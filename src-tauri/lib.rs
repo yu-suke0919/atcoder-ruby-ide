@@ -9,6 +9,7 @@ mod comparison;
 mod contests;
 mod document;
 mod files;
+mod graph_form;
 mod input_code;
 #[cfg(unix)]
 mod lsp;
@@ -32,6 +33,7 @@ pub use contests::{
     ContestTask, Contests, RegisteredContest,
 };
 pub use document::{DocumentResult, DocumentStore};
+pub use graph_form::{graph_form, GraphForm};
 pub use input_code::{input_code, reading_forms};
 #[cfg(unix)]
 pub use lsp::{LspInfo, RubyLsp};

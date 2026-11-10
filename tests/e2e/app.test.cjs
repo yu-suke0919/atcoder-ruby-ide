@@ -1376,7 +1376,7 @@ test('M20/U5b: a judging submission keeps updating its color after another task 
 test('D3: the るりま window slides over the darkened AtCoder page with its own URL field and search field, and searches from F1 and the right-click menu', async () => {
   const google = words => `https://www.google.com/search?${new URLSearchParams({ q: `${words} site:docs.ruby-lang.org` })}`;
   const toggle = page.locator('#rurima-toggle');
-  const layer = page.locator('#rurima-layer');
+  const layer = page.locator('#browser-cover');
   const rurimaUrl = page.locator('#rurima-url');
   const search = page.locator('#rurima-search');
   const shows = value => page.waitForFunction(value => document.getElementById('rurima-url').value === value, value);
@@ -1702,7 +1702,7 @@ test('R9: discarding a failed save to switch tabs puts the samples back as saved
 
 test('D3: the るりま window follows the last press without stacking, never stalls on a slow reply, and darkens the page as it comes out', holdsReplies, async () => {
   const toggle = page.locator('#rurima-toggle');
-  const layer = page.locator('#rurima-layer');
+  const layer = page.locator('#browser-cover');
   const out = () => page.waitForFunction(() => document.getElementById('rurima-panel').style.getPropertyValue('--reveal') === '1');
   // The real app sends a JPEG picture of the AtCoder page; the screen's CSP must let it be shown.
   const picture = [...await page.screenshot({ type: 'jpeg', clip: { x: 0, y: 0, width: 40, height: 30 } })];
@@ -1718,17 +1718,116 @@ test('D3: the るりま window follows the last press without stacking, never st
   assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
   await out();
   try {
-    await page.waitForFunction(() => document.getElementById('rurima-snapshot').naturalWidth === 40, null, { timeout: 3000 });
+    await page.waitForFunction(() => document.getElementById('cover-snapshot').naturalWidth === 40, null, { timeout: 3000 });
   } finally { app.request = request; }
   // Fully out, the page behind is as dark as white turning grey.
-  assert.equal(await page.locator('#rurima-shade').evaluate(shade => getComputedStyle(shade).opacity), '0.5');
+  assert.equal(await page.locator('#cover-shade').evaluate(shade => getComputedStyle(shade).opacity), '0.5');
   // A reply that never comes does not keep the window out.
-  const reply = holdReply('rurima_layout');
+  const reply = holdReply('cover_layout');
   try {
     await toggle.click();
     await layer.waitFor({ state: 'hidden', timeout: 2000 });
   } finally { reply.release(); }
   assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+});
+
+test('D4: the graph window draws the selected sample by the form of the input format or one chosen by hand, directed or not, and zooms, pans and drags', async () => {
+  const problem = await seedWorkspaceProblem(app, testContest, 'graph', { task: null, code: null, cases: null, label: 'G', page: {
+    samples: [['4 3\n1 2 5\n1 3 7\n3 4 9\n', '0\n'], ['5 4\n1 2 1\n2 3 1\n3 1 1\n4 5 1\n', '0\n']],
+    input: '<var>N</var> <var>M</var>\n<var>u_1</var> <var>v_1</var> <var>w_1</var>\n<var>\\vdots</var>\n<var>u_M</var> <var>v_M</var> <var>w_M</var>',
+    constraints: ['<var>2 \\leq N \\leq 100</var>', '<var>1 \\leq u_i, v_i \\leq N</var>', '入力はすべて整数']
+  } });
+  await openProblem(page, problem);
+  const toggle = page.locator('#graph-toggle');
+  const cover = page.locator('#browser-cover');
+  const canvas = page.locator('#graph-canvas');
+  const vertex = label => canvas.locator(`.graph-vertex[data-label="${label}"]`);
+  const place = async label => (await vertex(label).getAttribute('transform')).match(/translate\(([-\d.e]+) ([-\d.e]+)\)/).slice(1).map(Number);
+  const box = async () => (await canvas.getAttribute('viewBox')).split(' ').map(Number);
+  const counts = async () => [await canvas.locator('.graph-vertex').count(), await canvas.locator('.graph-edge').count()];
+  const shows = (vertices, edges) => page.waitForFunction(([v, e]) => document.querySelectorAll('#graph-canvas .graph-vertex').length === v && document.querySelectorAll('#graph-canvas .graph-edge').length === e, [vertices, edges]);
+  await toggle.click();
+  await cover.waitFor();
+  await page.waitForFunction(() => document.getElementById('graph-panel').style.getPropertyValue('--reveal') === '1');
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.locator('#rurima-panel').isHidden(), true);
+  assert.equal(await page.locator('#browser-url').isDisabled(), true);
+  // The form comes from the input format: weighted edges from the second line.
+  assert.equal(await page.locator('#graph-form option').first().textContent(), '自動（辺の列・2行目から）');
+  assert.equal(await page.locator('#graph-title').textContent(), 'グラフ（サンプル 1）');
+  assert.deepEqual(await counts(), [4, 3]);
+  assert.deepEqual(await canvas.locator('.graph-weight').allTextContents(), ['5', '7', '9']);
+  // A tree hangs from vertex 1, children in order.
+  const [one, two, three, four] = await Promise.all([1, 2, 3, 4].map(place));
+  assert.ok(one[1] < two[1] && two[1] === three[1] && three[1] < four[1] && two[0] < three[0], JSON.stringify({ one, two, three, four }));
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.screenshot({ path: 'test-results/graph-window-1280.png' });
+  // Directed edges get arrows.
+  assert.equal(await canvas.locator('.graph-edge[marker-end]').count(), 0);
+  await page.locator('#graph-directed').check();
+  assert.equal(await canvas.locator('.graph-edge[marker-end]').count(), 3);
+  // The other sample, and the input as it is edited.
+  await page.locator('#case-tabs [role="tab"]').nth(1).click();
+  await shows(5, 4);
+  assert.equal(await page.locator('#graph-title').textContent(), 'グラフ（サンプル 2）');
+  await page.getByTestId('stdin').fill('101 0\n');
+  await page.locator('#graph-message').filter({ hasText: '頂点が101個あります' }).waitFor();
+  assert.deepEqual(await counts(), [0, 0]);
+  // A form chosen by hand: parents from the line given.
+  await page.getByTestId('stdin').fill('4 3\n1 1 2\n');
+  await page.locator('#graph-message').filter({ hasText: '3行目' }).waitFor();
+  await page.locator('#graph-form').selectOption('parents');
+  await shows(4, 3);
+  assert.equal(await page.locator('#graph-line').inputValue(), '2');
+  assert.equal(await page.locator('#graph-message').textContent(), '');
+  await page.locator('#graph-line').fill('1');
+  await page.locator('#graph-message').filter({ hasText: '1行目' }).waitFor();
+  await page.locator('#graph-line').fill('2');
+  await shows(4, 3);
+  // A vertex drags, the wheel zooms and the background pans.
+  const fitted = await box();
+  const from = await place(4);
+  const circle = await vertex(4).locator('circle').boundingBox();
+  await page.mouse.move(circle.x + circle.width / 2, circle.y + circle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(circle.x + circle.width / 2 + 50, circle.y + circle.height / 2, { steps: 4 });
+  await page.mouse.up();
+  const to = await place(4);
+  assert.ok(to[0] > from[0] + 10 && Math.abs(to[1] - from[1]) < 1, JSON.stringify({ from, to }));
+  assert.deepEqual(await box(), fitted);
+  const area = await canvas.boundingBox();
+  await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
+  await page.mouse.wheel(0, -300);
+  await page.waitForFunction(width => Number(document.getElementById('graph-canvas').getAttribute('viewBox').split(' ')[2]) < width, fitted[2]);
+  const zoomed = await box();
+  await page.mouse.move(area.x + 10, area.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(area.x + 60, area.y + 40, { steps: 4 });
+  await page.mouse.up();
+  const panned = await box();
+  assert.ok(panned[0] < zoomed[0] && panned[1] < zoomed[1], JSON.stringify({ zoomed, panned }));
+  await page.locator('#graph-fit').click();
+  assert.notDeepEqual(await box(), panned);
+  // The るりま button swaps what the window shows, and back.
+  await page.locator('#rurima-toggle').click();
+  await page.locator('#rurima-panel').waitFor();
+  assert.equal(await page.locator('#graph-panel').isHidden(), true);
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+  await toggle.click();
+  await page.locator('#graph-panel').waitFor();
+  assert.equal(await page.locator('#rurima-toggle').getAttribute('aria-pressed'), 'false');
+  // The darkened page puts it away; at home there is no form to read by.
+  const outer = await cover.boundingBox();
+  await page.mouse.click(outer.x + 5, outer.y + outer.height - 5);
+  await cover.waitFor({ state: 'hidden' });
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+  await page.locator('#home-icon').click();
+  await page.locator('#problem-title').filter({ hasText: 'ホーム' }).waitFor();
+  await toggle.click();
+  await page.locator('#graph-message').filter({ hasText: '形式を判定できません' }).waitFor();
+  assert.equal(await page.locator('#graph-form option').first().textContent(), '自動（判定できません）');
+  await toggle.click();
+  await cover.waitFor({ state: 'hidden' });
 });
 
 test('M03: going back to the saved content clears a failed save', async () => {

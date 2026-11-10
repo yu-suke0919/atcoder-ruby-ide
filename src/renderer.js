@@ -3,6 +3,8 @@ import { createEditor } from './editor.mjs';
 import { createLspClient } from './lsp-completion.mjs';
 import { SampleCases, MAX_CASES } from './sample-cases.mjs';
 import { setupLayout } from './layout.mjs';
+import { readGraph, layoutGraph } from './graph.mjs';
+import { GraphView } from './graph-view.mjs';
 
 const $ = (id) => document.getElementById(id);
 const input = $('stdin');
@@ -248,6 +250,7 @@ function showCase() {
   differenceDialog.close();
   const item = cases.current;
   input.value = item.stdin;
+  drawGraph();
   expectedOutput.value = item.expectedOutput;
   compareOutput.checked = item.compare;
   showTolerance();
@@ -411,7 +414,7 @@ function editCase(field, value) {
   resetComparison();
   scheduleSave();
 }
-input.addEventListener('input', () => editCase('stdin', input.value));
+input.addEventListener('input', () => { editCase('stdin', input.value); drawGraph(); });
 expectedOutput.addEventListener('input', () => editCase('expectedOutput', expectedOutput.value));
 compareOutput.addEventListener('change', () => { editCase('compare', compareOutput.checked); updateButtons(); });
 // The tolerance is the problem's: changing it invalidates every sample.
@@ -456,6 +459,7 @@ function applyWorkspace(result, problem) {
   $('copy-notice').hidden = true;
   activeProblem = { ...problem, files: result.files, file: result.file };
   editor.readingForms = result.readingForms ?? [];
+  useGraphForm(result.graph ?? null);
   editor.show(result.file, result.document.code);
   savedCode = editor.value;
   filePath = result.document.filePath;
@@ -647,101 +651,109 @@ $('browser-url').addEventListener('keydown', async event => {
     $('browser-url').blur();
   } catch (error) { browserMessage(error.message); }
 });
-// The るりま window (D3) is drawn here around its page, which lies over the screen like the
-// AtCoder pages; nothing can be drawn over those, so while the window is out the AtCoder page is
-// hidden behind a picture of it, darkened as the window comes out. One loop moves the window
-// toward the last press, so presses never stack up, and it never waits on a reply: the page is
-// placed by the latest position, sent once the previous one is answered or has taken too long.
-const RURIMA_SLIDE_MS = 180;
-const RURIMA_SHADE = 0.5;
-let rurimaOpen = false;
-let rurimaReveal = 0;
-let rurimaMoving = null;
-let rurimaPicture = null;
+// The windows that slide over the AtCoder page, るりま (D3) and the graph (D4), are drawn here;
+// the るりま page lies over the screen like the AtCoder pages. Nothing can be drawn over those, so
+// while a window is out the AtCoder page is hidden behind a picture of it, darkened as the window
+// comes out. One loop moves the window toward the last press, so presses never stack up, and it
+// never waits on a reply: the pages are placed by the latest position, sent once the previous
+// one is answered or has taken too long. Pressing the other window's button while one is out
+// swaps what the window shows.
+const COVER_SLIDE_MS = 180;
+const COVER_SHADE = 0.5;
+let coverWanted = null; // 'rurima', 'graph', or null to put the window away
+let coverShown = 'rurima';
+let coverReveal = 0;
+let coverMoving = null;
+let coverPicture = null;
+let coverPlace = null;
+let coverPlacing = false;
 let rurimaUrl = '';
-let rurimaPlace = null;
-let rurimaPlacing = false;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-function placeRurima(open = true) {
-  const rect = $('rurima-host').getBoundingClientRect();
-  rurimaPlace = [open, rect.x, rect.y, rect.width, rect.height];
-  if (rurimaPlacing) return;
-  rurimaPlacing = true;
+function placeCover(open = true) {
+  const rect = open && coverShown === 'rurima' ? $('rurima-host').getBoundingClientRect() : { x: 0, y: 0, width: 0, height: 0 };
+  coverPlace = [open, rect.x, rect.y, rect.width, rect.height];
+  if (coverPlacing) return;
+  coverPlacing = true;
   (async () => {
-    while (rurimaPlace) {
-      const place = rurimaPlace;
-      rurimaPlace = null;
-      await Promise.race([ide.rurimaLayout(...place).catch(() => {}), delay(300)]);
+    while (coverPlace) {
+      const place = coverPlace;
+      coverPlace = null;
+      await Promise.race([ide.coverLayout(...place).catch(() => {}), delay(300)]);
     }
-    rurimaPlacing = false;
+    coverPlacing = false;
   })();
 }
-new ResizeObserver(() => { if (rurimaOpen && !rurimaMoving) placeRurima(); }).observe($('rurima-host'));
+new ResizeObserver(() => { if (coverWanted === 'rurima' && !coverMoving) placeCover(); }).observe($('rurima-host'));
 // A picture that cannot be shown leaves the darkened background instead of a broken image.
-$('rurima-snapshot').addEventListener('error', () => $('rurima-snapshot').removeAttribute('src'));
+$('cover-snapshot').addEventListener('error', () => $('cover-snapshot').removeAttribute('src'));
 async function pictureAtCoderPage() {
   const bytes = await Promise.race([ide.browserSnapshot().catch(() => null), delay(1500)]);
-  if (rurimaPicture) URL.revokeObjectURL(rurimaPicture);
+  if (coverPicture) URL.revokeObjectURL(coverPicture);
   // The app sends the bytes as an ArrayBuffer; the UI test host as an array of numbers.
   const jpeg = bytes ? new Uint8Array(bytes) : null;
-  rurimaPicture = jpeg?.length ? URL.createObjectURL(new Blob([jpeg], { type: 'image/jpeg' })) : null;
-  if (rurimaPicture) $('rurima-snapshot').src = rurimaPicture;
-  else $('rurima-snapshot').removeAttribute('src');
+  coverPicture = jpeg?.length ? URL.createObjectURL(new Blob([jpeg], { type: 'image/jpeg' })) : null;
+  if (coverPicture) $('cover-snapshot').src = coverPicture;
+  else $('cover-snapshot').removeAttribute('src');
 }
 // The next frame, or a short wait when frames do not come.
 const nextFrame = () => new Promise(resolve => {
   const timer = setTimeout(resolve, 50);
   requestAnimationFrame(() => { clearTimeout(timer); resolve(); });
 });
-function showRurimaReveal() {
-  const shown = 1 - (1 - rurimaReveal) ** 3;
-  $('rurima-panel').style.setProperty('--reveal', String(shown));
-  $('rurima-shade').style.opacity = String(RURIMA_SHADE * shown);
+function showCoverReveal() {
+  const shown = 1 - (1 - coverReveal) ** 3;
+  $(`${coverShown}-panel`).style.setProperty('--reveal', String(shown));
+  $('cover-shade').style.opacity = String(COVER_SHADE * shown);
 }
-async function moveRurima() {
+async function moveCover() {
   let last = performance.now();
   while (true) {
     // Coming out from fully put away: the AtCoder page is pictured first, then hidden.
-    if (rurimaOpen && $('rurima-layer').hidden) {
+    if (coverWanted && $('browser-cover').hidden) {
       await pictureAtCoderPage();
-      showRurimaReveal();
-      $('rurima-layer').hidden = false;
+      showCoverReveal();
+      $('browser-cover').hidden = false;
       last = performance.now();
     }
     const now = performance.now();
-    const step = (now - last) / RURIMA_SLIDE_MS;
+    const step = (now - last) / COVER_SLIDE_MS;
     last = now;
-    rurimaReveal = rurimaOpen ? Math.min(1, rurimaReveal + step) : Math.max(0, rurimaReveal - step);
-    showRurimaReveal();
-    if (!rurimaOpen && rurimaReveal === 0) {
-      placeRurima(false);
-      $('rurima-layer').hidden = true;
+    coverReveal = coverWanted ? Math.min(1, coverReveal + step) : Math.max(0, coverReveal - step);
+    showCoverReveal();
+    if (!coverWanted && coverReveal === 0) {
+      placeCover(false);
+      $('browser-cover').hidden = true;
       return;
     }
-    placeRurima();
-    if (rurimaOpen && rurimaReveal === 1) return;
+    placeCover();
+    if (coverWanted && coverReveal === 1) return;
     await nextFrame();
   }
 }
-function slideRurima(open) {
-  rurimaOpen = open;
-  $('rurima-toggle').setAttribute('aria-pressed', String(open));
+function slideCover(wanted) {
+  coverWanted = wanted;
+  if (wanted) {
+    coverShown = wanted;
+    for (const name of ['rurima', 'graph']) $(`${name}-panel`).hidden = name !== wanted;
+    showCoverReveal();
+  }
+  for (const name of ['rurima', 'graph']) $(`${name}-toggle`).setAttribute('aria-pressed', String(name === wanted));
   // The AtCoder page is put aside while the window is out, and so are its controls.
-  for (const id of ['browser-back', 'browser-forward', 'browser-reload', 'browser-url']) $(id).disabled = open;
-  rurimaMoving ??= moveRurima().finally(() => { rurimaMoving = null; });
-  return rurimaMoving;
+  for (const id of ['browser-back', 'browser-forward', 'browser-reload', 'browser-url']) $(id).disabled = Boolean(wanted);
+  coverMoving ??= moveCover().finally(() => { coverMoving = null; });
+  return coverMoving;
 }
 // Opens the window with the words searched for, or with the page it showed last. The press counts
 // at once, so presses made while the window's page is being made still decide where it ends.
 async function openRurima(query = null) {
   if (query?.trim()) $('rurima-search').value = query.trim().split(/\s+/).join(' ');
-  const moving = slideRurima(true);
+  const moving = slideCover('rurima');
   try {
     await ide.rurimaShow(query);
     browserMessage('');
   } catch (error) {
     browserMessage(error.message);
-    slideRurima(false);
+    if (coverWanted === 'rurima') slideCover(null);
   }
   await moving;
 }
@@ -760,8 +772,8 @@ $('rurima-back').addEventListener('click', () => ide.rurimaHistory(false).catch(
 $('rurima-forward').addEventListener('click', () => ide.rurimaHistory(true).catch(error => browserMessage(error.message)));
 $('rurima-reload').addEventListener('click', () => ide.rurimaReload().catch(error => browserMessage(error.message)));
 // The darkened page around the window puts it away.
-$('rurima-layer').addEventListener('click', event => { if (!$('rurima-panel').contains(event.target)) slideRurima(false); });
-$('rurima-toggle').addEventListener('click', () => (rurimaOpen ? slideRurima(false) : openRurima()));
+$('browser-cover').addEventListener('click', event => { if (!$(`${coverShown}-panel`).contains(event.target)) slideCover(null); });
+$('rurima-toggle').addEventListener('click', () => (coverWanted === 'rurima' ? slideCover(null) : openRurima()));
 $('rurima-search-bar').addEventListener('submit', event => {
   event.preventDefault();
   if ($('rurima-search').value.trim()) openRurima($('rurima-search').value);
@@ -775,6 +787,58 @@ document.addEventListener('keydown', event => {
 });
 // The right-click item 「るりまを全文検索」 of Windows sends the selected text.
 ide.onRurimaSearch(text => openRurima(text)).catch(error => message(String(error), true));
+
+// The graph window (D4) draws the selected sample's input by the form the task's input format
+// gave, or by one chosen by hand until another problem opens.
+const graphView = new GraphView($('graph-canvas'));
+const GRAPH_KINDS = { edges: '辺の列', parents: '親の配列' };
+let graphForm = null;
+let graphManual = null;
+let graphDrawn = '';
+function drawGraph() {
+  if (coverWanted !== 'graph') return;
+  $('graph-title').textContent = `グラフ（サンプル ${cases.selected + 1}）`;
+  $('graph-form').options[0].textContent = graphForm ? `自動（${GRAPH_KINDS[graphForm.kind]}・${graphForm.line + 1}行目から）` : '自動（判定できません）';
+  $('graph-form').value = graphManual?.kind ?? 'auto';
+  $('graph-line').disabled = !graphManual;
+  if (graphManual) $('graph-line').value = String(graphManual.line + 1);
+  const form = graphManual ?? graphForm;
+  const graph = form ? readGraph(input.value, form) : { error: '形式を判定できません。「形式」で辺の列か親の配列を選び、開始行を指定してください。' };
+  $('graph-message').textContent = graph.error ?? '';
+  const drawn = JSON.stringify(graph);
+  if (drawn === graphDrawn) return;
+  graphDrawn = drawn;
+  if (graph.error) graphView.clear();
+  else graphView.show(graph, layoutGraph(graph));
+}
+function useGraphForm(form) {
+  graphForm = form;
+  graphManual = null;
+  graphDrawn = '';
+}
+async function openGraph() {
+  graphDrawn = '';
+  const moving = slideCover('graph');
+  drawGraph();
+  await moving;
+  // Fitted again to the window as it ended up once out.
+  if (coverWanted === 'graph') graphView.fit();
+}
+$('graph-toggle').addEventListener('click', () => (coverWanted === 'graph' ? slideCover(null) : openGraph()));
+$('graph-form').addEventListener('change', () => {
+  const kind = $('graph-form').value;
+  const line = graphManual?.line ?? graphForm?.line ?? 1;
+  graphManual = kind === 'auto' ? null : { kind, line };
+  drawGraph();
+});
+$('graph-line').addEventListener('input', () => {
+  const line = Number($('graph-line').value);
+  if (!graphManual || !Number.isInteger(line) || line < 1) return;
+  graphManual = { ...graphManual, line: line - 1 };
+  drawGraph();
+});
+$('graph-directed').addEventListener('change', () => { graphView.directed = $('graph-directed').checked; });
+$('graph-fit').addEventListener('click', () => graphView.fit());
 // Leaving the field shows the page's URL again, as browsers do.
 $('browser-url').addEventListener('blur', () => { $('browser-url').value = browserUrl; });
 $('browser-back').addEventListener('click', () => ide.browserHistory(false).catch(error => browserMessage(error.message)));
@@ -973,7 +1037,7 @@ async function setHidden(url, hidden) {
 let pagesContest = null;
 async function selectContest(url) {
   hideMenu();
-  await slideRurima(false);
+  await slideCover(null);
   if (url !== selectedContest) {
     selectedContest = url;
     if (url) loadTaskResults(url);
@@ -994,7 +1058,7 @@ async function selectContest(url) {
 async function selectHome() {
   hideMenu();
   if (running || fileBusy || closing) return;
-  await slideRurima(false);
+  await slideCover(null);
   await fileAction(async () => {
     if (!activeProblem?.home && !await leaveProblem()) return;
     selectedContest = HOME;
@@ -1011,7 +1075,7 @@ $('home-icon').addEventListener('click', selectHome);
 // Shows the task page; its workspace opens once the page has been read.
 async function openTask(task) {
   if (running || fileBusy || closing) return;
-  await slideRurima(false);
+  await slideCover(null);
   if (activeProblem?.url === task.url) {
     // The open problem keeps its edits; only its page is shown again.
     pendingTask = null;

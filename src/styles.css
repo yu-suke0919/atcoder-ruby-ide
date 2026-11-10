@@ -190,13 +190,15 @@ h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 .rurima-toggle { white-space: nowrap; color: #c9c9ff; border-color: #33a; }
 .rurima-toggle:hover, .rurima-toggle[aria-pressed="true"] { background: #33a; color: #fff; border-color: #33a; }
 .browser-host { position: relative; }
-.rurima-layer { position: absolute; inset: 0; overflow: hidden; background: #0c1016; }
-.rurima-layer[hidden] { display: none; }
-.rurima-snapshot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+/* The windows that slide over the AtCoder page (D3, D4) and the darkened picture of it. */
+.browser-cover { position: absolute; inset: 0; overflow: hidden; background: #0c1016; }
+.browser-cover[hidden] { display: none; }
+.cover-snapshot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
 /* Darkens the page behind as the window comes out: white turns grey when it is fully out. */
-.rurima-shade { position: absolute; inset: 0; background: #000; opacity: 0; }
-.rurima-snapshot:not([src]) { display: none; }
-.rurima-panel { --reveal: 0; position: absolute; top: 12px; left: 10%; width: 80%; height: calc((90% - 12px) * var(--reveal)); display: flex; flex-direction: column; overflow: hidden; background: var(--panel); border: 2px solid #33a; border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
+.cover-shade { position: absolute; inset: 0; background: #000; opacity: 0; }
+.cover-snapshot:not([src]) { display: none; }
+.cover-window { --reveal: 0; position: absolute; top: 12px; left: 10%; width: 80%; height: calc((90% - 12px) * var(--reveal)); display: flex; flex-direction: column; overflow: hidden; background: var(--panel); border: 2px solid #33a; border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); text-align: left; }
+.cover-window[hidden] { display: none; }
 .rurima-bar, .rurima-search-bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px; flex-shrink: 0; }
 .rurima-bar { background: #33a; }
 .rurima-bar button { padding: 4px 8px; font-size: 13px; color: #fff; background: transparent; border-color: rgba(255, 255, 255, 0.4); }
@@ -205,6 +207,27 @@ h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 #rurima-url, #rurima-search { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid #5a5ad0; border-radius: 5px; padding: 5px 8px; font-size: 12px; }
 #rurima-url { font-family: Consolas, monospace; }
 .rurima-host { flex: 1; min-height: 0; margin: 0 6px 6px; background: #fff; }
+/* The graph window (D4) in the app's accent. */
+.graph-toggle { font-size: 10px; padding: 4px 8px; color: #d9ccff; border-color: var(--accent); }
+.graph-toggle:hover:enabled, .graph-toggle[aria-pressed="true"] { background: var(--accent); color: #171126; }
+.graph-panel { border-color: var(--accent); }
+.graph-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding: 6px 10px; flex-shrink: 0; background: #2d2540; color: var(--text); font-size: 12px; }
+.graph-bar label { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.graph-title { font-weight: 650; margin-right: auto; }
+.graph-bar select, #graph-line { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 3px 6px; font: inherit; }
+#graph-line { width: 4.5em; }
+#graph-directed { margin: 0; accent-color: var(--accent); }
+.graph-bar button { padding: 3px 10px; border-color: var(--border); }
+.graph-message { margin: 0; padding: 4px 10px; color: #f2c77d; font-size: 12px; flex-shrink: 0; }
+.graph-message:empty { display: none; }
+.graph-canvas { flex: 1; min-height: 0; width: 100%; background: #10141c; cursor: grab; touch-action: none; user-select: none; }
+.graph-canvas.panning { cursor: grabbing; }
+.graph-edge { stroke: #8f9bb0; stroke-width: 2; fill: none; }
+.graph-weight { fill: #f2c77d; font: 13px Consolas, monospace; text-anchor: middle; dominant-baseline: central; paint-order: stroke; stroke: #10141c; stroke-width: 4px; }
+.graph-vertex { cursor: move; }
+.graph-vertex circle { fill: #2d2540; stroke: var(--accent); stroke-width: 2; }
+.graph-vertex text { fill: #fff; font: 600 13px "Segoe UI", sans-serif; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.graph-arrow { fill: #8f9bb0; }
 #browser-url { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font: 12px Consolas, monospace; }
 .browser-message { margin: 0; padding: 4px 10px; color: #f5a3b2; font-size: 11px; flex-shrink: 0; }
 .browser-message:empty { display: none; }

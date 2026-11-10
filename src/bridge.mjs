@@ -36,7 +36,7 @@ export const ide = {
   browserHistory: forward => invoke('browser_history', { forward }),
   browserReload: () => invoke('browser_reload'),
   rurimaShow: query => invoke('rurima_show', { query }),
-  rurimaLayout: (open, x, y, width, height) => invoke('rurima_layout', { open, x, y, width, height }),
+  coverLayout: (open, x, y, width, height) => invoke('cover_layout', { open, x, y, width, height }),
   rurimaHistory: forward => invoke('rurima_history', { forward }),
   rurimaReload: () => invoke('rurima_reload'),
   // A picture of the shown AtCoder page as JPEG bytes; empty or null where it cannot be taken.

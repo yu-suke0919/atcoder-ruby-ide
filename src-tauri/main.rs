@@ -473,7 +473,7 @@ fn main() {
             browser::browser_history,
             browser::browser_reload,
             browser::rurima_show,
-            browser::rurima_layout,
+            browser::cover_layout,
             browser::rurima_history,
             browser::rurima_reload,
             browser::browser_snapshot

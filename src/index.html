@@ -11,7 +11,7 @@
   <header class="topbar">
     <div class="brand"><span class="ruby-mark" aria-hidden="true">◆</span><h1>AtCoder Ruby IDE</h1><span id="problem-title" class="brand-caption">問題を選んでください</span></div>
     <div id="contest-notice" class="contest-notice" role="alert" hidden><span id="contest-notice-text"></span><button id="contest-notice-close" class="contest-notice-close" aria-label="知らせを閉じる">×</button></div>
-    <div class="environment"><span class="live-dot" aria-hidden="true"></span><span data-testid="ruby-version" id="ruby-version">Ruby を確認中…</span><button id="ruby-recheck" class="quiet-button" disabled>Ruby を再確認</button></div>
+    <div class="environment"><span class="live-dot" aria-hidden="true"></span><span data-testid="ruby-version" id="ruby-version">Ruby を確認中…</span><button id="ruby-recheck" class="quiet-button" disabled>Ruby を再確認</button><button id="graph-toggle" class="graph-toggle" aria-pressed="false" title="選択中のサンプルの入力からグラフ・木を描く">グラフ</button></div>
   </header>
   <div class="app">
     <nav id="contest-rail" class="rail" aria-label="コンテストと問題集">
@@ -78,11 +78,16 @@
       <div class="browser-toolbar"><button id="browser-back" title="戻る" aria-label="戻る">←</button><button id="browser-forward" title="進む" aria-label="進む">→</button><button id="browser-reload" title="更新" aria-label="更新">↻</button><input id="browser-url" type="text" aria-label="URL" spellcheck="false" autocomplete="off"><button id="rurima-toggle" class="rurima-toggle" aria-pressed="false" title="るりま（Rubyリファレンスマニュアル）を開いて全文検索する（F1）">るりま</button></div>
       <p id="browser-message" class="browser-message" role="status"></p>
       <div id="browser-host" class="browser-host"><p>AtCoder のページを表示します。ログイン・参加登録・提出はここで行います。</p>
-        <div id="rurima-layer" class="rurima-layer" hidden><img id="rurima-snapshot" class="rurima-snapshot" alt=""><div id="rurima-shade" class="rurima-shade"></div>
-          <section id="rurima-panel" class="rurima-panel" aria-label="るりま（Rubyリファレンスマニュアル）">
+        <div id="browser-cover" class="browser-cover" hidden><img id="cover-snapshot" class="cover-snapshot" alt=""><div id="cover-shade" class="cover-shade"></div>
+          <section id="rurima-panel" class="cover-window rurima-panel" aria-label="るりま（Rubyリファレンスマニュアル）">
             <div class="rurima-bar"><button id="rurima-back" title="戻る" aria-label="るりまで戻る">←</button><button id="rurima-forward" title="進む" aria-label="るりまで進む">→</button><button id="rurima-reload" title="更新" aria-label="るりまを更新">↻</button><input id="rurima-url" type="text" aria-label="るりまのURL" spellcheck="false" autocomplete="off"></div>
             <form id="rurima-search-bar" class="rurima-search-bar" role="search"><input id="rurima-search" type="search" aria-label="るりまを全文検索" placeholder="るりまを全文検索（語を入れてEnter）" spellcheck="false" autocomplete="off"><button type="submit">検索</button></form>
             <div id="rurima-host" class="rurima-host"></div>
+          </section>
+          <section id="graph-panel" class="cover-window graph-panel" aria-label="グラフ" hidden>
+            <div class="graph-bar"><span id="graph-title" class="graph-title">グラフ</span><label>形式 <select id="graph-form" aria-label="グラフの形式"><option value="auto">自動</option><option value="edges">辺の列</option><option value="parents">親の配列</option></select></label><label>開始行 <input id="graph-line" type="number" min="1" value="2" aria-label="開始行" disabled></label><label><input id="graph-directed" type="checkbox">有向</label><button id="graph-fit" title="全体が窓に収まる大きさに戻す">全体表示</button></div>
+            <p id="graph-message" class="graph-message" role="status"></p>
+            <svg id="graph-canvas" class="graph-canvas" role="img" aria-label="グラフの図"></svg>
           </section>
         </div>
       </div>

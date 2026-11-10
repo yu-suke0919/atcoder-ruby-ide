@@ -94,6 +94,9 @@ impl Task {
             .map(|format| crate::reading_forms(format, &self.constraints))
             .unwrap_or_default()
     }
+    fn graph_form(&self) -> Option<crate::GraphForm> {
+        crate::graph_form(self.input_format.as_deref()?, &self.constraints)
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -102,6 +105,8 @@ pub struct TaskWorkspace {
     pub task: Task,
     /// The rows of the reading code as `[loop, array]`, for the editor's switch buttons.
     pub reading_forms: Vec<[String; 2]>,
+    /// Where the sample input holds a graph, for the graph window (D4).
+    pub graph: Option<crate::GraphForm>,
     /// The file names in tab order; `file` is the open one.
     pub files: Vec<String>,
     pub file: String,
@@ -508,6 +513,7 @@ impl Workspaces {
         )?;
         Ok(TaskWorkspace {
             reading_forms: task.reading_forms(),
+            graph: task.graph_form(),
             task,
             files: opened.files,
             file: opened.file,

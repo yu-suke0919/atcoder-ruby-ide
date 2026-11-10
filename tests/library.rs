@@ -1,8 +1,8 @@
 use atcoder_ruby_ide::{
-    browser_target, contest_top, fetch_page, http_client, input_code, is_rurima_page, parse_task,
-    parse_task_list, reading_forms, rurima_page, rurima_target, submissions_page, Contest,
-    ContestKey, Contests, DocumentStore, SampleCase, Samples, Submissions, Task, TaskResult,
-    Workspaces,
+    browser_target, contest_top, fetch_page, graph_form, http_client, input_code, is_rurima_page,
+    parse_task, parse_task_list, reading_forms, rurima_page, rurima_target, submissions_page,
+    Contest, ContestKey, Contests, DocumentStore, SampleCase, Samples, Submissions, Task,
+    TaskResult, Workspaces,
 };
 use std::path::Path;
 
@@ -1691,5 +1691,65 @@ fn d3_rurima_searches_its_full_text_on_google_and_opens_only_rurima_or_google() 
             allowed,
             "{url}"
         );
+    }
+}
+
+/// The graph form of real task pages (D4): where the sample input holds the edges or parents
+/// and the counts, sent to the screen as JSON.
+#[test]
+fn d4_graph_forms_are_found_from_the_input_format_and_constraints() {
+    let at = |line: usize, column: usize, offset: i64| serde_json::json!({ "line": line, "column": column, "offset": offset });
+    let edges = |vertices, count, weighted| serde_json::json!({ "kind": "edges", "line": 1, "vertices": vertices, "edges": count, "weighted": weighted });
+    let pages = [
+        ("abc284_c", Some(edges(at(0, 0, 0), at(0, 1, 0), false))),
+        ("abc252_e", Some(edges(at(0, 0, 0), at(0, 1, 0), true))),
+        ("abc138_d", Some(edges(at(0, 0, 0), at(0, 0, -1), false))),
+        ("abc245_f", Some(edges(at(0, 0, 0), at(0, 1, 0), false))),
+        ("abc270_c", Some(edges(at(0, 0, 0), at(0, 0, -1), false))),
+        (
+            "abc202_e",
+            Some(serde_json::json!({ "kind": "parents", "line": 1, "vertices": at(0, 0, 0) })),
+        ),
+        ("abc233_c", None),
+    ];
+    for (task, form) in pages {
+        let html = std::fs::read_to_string(format!("../tests/fixtures/input-formats/{task}.html"))
+            .unwrap();
+        let read = parse_task(URL, &html).unwrap();
+        let found = graph_form(read.input_format.as_deref().unwrap(), &read.constraints);
+        assert_eq!(
+            found.map(|f| serde_json::to_value(f).unwrap()),
+            form,
+            "{task}"
+        );
+    }
+    let form = |format: &str, constraints: &[&str]| {
+        let constraints: Vec<String> = constraints.iter().map(|c| c.to_string()).collect();
+        graph_form(format, &constraints).map(|f| serde_json::to_value(f).unwrap())
+    };
+    let bound = ["$1 \\leq u_i, v_i \\leq N$"];
+    // Lines of one value each may come first; the edges then start further down.
+    assert_eq!(
+        form(
+            "$N$ $M$\n$A_1$ $\\ldots$ $A_N$\n$K$\n$u_1$ $v_1$\n$\\vdots$\n$u_M$ $v_M$",
+            &bound
+        ),
+        Some(
+            serde_json::json!({ "kind": "edges", "line": 3, "vertices": at(0, 0, 0), "edges": at(0, 1, 0), "weighted": false })
+        )
+    );
+    // Not a graph: rows before the edges, intervals, queries, no bound by a value read before,
+    // and test cases.
+    for (format, constraints) in [
+        ("$N$ $M$\n$X_1$\n$\\vdots$\n$X_N$\n$u_1$ $v_1$\n$\\vdots$\n$u_M$ $v_M$", &bound[..]),
+        ("$N$ $Q$\n$L_1$ $R_1$\n$\\vdots$\n$L_Q$ $R_Q$", &["$1 \\leq L_i \\leq R_i \\leq N$"][..]),
+        ("$N$ $M$\n$L_1$ $R_1$\n$\\vdots$\n$L_M$ $R_M$", &["$1 \\leq L_i \\leq R_i \\leq N$"][..]),
+        ("$N$ $Q$\n$u_1$ $v_1$\n$\\vdots$\n$u_Q$ $v_Q$", &bound[..]),
+        ("$N$ $M$\n$u_1$ $v_1$\n$\\vdots$\n$u_M$ $v_M$", &["$1 \\leq u_i, v_i \\leq 10^9$"][..]),
+        ("$N$ $M$\n$u_1$ $v_1$\n$\\vdots$\n$u_M$ $v_M$", &[][..]),
+        ("$T$\n$\\mathrm{case}_1$\n$\\vdots$\n$\\mathrm{case}_T$\n$N$ $M$\n$u_1$ $v_1$\n$\\vdots$\n$u_M$ $v_M$", &bound[..]),
+        ("$N$\n$P_1$ $P_2$ $\\ldots$ $P_N$", &[][..]),
+    ] {
+        assert_eq!(form(format, constraints), None, "{format}");
     }
 }
