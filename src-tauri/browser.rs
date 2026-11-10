@@ -16,9 +16,9 @@ use url::Url;
 pub const HOME: &str = "home";
 /// The るりま window over the AtCoder pages (D3).
 const RURIMA: &str = "rurima";
-/// How much of the browser column the るりま window takes when fully shown; the AtCoder page
-/// stays visible below it.
-const RURIMA_HEIGHT: f64 = 0.8;
+/// How much of the browser column's height and width the るりま window takes when fully shown;
+/// the AtCoder page stays visible around it.
+const RURIMA_SIZE: f64 = 0.8;
 const ATCODER: &str = "https://atcoder.jp";
 
 #[derive(Clone, Copy, Default, Deserialize)]
@@ -303,6 +303,33 @@ fn rurima_builder(app: &tauri::AppHandle, url: Url) -> WebviewBuilder<tauri::Wry
     builder
 }
 
+/// Puts a webview over the other pages. On Windows each webview is a child window made by wry,
+/// the host of its WebView2, and a window made later lies over the earlier ones.
+#[cfg(windows)]
+fn bring_to_front(webview: &tauri::Webview) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    };
+    let raised = webview.with_webview(|platform| unsafe {
+        let mut window = HWND::default();
+        if platform.controller().ParentWindow(&mut window).is_ok() {
+            let _ = SetWindowPos(
+                window,
+                Some(HWND_TOP),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
+            );
+        }
+    });
+    if let Err(error) = raised {
+        eprintln!("cannot put the るりま window on top: {error}");
+    }
+}
+
 /// Adds 「るりまを全文検索」 to the right-click menu of a webview when text is selected; choosing
 /// it sends the text to the screen as `rurima-search` (D3). Tauri has no menu of its own for
 /// this, so the item goes into WebView2's menu. The page itself is not touched.
@@ -442,8 +469,8 @@ impl Browser {
     }
 
     /// Places the shown page over the browser column and hides the others. The るりま window
-    /// takes the top of the column by how much it is shown, the shown page the rest below it, so
-    /// the window slides down over the page without the two overlapping (D3).
+    /// lies over the page from the top of the column, centered, as tall as it is shown, so it
+    /// slides down (D3).
     fn apply(&self, app: &tauri::AppHandle) {
         let shown = self.shown.lock().unwrap().clone();
         let hidden = *self.hidden.lock().unwrap();
@@ -452,11 +479,10 @@ impl Browser {
         let rurima = app
             .get_webview(RURIMA)
             .map_or(0.0, |_| *self.rurima.lock().unwrap());
-        let top = (bounds.height * RURIMA_HEIGHT * rurima).round();
-        let place = |webview: &tauri::Webview, y: f64, height: f64| {
+        let place = |webview: &tauri::Webview, x: f64, width: f64, height: f64| {
             if visible && height >= 1.0 {
-                let _ = webview.set_position(LogicalPosition::new(bounds.x, y));
-                let _ = webview.set_size(LogicalSize::new(bounds.width, height));
+                let _ = webview.set_position(LogicalPosition::new(x, bounds.y));
+                let _ = webview.set_size(LogicalSize::new(width, height));
                 let _ = webview.show();
             } else {
                 let _ = webview.hide();
@@ -470,13 +496,20 @@ impl Browser {
                 continue;
             };
             if label == shown {
-                place(&webview, bounds.y + top, bounds.height - top);
+                place(&webview, bounds.x, bounds.width, bounds.height);
             } else {
                 let _ = webview.hide();
             }
         }
         if let Some(webview) = app.get_webview(RURIMA) {
-            place(&webview, bounds.y, top);
+            let margin = (bounds.width * (1.0 - RURIMA_SIZE) / 2.0).round();
+            let height = (bounds.height * RURIMA_SIZE * rurima).round();
+            place(
+                &webview,
+                bounds.x + margin,
+                bounds.width - 2.0 * margin,
+                height,
+            );
         }
     }
 }
@@ -666,6 +699,13 @@ pub async fn rurima_slide(
         0.0
     };
     let was = std::mem::replace(&mut *browser.rurima.lock().unwrap(), fraction);
+    // A page made later lies over the window, so the window is put on top as it comes out.
+    #[cfg(windows)]
+    if was == 0.0 && fraction > 0.0 {
+        if let Some(webview) = app.get_webview(RURIMA) {
+            bring_to_front(&webview);
+        }
+    }
     browser.apply(&app);
     // The controls change pages when the window comes or goes.
     if (was > 0.0) != (fraction > 0.0) {

@@ -42,7 +42,7 @@ windows-sys = { version = "0.61", features = ["Win32_System_Threading"] }
 # The right-click item 「るりまを全文検索」, added to WebView2's own menu (D3). The versions are
 # the ones Tauri's WebView2 uses.
 webview2-com = { version = "=0.39.1", optional = true }
-windows = { version = "=0.62.2", optional = true, features = ["Win32_System_Com"] }
+windows = { version = "=0.62.2", optional = true, features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_WindowsAndMessaging"] }
 windows-core = { version = "=0.62.2", optional = true }
 
 

@@ -655,6 +655,8 @@ function slideRurima(open) {
   if (rurimaOpen === open) return rurimaSliding;
   rurimaOpen = open;
   $('rurima-toggle').setAttribute('aria-pressed', String(open));
+  // The search field sits between the URL field and the window while it is out.
+  if (open) $('rurima-search-bar').hidden = false;
   $('browser-url').placeholder = open ? '語を入れてEnterでるりまを全文検索' : '';
   rurimaSliding = rurimaSliding.then(async () => {
     const start = performance.now();
@@ -665,17 +667,23 @@ function slideRurima(open) {
       if (done >= 1) break;
       await new Promise(resolve => requestAnimationFrame(resolve));
     }
+    if (!rurimaOpen) $('rurima-search-bar').hidden = true;
   });
   return rurimaSliding;
 }
 // Opens the window with the words searched for, or with the page it showed last.
 async function openRurima(query = null) {
+  if (query?.trim()) $('rurima-search').value = query.trim().split(/\s+/).join(' ');
   try { await ide.rurimaShow(query); }
   catch (error) { browserMessage(error.message); return; }
   browserMessage('');
   await slideRurima(true);
 }
 $('rurima-toggle').addEventListener('click', () => (rurimaOpen ? slideRurima(false) : openRurima()));
+$('rurima-search-bar').addEventListener('submit', event => {
+  event.preventDefault();
+  if ($('rurima-search').value.trim()) openRurima($('rurima-search').value);
+});
 // F1 searches for the selected text (in the editor, the word at the cursor without a selection).
 document.addEventListener('keydown', event => {
   if (event.key !== 'F1') return;
