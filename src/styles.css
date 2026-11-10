@@ -196,7 +196,7 @@ h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 /* Darkens the page behind as the window comes out: white turns grey when it is fully out. */
 .rurima-shade { position: absolute; inset: 0; background: #000; opacity: 0; }
 .rurima-snapshot:not([src]) { display: none; }
-.rurima-panel { --reveal: 0; position: absolute; top: 12px; left: 10%; width: 80%; height: calc((80% - 12px) * var(--reveal)); display: flex; flex-direction: column; overflow: hidden; background: var(--panel); border: 2px solid #33a; border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
+.rurima-panel { --reveal: 0; position: absolute; top: 12px; left: 10%; width: 80%; height: calc((90% - 12px) * var(--reveal)); display: flex; flex-direction: column; overflow: hidden; background: var(--panel); border: 2px solid #33a; border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
 .rurima-bar, .rurima-search-bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px; flex-shrink: 0; }
 .rurima-bar { background: #33a; }
 .rurima-bar button { padding: 4px 8px; font-size: 13px; color: #fff; background: transparent; border-color: rgba(255, 255, 255, 0.4); }
