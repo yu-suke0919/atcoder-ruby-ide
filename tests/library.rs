@@ -1602,24 +1602,35 @@ fn d3_rurima_searches_its_full_text_on_google_and_opens_only_rurima_or_google() 
     };
     assert_eq!(
         rurima_target("each_slice").unwrap().as_str(),
-        "https://www.google.com/search?q=each_slice+site%3Adocs.ruby-lang.org%2Fja%2Flatest%2F"
+        "https://www.google.com/search?q=each_slice+site%3Adocs.ruby-lang.org"
     );
     // Spaces are folded and the words are cut at 200 characters.
     assert_eq!(
         query("  最大公約数 \n gcd "),
-        "最大公約数 gcd site:docs.ruby-lang.org/ja/latest/"
+        "最大公約数 gcd site:docs.ruby-lang.org"
     );
     assert_eq!(
         query(&"あ".repeat(300)),
-        format!("{} site:docs.ruby-lang.org/ja/latest/", "あ".repeat(200))
+        format!("{} site:docs.ruby-lang.org", "あ".repeat(200))
     );
     assert!(rurima_target(" \n ").is_err());
-    // Google lists only the latest version's pages; they open as Ruby 3.4's, AtCoder's Ruby.
+    // Google lists mostly the latest version's pages; other versions open as Ruby 3.4's,
+    // AtCoder's Ruby.
     for (latest, page) in [
         (
             "https://docs.ruby-lang.org/ja/latest/class/Rational.html",
             Some("https://docs.ruby-lang.org/ja/3.4/class/Rational.html"),
         ),
+        (
+            "https://docs.ruby-lang.org/ja/4.0/class/Rational.html",
+            Some("https://docs.ruby-lang.org/ja/3.4/class/Rational.html"),
+        ),
+        (
+            "https://docs.ruby-lang.org/ja/2.7.0/method/Integer/i/gcd.html",
+            Some("https://docs.ruby-lang.org/ja/3.4/method/Integer/i/gcd.html"),
+        ),
+        ("https://docs.ruby-lang.org/ja/search/query:gcd/", None),
+        ("https://docs.ruby-lang.org/ja/", None),
         (
             "https://docs.ruby-lang.org/ja/latest/method/Array/i/each_slice.html#x",
             Some("https://docs.ruby-lang.org/ja/3.4/method/Array/i/each_slice.html#x"),
@@ -1639,7 +1650,7 @@ fn d3_rurima_searches_its_full_text_on_google_and_opens_only_rurima_or_google() 
         );
     }
     assert_eq!(
-        rurima_target("https://docs.ruby-lang.org/ja/latest/class/Rational.html")
+        rurima_target("docs.ruby-lang.org/ja/4.0/class/Rational.html")
             .unwrap()
             .as_str(),
         "https://docs.ruby-lang.org/ja/3.4/class/Rational.html"

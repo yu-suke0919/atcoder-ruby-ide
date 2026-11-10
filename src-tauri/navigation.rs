@@ -32,11 +32,9 @@ pub fn browser_target(input: &str) -> Result<Url, String> {
 pub const RURIMA_ORIGINS: &[&str] = &["https://docs.ruby-lang.org", "https://www.google.com"];
 /// The first page of the るりま window: the reference of Ruby 3.4, the Ruby AtCoder uses.
 pub const RURIMA_HOME: &str = "https://docs.ruby-lang.org/ja/3.4/doc/index.html";
-/// Added after the words. Every version's pages name the latest version's page as the canonical
-/// one, so Google lists only those; `rurima_page` opens them as Ruby 3.4's.
-const RURIMA_SEARCH: &str = "site:docs.ruby-lang.org/ja/latest/";
-const RURIMA_LATEST: &str = "/ja/latest/";
-const RURIMA_VERSION: &str = "/ja/3.4/";
+/// Added after the words. Narrowing to a path such as `/ja/latest/` was not applied by Google.
+const RURIMA_SEARCH: &str = "site:docs.ruby-lang.org";
+const RURIMA_VERSION: &str = "3.4";
 const MAX_SEARCH_CHARS: usize = 200;
 
 /// Whether the るりま window may open a URL.
@@ -46,14 +44,20 @@ pub fn is_rurima_page(url: &Url) -> bool {
         .any(|origin| Url::parse(origin).is_ok_and(|origin| origin.origin() == url.origin()))
 }
 
-/// The Ruby 3.4 page, AtCoder's Ruby, for a page of the latest version of the reference.
+/// The Ruby 3.4 page, AtCoder's Ruby, for a page of another version of the Japanese reference
+/// (`/ja/latest/…`, `/ja/4.0/…`). Every version names the latest one's page as the canonical one,
+/// so Google lists mostly those.
 pub fn rurima_page(url: &Url) -> Option<Url> {
     if url.origin() != Url::parse(RURIMA_ORIGINS[0]).ok()?.origin() {
         return None;
     }
-    let rest = url.path().strip_prefix(RURIMA_LATEST)?;
+    let (version, rest) = url.path().strip_prefix("/ja/")?.split_once('/')?;
+    let other = version == "latest" || version.starts_with(|c: char| c.is_ascii_digit());
+    if !other || version == RURIMA_VERSION {
+        return None;
+    }
     let mut page = url.clone();
-    page.set_path(&format!("{RURIMA_VERSION}{rest}"));
+    page.set_path(&format!("/ja/{RURIMA_VERSION}/{rest}"));
     Some(page)
 }
 

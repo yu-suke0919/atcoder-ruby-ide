@@ -290,7 +290,7 @@ fn rurima_builder(app: &tauri::AppHandle, url: Url) -> WebviewBuilder<tauri::Wry
     let (app_for_window, app_for_page) = (app.clone(), app.clone());
     let mut builder = WebviewBuilder::new(RURIMA, WebviewUrl::External(url))
         .on_navigation(move |url| match rurima_from_origin(url) {
-            // Google lists only the latest version's pages; Ruby 3.4's is opened instead.
+            // Other versions' pages, mostly the latest one's on Google, open as Ruby 3.4's.
             Some(page) => match rurima_page(&page) {
                 Some(version) => {
                     let app = app_for_page.clone();

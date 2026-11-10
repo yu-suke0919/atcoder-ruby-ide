@@ -1374,7 +1374,7 @@ test('M20/U5b: a judging submission keeps updating its color after another task 
 });
 
 test('D3: the るりま window slides over the darkened AtCoder page with its own URL field and search field, and searches from F1 and the right-click menu', async () => {
-  const google = words => `https://www.google.com/search?${new URLSearchParams({ q: `${words} site:docs.ruby-lang.org/ja/latest/` })}`;
+  const google = words => `https://www.google.com/search?${new URLSearchParams({ q: `${words} site:docs.ruby-lang.org` })}`;
   const toggle = page.locator('#rurima-toggle');
   const layer = page.locator('#rurima-layer');
   const rurimaUrl = page.locator('#rurima-url');
