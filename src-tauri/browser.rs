@@ -44,9 +44,10 @@ pub struct Browser {
     args: Mutex<Option<String>>,
     /// Contests whose submission list is being fetched while a submission is judged (U5b).
     following: Mutex<HashSet<String>>,
-    /// Where the るりま window's page lies while the window is out (D3). The screen draws the
-    /// window around it, and the AtCoder pages are hidden behind a picture of them.
-    rurima: Mutex<Option<Bounds>>,
+    /// While a window of the screen (るりま D3, graph D4) is out: where the るりま window's page
+    /// lies, empty for the graph. The screen draws the window around it, and the AtCoder pages
+    /// are hidden behind a picture of them.
+    cover: Mutex<Option<Bounds>>,
 }
 
 /// The origin pages are loaded from. UI tests point it at a local server; normal runs use AtCoder.
@@ -456,7 +457,7 @@ impl Browser {
         let shown = self.shown.lock().unwrap().clone();
         let hidden = *self.hidden.lock().unwrap();
         let bounds = *self.bounds.lock().unwrap();
-        let rurima = *self.rurima.lock().unwrap();
+        let cover = *self.cover.lock().unwrap();
         let place = |webview: &tauri::Webview, at: Option<Bounds>| match at {
             Some(at) if !hidden && at.width >= 1.0 && at.height >= 1.0 => {
                 let _ = webview.set_position(LogicalPosition::new(at.x, at.y));
@@ -474,11 +475,11 @@ impl Browser {
             let Some(webview) = app.get_webview(&label) else {
                 continue;
             };
-            let at = (label == shown && rurima.is_none()).then_some(bounds);
+            let at = (label == shown && cover.is_none()).then_some(bounds);
             place(&webview, at);
         }
         if let Some(webview) = app.get_webview(RURIMA) {
-            place(&webview, rurima);
+            place(&webview, cover);
         }
     }
 }
@@ -614,7 +615,7 @@ pub async fn browser_open(
 
 /// Opens the るりま window's page for `query`: words to search for, or a page of the reference
 /// or of the search. The window is made on first use, with the reference's top when there is no
-/// query; `rurima_layout` places it (D3).
+/// query; `cover_layout` places it (D3).
 #[tauri::command]
 pub async fn rurima_show(
     app: tauri::AppHandle,
@@ -648,12 +649,12 @@ pub async fn rurima_show(
     Ok(())
 }
 
-/// Puts the るりま window's page where the screen draws it, or, with `open` false, puts the
-/// window away and shows the AtCoder page again. The screen sends a few in a row to slide the
-/// window down or up (D3).
+/// Puts the AtCoder page aside while a window of the screen is out, with the るりま window's page
+/// where the screen draws it (zero size for the graph window, D4), or, with `open` false, shows
+/// the AtCoder page again. The screen sends a few in a row to slide the window down or up (D3).
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
-pub async fn rurima_layout(
+pub async fn cover_layout(
     app: tauri::AppHandle,
     browser: tauri::State<'_, Browser>,
     open: bool,
@@ -662,7 +663,7 @@ pub async fn rurima_layout(
     width: f64,
     height: f64,
 ) -> Result<(), String> {
-    *browser.rurima.lock().unwrap() = open.then_some(Bounds {
+    *browser.cover.lock().unwrap() = open.then_some(Bounds {
         x,
         y,
         width,

@@ -213,7 +213,7 @@ fn main() {
                 rurima = Some(url);
                 Ok(Value::Null)
             }
-            "rurima_layout" | "rurima_history" | "rurima_reload" | "browser_snapshot" => {
+            "cover_layout" | "rurima_history" | "rurima_reload" | "browser_snapshot" => {
                 Ok(Value::Null)
             }
             "browser_open" => {

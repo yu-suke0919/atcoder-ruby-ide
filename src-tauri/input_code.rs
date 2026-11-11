@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 
 #[derive(Clone, Debug, PartialEq)]
-enum Item {
+pub(crate) enum Item {
     /// A variable: its name without TeX wrappers and its subscript parts.
     Var { name: String, index: Vec<String> },
     /// `\ldots` and other horizontal ellipses.
@@ -14,8 +14,8 @@ enum Item {
 }
 
 #[derive(Debug)]
-struct Line {
-    items: Vec<Item>,
+pub(crate) struct Line {
+    pub(crate) items: Vec<Item>,
     /// Two variables in one `$...$` without a space between them: characters of one string.
     joined: bool,
 }
@@ -97,7 +97,7 @@ fn items(tex: &str) -> Option<Vec<Item>> {
     Some(items)
 }
 
-fn line(text: &str) -> Option<Line> {
+pub(crate) fn line(text: &str) -> Option<Line> {
     let mut items_of_line = Vec::new();
     let mut joined = false;
     let mut rest = text;
@@ -179,7 +179,7 @@ fn types(constraints: &[String]) -> (HashSet<String>, bool) {
 }
 
 /// A Ruby local name for a variable, or None when it cannot be one.
-fn local(name: &str) -> Option<String> {
+pub(crate) fn local(name: &str) -> Option<String> {
     let lower = name.to_ascii_lowercase();
     let valid = lower.starts_with(|c: char| c.is_ascii_lowercase())
         && lower
@@ -256,7 +256,7 @@ impl Types {
 
 /// The variables of a line that reads one value per variable with the same one-part index,
 /// such as `t_1 x_1 y_1`.
-fn tuple(line: &Line) -> Option<(Vec<String>, String)> {
+pub(crate) fn tuple(line: &Line) -> Option<(Vec<String>, String)> {
     let mut names = Vec::new();
     let mut index = None;
     for item in &line.items {
@@ -299,7 +299,7 @@ fn row(line: &Line) -> Option<(String, String, bool)> {
 }
 
 /// A list on one line, `A_1 A_2 ... A_N`.
-fn list(line: &Line) -> Option<String> {
+pub(crate) fn list(line: &Line) -> Option<String> {
     let mut name = None;
     let mut ellipsis = false;
     for item in &line.items {
@@ -319,7 +319,7 @@ fn list(line: &Line) -> Option<String> {
 
 /// How many rows a block has: written out (1, 2, 3, ...) or ended after `\vdots` by the last
 /// row's index. Returns the count and the number of lines the block used.
-fn block<T: PartialEq>(
+pub(crate) fn block<T: PartialEq>(
     lines: &[Line],
     first: &T,
     part: impl Fn(&Line) -> Option<(T, String)>,
@@ -387,7 +387,7 @@ fn indent(code: &str) -> String {
 
 /// One line of numbered values such as `X_1 Y_1 R_1 X_2 Y_2 R_2`, `P_x P_y Q_x Q_y` or
 /// `N_1 N_2 M` (D2): each variable with its number or letter, read into locals like `x1`.
-fn numbered(line: &Line) -> Option<Vec<(String, String)>> {
+pub(crate) fn numbered(line: &Line) -> Option<Vec<(String, String)>> {
     let values = line
         .items
         .iter()
