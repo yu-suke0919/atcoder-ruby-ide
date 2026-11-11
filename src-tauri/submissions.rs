@@ -52,7 +52,7 @@ pub struct SubmissionUpdate {
 /// The contest URL when `url` is the user's submission list, `/contests/<id>/submissions/me`.
 pub fn submissions_page(url: &Url) -> Option<String> {
     let parts: Vec<_> = url.path().trim_end_matches('/').split('/').collect();
-    if !crate::is_allowed(url)
+    if !crate::is_atcoder(url)
         || parts.len() != 5
         || parts[1] != "contests"
         || parts[3..] != ["submissions", "me"]

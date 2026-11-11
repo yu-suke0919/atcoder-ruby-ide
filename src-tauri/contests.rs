@@ -155,7 +155,7 @@ pub fn unix_now() -> i64 {
 /// The contest URL when `url` is a contest's top page, `/contests/<id>`.
 pub fn contest_top(url: &Url) -> Option<String> {
     let parts: Vec<_> = url.path().trim_end_matches('/').split('/').collect();
-    if !crate::is_allowed(url) || parts.len() != 3 || parts[1] != "contests" {
+    if !crate::is_atcoder(url) || parts.len() != 3 || parts[1] != "contests" {
         return None;
     }
     ContestKey::parse(&format!("https://atcoder.jp/contests/{}", parts[2]))

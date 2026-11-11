@@ -2,9 +2,9 @@
 //! Ruby requests go through AgentClient to this program started again with `--agent`, which
 //! serves them like the real agent (docs/architecture.md#wslのエージェント).
 use atcoder_ruby_ide::{
-    agent::Agent, browser_target, contest_top, fetch_page, http_client, read_task_page,
-    rurima_target, submissions_page, unix_now, AgentClient, Contests, DocumentStore, Submissions,
-    Workspaces, RURIMA_HOME,
+    agent::Agent, browser_origins, browser_target, contest_top, fetch_page, http_client,
+    read_task_page, rurima_target, submissions_page, unix_now, AgentClient, Contests,
+    DocumentStore, Submissions, Workspaces, RURIMA_HOME,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -58,6 +58,8 @@ fn main() {
     let shown = Arc::new(AtomicU64::new(0));
     // The page of the るりま window (D3).
     let mut rurima: Option<String> = None;
+    // The domains added in the settings (D5), as the real app keeps them.
+    let mut origins: Vec<String> = Vec::new();
     // The app reads every loaded contest top for a registration; here showing one fetches it.
     let read_contest_top = |sink: &Sink, url: &str| {
         if !url::Url::parse(url).is_ok_and(|url| contest_top(&url).is_some()) {
@@ -216,8 +218,14 @@ fn main() {
             "cover_layout" | "rurima_history" | "rurima_reload" | "browser_snapshot" => {
                 Ok(Value::Null)
             }
+            "browser_set_origins" => {
+                let typed: Vec<String> =
+                    serde_json::from_value(args["origins"].clone()).map_err(|e| e.to_string())?;
+                origins = browser_origins(&typed)?;
+                Ok(json!(origins))
+            }
             "browser_open" => {
-                let url = browser_target(args["url"].as_str().unwrap_or_default())?;
+                let url = browser_target(args["url"].as_str().unwrap_or_default(), &origins)?;
                 send(
                     &sink,
                     json!({"appEvent": "browser-url", "payload": url.as_str()}),

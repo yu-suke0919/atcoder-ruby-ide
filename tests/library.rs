@@ -1,8 +1,8 @@
 use atcoder_ruby_ide::{
-    browser_target, contest_top, fetch_page, graph_form, http_client, input_code, is_rurima_page,
-    parse_task, parse_task_list, reading_forms, rurima_page, rurima_target, submissions_page,
-    Contest, ContestKey, Contests, DocumentStore, SampleCase, Samples, Submissions, Task,
-    TaskResult, Workspaces,
+    browser_origins, browser_target, contest_top, fetch_page, graph_form, http_client, input_code,
+    is_rurima_page, parse_task, parse_task_list, reading_forms, rurima_page, rurima_target,
+    submissions_page, Contest, ContestKey, Contests, DocumentStore, SampleCase, Samples,
+    Submissions, Task, TaskResult, Workspaces,
 };
 use std::path::Path;
 
@@ -86,7 +86,11 @@ fn the_url_field_opens_only_allowed_origins() {
         ),
         ("https://atcoder.jp", "https://atcoder.jp/"),
     ] {
-        assert_eq!(browser_target(input).unwrap().as_str(), expected, "{input}");
+        assert_eq!(
+            browser_target(input, &[]).unwrap().as_str(),
+            expected,
+            "{input}"
+        );
     }
     for input in [
         "https://example.com/",
@@ -97,9 +101,72 @@ fn the_url_field_opens_only_allowed_origins() {
         "file:///C:/Windows",
         "",
     ] {
-        let error = browser_target(input).unwrap_err();
+        let error = browser_target(input, &[]).unwrap_err();
         assert!(error.contains("https://atcoder.jp"), "{input}: {error}");
     }
+}
+
+/// Domains added in the settings (D5): typed as a domain or a URL, kept as HTTPS origins, and
+/// opened only where the host matches exactly.
+#[test]
+fn d5_added_domains_are_https_origins_the_url_field_may_open() {
+    let typed = |inputs: &[&str]| {
+        browser_origins(&inputs.iter().map(|i| i.to_string()).collect::<Vec<_>>())
+    };
+    assert_eq!(
+        typed(&[
+            "kenkoooo.com",
+            " https://drken1215.hatenablog.com/entry/1?x#y ",
+            "localhost:8080/path",
+        ])
+        .unwrap(),
+        [
+            "https://kenkoooo.com",
+            "https://drken1215.hatenablog.com",
+            "https://localhost:8080"
+        ]
+    );
+    assert_eq!(typed(&[]).unwrap(), Vec::<String>::new());
+    for (inputs, reason) in [
+        (&["http://kenkoooo.com"][..], "HTTPS"),
+        (&["javascript:alert(1)"][..], "ドメイン"),
+        (&["file:///C:/Windows"][..], "HTTPS"),
+        (&[""][..], "ドメイン"),
+        (&["https://"][..], "ドメイン"),
+        (&["atcoder.jp/contests"][..], "AtCoder"),
+        (
+            &["kenkoooo.com", "https://kenkoooo.com/atcoder/"][..],
+            "すでに",
+        ),
+    ] {
+        let error = typed(inputs).unwrap_err();
+        assert!(error.contains(reason), "{inputs:?}: {error}");
+    }
+    let added = typed(&["kenkoooo.com"]).unwrap();
+    assert_eq!(
+        browser_target("kenkoooo.com/atcoder/#/table/", &added)
+            .unwrap()
+            .as_str(),
+        "https://kenkoooo.com/atcoder/#/table/"
+    );
+    assert!(browser_target("https://atcoder.jp/", &added).is_ok());
+    for input in [
+        "http://kenkoooo.com/",
+        "https://www.kenkoooo.com/",
+        "https://kenkoooo.com:8443/",
+        "https://example.com/",
+    ] {
+        let error = browser_target(input, &added).unwrap_err();
+        assert!(
+            error.contains("https://atcoder.jp、https://kenkoooo.com"),
+            "{input}: {error}"
+        );
+    }
+    // Only AtCoder's pages are read: a task, submission or contest path elsewhere is not.
+    let elsewhere = url::Url::parse("https://kenkoooo.com/contests/abc430/submissions/me").unwrap();
+    assert_eq!(submissions_page(&elsewhere), None);
+    let top = url::Url::parse("https://kenkoooo.com/contests/abc430").unwrap();
+    assert_eq!(contest_top(&top), None);
 }
 
 /// Real task pages as the browser shows them (KaTeX rendered), with the input and constraints

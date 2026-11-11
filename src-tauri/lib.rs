@@ -38,8 +38,8 @@ pub use input_code::{input_code, reading_forms};
 #[cfg(unix)]
 pub use lsp::{LspInfo, RubyLsp};
 pub use navigation::{
-    browser_target, is_allowed, is_rurima_page, rurima_page, rurima_target, ALLOWED_ORIGINS,
-    RURIMA_HOME, RURIMA_ORIGINS,
+    browser_origins, browser_target, is_allowed, is_atcoder, is_rurima_page, rurima_page,
+    rurima_target, ATCODER_ORIGIN, RURIMA_HOME, RURIMA_ORIGINS,
 };
 #[cfg(unix)]
 pub use runner::{Output, PreparedRun, RunRequest, RunResult, Runner};

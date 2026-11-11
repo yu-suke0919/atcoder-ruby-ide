@@ -1,30 +1,71 @@
 //! Which pages the right-hand browser may open.
 use url::Url;
 
-/// Origins the browser may open. A setting may add more later.
-pub const ALLOWED_ORIGINS: &[&str] = &["https://atcoder.jp"];
+/// The origin the browser always opens, and the only one whose pages the app reads.
+pub const ATCODER_ORIGIN: &str = "https://atcoder.jp";
 
-/// Whether a URL belongs to an allowed origin.
-pub fn is_allowed(url: &Url) -> bool {
-    ALLOWED_ORIGINS
-        .iter()
-        .any(|origin| Url::parse(origin).is_ok_and(|origin| origin.origin() == url.origin()))
+fn same_origin(url: &Url, origin: &str) -> bool {
+    Url::parse(origin).is_ok_and(|origin| origin.origin() == url.origin())
 }
 
-/// Parses what was typed in the URL field. A missing scheme means HTTPS.
-pub fn browser_target(input: &str) -> Result<Url, String> {
+/// Whether a URL is one of AtCoder's pages, the pages the app reads.
+pub fn is_atcoder(url: &Url) -> bool {
+    same_origin(url, ATCODER_ORIGIN)
+}
+
+/// Whether a URL belongs to AtCoder or an origin added in the settings (D5).
+pub fn is_allowed(url: &Url, added: &[String]) -> bool {
+    is_atcoder(url) || added.iter().any(|origin| same_origin(url, origin))
+}
+
+/// A URL typed or kept as text. A missing scheme means HTTPS.
+fn typed_url(input: &str) -> Option<Url> {
     let input = input.trim();
-    let url = if input.contains("://") {
-        Url::parse(input)
+    if input.contains("://") {
+        Url::parse(input).ok()
     } else {
-        Url::parse(&format!("https://{input}"))
-    };
-    url.ok().filter(is_allowed).ok_or_else(|| {
-        format!(
-            "開けるのは {} のページだけです。",
-            ALLOWED_ORIGINS.join("、")
-        )
-    })
+        Url::parse(&format!("https://{input}")).ok()
+    }
+}
+
+/// Parses what was typed in the URL field.
+pub fn browser_target(input: &str, added: &[String]) -> Result<Url, String> {
+    typed_url(input)
+        .filter(|url| is_allowed(url, added))
+        .ok_or_else(|| {
+            let origins: Vec<&str> = std::iter::once(ATCODER_ORIGIN)
+                .chain(added.iter().map(String::as_str))
+                .collect();
+            format!("開けるのは {} のページだけです。", origins.join("、"))
+        })
+}
+
+/// The origins added in the settings (D5), each typed as a domain or a URL, as HTTPS origins
+/// such as `https://kenkoooo.com`.
+pub fn browser_origins(inputs: &[String]) -> Result<Vec<String>, String> {
+    let mut origins: Vec<String> = Vec::new();
+    for input in inputs {
+        let url = typed_url(input)
+            .ok_or_else(|| format!("「{}」はドメインかURLではありません。", input.trim()))?;
+        if url.scheme() != "https" {
+            return Err(format!(
+                "追加できるのはHTTPSのページだけです（{}）。",
+                input.trim()
+            ));
+        }
+        if !url.has_host() {
+            return Err(format!("「{}」にドメインがありません。", input.trim()));
+        }
+        let origin = url.origin().ascii_serialization();
+        if origin == ATCODER_ORIGIN {
+            return Err("AtCoderは最初から開けます。".into());
+        }
+        if origins.contains(&origin) {
+            return Err(format!("{origin} はすでに一覧にあります。"));
+        }
+        origins.push(origin);
+    }
+    Ok(origins)
 }
 
 /// Origins the るりま window may open (D3): the reference, and the search engine that searches
