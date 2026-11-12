@@ -2,10 +2,10 @@
 
 ## 最小構成
 
-- Tauri v2 の Rust コマンドが作業領域のファイル I/O、AtCoderからの取得を担当する。Rubyの実行とRuby LSPは、WSL内のエージェント（同じRustのライブラリのLinux向けのバイナリ）が担当し、Windowsのアプリは要求と結果を中継する（[WSLのエージェント](#wslのエージェント)）。C3aまでは、Windowsのアプリが同梱のRubyを直接実行していた（使われなくなったコードはC4で削除する）。
+- Tauri v2 の Rust コマンドが作業領域のファイル I/O、AtCoderからの取得を担当する。Rubyの実行とRuby LSPは、WSL内のエージェント（同じRustのライブラリのLinux向けのバイナリ）が担当し、Windowsのアプリは要求と結果を中継する（[WSLのエージェント](#wslのエージェント)）。
 - HTML / CSS / JavaScript は既存の画面を使う。bridge.mjs が Tauri の invoke / Channel と画面をつなぐ。
 - コード編集は同梱CodeMirror 6で行い、editor.mjsが文書内容・読取専用状態・カーソル・変更通知を画面へ渡す。Ruby用モードと必要な拡張をesbuildで1つのES Moduleへまとめ、依存のライセンスを同梱する。CodeMirrorが生成する表示用CSSをCSPで許可し、スクリプトは同梱ファイルに限定する。
-- ruby-completion.mjsが同梱の基本候補・定型コードとCodeMirrorの文書内単語収集を組み合わせる。この基本候補はRubyプロセスや外部サービスを使わず同期生成する。表示・選択・挿入はCodeMirrorに任せ、手動で開く。
+- ruby-completion.mjsが同梱の基本候補・定型コードとCodeMirrorの文書内単語収集を組み合わせる。この基本候補はRubyプロセスや外部サービスを使わず同期生成する。表示・選択・挿入はCodeMirrorに任せ、候補は入力中に自動で開く（Ctrl+Spaceでも開く。[エディタ仕様](code-editor.md)）。
 - lsp-completion.mjsが補完時（入力中の自動表示とCtrl+Space）にShopify Ruby LSPへ接続し、候補をCodeMirrorへ渡す。要求を直列化し、無効になった文書・カーソルの応答を捨てる。既存のruby-completion.mjsを基本候補・定型コード・LSPが候補を返せない場合の補完として共有し、候補は表示名で重複を除く。専用gem・固定bundle・文書同期・UTF-8／UTF-16位置変換・終了処理は[Ruby LSP](ruby-lsp.md)を参照する。
 - ruby-methods.mjsがString・Array・Hashのメソッドと引数・説明を保持する。ruby-receivers.mjsは既存Rubyモードの字句情報を使い、直前のリテラルと、単純な直接代入に続くローカル変数の型を有界に識別する。同じ行の単純代入・自己再代入・連鎖代入の右辺や括弧内でも代入前の型を使う。コメント・文字列中の代入を除外し、未知の文やスコープ境界では推定を解除する。改行をまたぐ未完の文やdef・undef・aliasの文脈も型を確定しない。確定できなければ一般候補へ戻す。候補詳細はCodeMirrorのinfoを使い、最小画面でも領域内に収める。
 - Rust の実行・ファイル操作・期待出力比較は GUI に依存しないモジュールとし、Linux でも実プロセスでテストする。
@@ -16,7 +16,7 @@
 
 ## 実行・出力・停止
 
-この節のRunnerは、Phase C以降はWSL内のエージェントで動く。Ruby は shell を介さず起動する。コードを一時 UTF-8 ファイルに書き、標準入力を渡して EOF を送る。
+この節のRunnerは、WSL内のエージェントで動く。Ruby は shell を介さず起動する。コードを一時 UTF-8 ファイルに書き、標準入力を渡して EOF を送る。
 bootstrap で標準入出力を UTF-8 binary mode、stdout / stderr を同期出力にする。
 Runnerの子Rubyは`--jit`で起動し、VMスタックとネイティブスタックを問題のメモリ制限（不明なら1024 MiB）にする（C5）。LSPと共有するCommand生成関数では設定しない。再帰の受入範囲とネイティブスタックに残る差は[実行環境の資料](atcoder-runtime.md)を参照する。
 作業ディレクトリは常に実行ごとの一時ディレクトリとする。
@@ -50,7 +50,7 @@ Rust は問題の作業領域の解答ファイルと UTF-8 の読み書きを�
 Runner は最初の不一致を 1 回だけ計算し、一致判定と詳細を RunResult に載せて送る。画面は結果を再比較せず、ケースの判定と同じリビジョンで詳細も保持・無効化する。
 不一致の表示はスクロール可能なダイアログに置き、Unicode スカラー値で差の前後 40 文字を表示する。本文は text node と mark で構築する。
 コード・入力・期待出力・比較設定・許容誤差・実行するファイルが変われば未比較に戻し、古い判定を表示しない。
-高さ 720px 以下は装飾的な見出しを省き、入力・期待出力・出力を最低 1 行表示する。
+高さ 760px 以下はサンプルと実行結果の見出しと余白を詰め、入力・期待出力・出力を最低 1 行表示する。
 
 ## ケース管理と検証
 
@@ -60,7 +60,7 @@ Runner は最初の不一致を 1 回だけ計算し、一致判定と詳細を 
 複数サンプルの入力・結果・選択・保存済み状態と begin / finish / fail / cancel による判定遷移は DOM 非依存の sample-cases.mjs が保持する。renderer は描画とイベント、既存の run コマンドの逐次呼び出しを担当する。Rust の実行制御は変更しない。
 開始時にコード・サンプルを固定し、実行中はファイル・問題の切替を抑止する。編集による判定の無効化はケースごとのリビジョンで行う。ケースの編集では、操作したフィールドだけをモデルへ反映する。textarea の改行正規化で未編集の入力・期待出力を変更しない。
 問題を開く処理だけがサンプルを作業領域の内容へ置き換え、保存済み状態として扱う。
-問題ライブラリは Rust の library モジュールが、コンテスト・問題集の登録と問題一覧、問題ページからの読み取り、作業領域を管理する。保存先は app_local_data_dir とし、読み取った内容と利用者のデータを分ける。[問題の取得・保存・切替の仕様](problem-library.md)を参照する。AtCoderへの取得はRustのMutexで直列化し、ブラウザのCookieを使う。取得で現在の問題・編集内容は切り替えない。
+問題ライブラリは Rust の contests・task・solutions・samples・submissions モジュールが、コンテスト・問題集の登録と問題一覧、問題ページからの読み取り、作業領域を管理する。保存先は app_local_data_dir とし、読み取った内容と利用者のデータを分ける。[問題の取得・保存・切替の仕様](problem-library.md)を参照する。AtCoderへの取得はRustのMutexで直列化し、ブラウザのCookieを使う。取得で現在の問題・編集内容は切り替えない。
 画面は4列（アイコン・問題一覧・エディタとサンプル・AtCoderのページ）で、AtCoderのページは選択中のコンテスト・問題集の問題ごとに子のWebViewとして表示する。エディタ・サンプル・問題一覧は領域内でスクロールし、実行ボタンはコード欄の下に固定する。ダイアログを開いている間だけ既存のショートカット抑止を適用する。
 
 Linux の画面テストは headless Chromium とローカル HTTP 配信を使う。テスト専用 Rust ホストが本番の Runner・作業領域・RunEvent を共有し、実 Ruby・一時ファイル I/O・停止・比較を実行する。
@@ -84,13 +84,13 @@ Windows E2E の CDP 接続は検査ポートのブラウザー引数で有効に
 
 本番とUIテストホストはRuby検出、問題の作業領域を開く処理、自動保存をライブラリで共有する。Ruby検出は成功時にversionのみを返し、失敗時はエラーを返す。Ruby実行とLSPは同じCommand生成関数で環境変数とプロセス設定を揃える。RUBYOPT・RUBYLIB・GEM_HOME・GEM_PATH・RUBYGEMS_GEMDEPS・BUNDLE_*・BUNDLER_ORIG_*を大文字小文字によらず除去する。準備スクリプトも同じ除去規則を使う。
 
-停止後250 msで出力パイプが閉じない場合も実行予約を解放する。読み取りはノンブロッキングで停止可能にし、プロセスグループを離れた子孫がパイプを保持しても次の実行を妨げない。ただしsetsidなどでグループを離れた子孫自体は終了できず、実行後も残りうる。WindowsのJobの終了を前提にしたブロッキングの読み取りは、C4で削除する。
+停止後250 msで出力パイプが閉じない場合も実行予約を解放する。読み取りはノンブロッキングで停止可能にし、プロセスグループを離れた子孫がパイプを保持しても次の実行を妨げない。ただしsetsidなどでグループを離れた子孫自体は終了できず、実行後も残りうる。
 
 問題一覧と問題ページの取得・検証は、ブラウザのCookieを受け取る同じHTTP処理にまとめる。問題を開く処理は作業領域を受け取るコールバックで共有し、ロック方式は呼び出し側が決める。
 
 ## WSLのエージェント
 
-Phase C（C2〜C5）で実装する構成。エージェントとクライアントはC2、アプリ専用のディストリビューションとWindowsのアプリからの中継はC3a、初回起動でのダウンロードはC3cで作る。調査の結論は[Rubyの実行環境の調査](#rubyの実行環境の調査c0)にある。
+Rubyの実行とRuby LSPをWSL内で受け持つ構成。調査の結論は[Rubyの実行環境の調査](#rubyの実行環境の調査c0)にある。
 
 - エージェント（`atcoder-ruby-agent`）は、本番のRunner・Ruby LSP管理・比較を含む同じRustのライブラリを、Linux（x86_64）向けにビルドしたバイナリ。引数でRubyのパスとLSP用gemのフォルダーを受け取り、環境変数は読まない。CIのUbuntu 22.04で`scripts/build-wsl-runtime.sh`がRuby 3.4.5のソース（`config/ruby-wsl.json`でSHA-256を固定）からRubyをビルドし、採用gem・LSP用gem・エージェント・ライセンスとともに`/opt/atcoder-ruby-ide/`（`atcoder-ruby-agent`・`ruby/`・`ruby-lsp/`・`licenses/`）に置く。
 - アプリ専用のディストリビューション：利用者のUbuntuなどは使わず、アプリ専用のLinux（ディストリビューション名`AtCoderRubyIDE`）を使う。同じスクリプトが、Dockerの`ubuntu:22.04`にRubyが使う共有ライブラリ（`libssl3`・`libyaml-0-2`・`libffi8`・`libgmp10`・`zlib1g`）と、Rubyを動かす一般のユーザー`atcoder`を加え、上の`/opt/atcoder-ruby-ide/`を入れて（所有者はroot、誰でも読めて`atcoder`は書けない権限）、ファイルシステム全体を`vendor/wsl-image/atcoder-linux.tar.gz`（約45 MB）に書き出す。`/etc/wsl.conf`で既定のユーザーを`atcoder`にし、WindowsのPATHを加えない。中身の版を`/etc/atcoder-ruby-ide-version`に書く。版は、Ruby・gem・エージェントの`/opt/atcoder-ruby-ide/`と、このスクリプト（ユーザーや`wsl.conf`などの作り方を含む）のハッシュ。
@@ -117,7 +117,7 @@ Phase C（C2〜C5）で実装する構成。エージェントとクライアン
 - 解答ファイル（U3a）：作業領域の`files/<名前>.rb`がタブ1つ。名前の検証・自然順の並び・`solution.rb`からの一度だけの変換は`solutions`モジュールにまとめる。画面は`file_open`・`file_create`・`file_copy`・`file_rename`・`file_delete`に作業領域（`home`または問題URL）とタブの名前だけを渡し、パスは渡さない。`DocumentStore`は開いているファイルだけを保存先にし、名前を変えたファイルが開いていれば新しいパスで開き直す。開くたびに版（`revision`）を進めて開いた結果に載せ、画面は保存のたびに表示中の文書の版を送る。Rustは今開いている版と一致するときだけ保存するので、画面の表示とRustの開いた文書がずれても、別のファイルへは保存しない。開いているファイルは削除できない。
 - 読み込みの形の切り替え（U4b）：`task_open`は、縦に並ぶ入力の読み込みを`[ループの形, 配列の形]`の組（`readingForms`）で返す。エディタは、どちらかの形が行の区切りにそろって文書にそのまま残っている所の最初の行の右端にボタンを置き、押すともう一方の形に置き換える（履歴に残るので元に戻せる）。ボタンの判定は文書の変更のたびにやり直すため、書き換えた部分にはボタンが出ない。
 - アプリのホーム（U2d）の作業領域は`home/`。画面は`home_open`で開き、`samples_save`に`home`を渡して保存し、問題の作業領域と同じ処理（ファイルの作成・`DocumentStore`・サンプルの検証）を使う。
-- `on_navigation`で`https://atcoder.jp`以外への移動を止める。AtCoderのページが別ウィンドウで開こうとするリンク（`target="_blank"`など）は、AtCoder内なら同じWebViewで開き、それ以外は開かない。
+- `on_navigation`で、許可したオリジン（下の操作欄の項目）以外への移動を止める。ページが別ウィンドウで開こうとするリンク（`target="_blank"`など）は、許可したオリジンなら同じWebViewで開き、それ以外は開かない。
 - 問題のWebViewで、その問題のページの読み込みが終わり、`task.json`がない・読めない場合は、Rustが`eval_with_callback`でHTMLを受け取り、サンプルと制限値を読み取って`task.json`へ保存する。画面へは`task-page`イベントで知らせる。読み取れなかった場合（問題文がない。ログインしていない・参加登録していない・ページが存在しない）は理由を付ける。
 - 提出一覧（U5a）：どのWebViewでも、`/contests/<id>/submissions/me`の読み込みが終わったら、Rustが`eval_with_callback`でHTMLを受け取り、`submissions`モジュールが提出を読み取って`submissions/<contest-id>.json`へ加え、問題ごとの色（`ac`・`judging`・`other`）を`submissions`イベント（`contest`・`states`）で画面へ知らせる。ジャッジ中の提出があれば、3秒後にそのWebViewが表示中で、まだ提出一覧を表示しているかを確かめて読み直す。そうでなければ（U5b）、共用のWebViewのCookieで提出一覧を10秒ごとに取得し、同じ処理で読む。ジャッジ中の提出がなくなるか、ジャッジ中の提出一覧を読み込んでから10分たったらやめ、取得は1つのコンテストにつき同時に1つだけにする。画面はコンテストを選んだときに`submission_states`で色を受け取り、問題一覧のボタンに付ける。LinuxのブラウザーE2Eでは、テスト用ホストが`browser_open`で提出一覧のURLを開いたときにテスト用のサーバーから取得して同じ処理を呼び、ジャッジ中なら短い間隔で取得し直す。
 - 参加登録（U6a）：どのWebViewでも、コンテストのトップ（`/contests/<id>`）の読み込みが終わったら、Rustが`eval_with_callback`でHTMLを受け取り、`contests`モジュールが参加登録の状態と開始・終了の時刻を読む。参加登録していて終了から1日たっていなければ、コンテストの登録と同じ排他の中で`contests/<contest-id>.json`へ書き、変わった登録を`contest-joined`イベント（`contest`、失敗なら`error`）で画面へ知らせる。画面はアイコンを加える。終了から1日たった登録の非表示は、画面が起動時と1分ごとに`contest_hide_ended`を呼び、Rustが今の時刻と比べて書き換え、非表示にした登録を返す。LinuxのブラウザーE2Eでは、テスト用ホストが`browser_home`・`browser_open`でコンテストのトップを開いたときにテスト用のサーバーから取得して同じ処理を呼ぶ。
@@ -144,7 +144,7 @@ AtCoderのページからアプリの機能を呼べないよう、次の3つを
 
 1. capabilityは`webviews: ["main"]`で画面のWebViewだけに与え、`windows`は書かない。`windows`で指定すると、同じウィンドウの子のWebViewにも同じ権限が付く。`remote`も書かない。Tauriはリモートのオリジン（`https://atcoder.jp`）からの呼び出しを、`remote`を指定した権限がない限り拒否する。
 2. アプリのコマンドを`build.rs`の`tauri_build::AppManifest::commands`で宣言し、`allow-<コマンド>`を画面のWebViewのcapabilityにだけ付ける。宣言がないと、ローカルのオリジン（`tauri.localhost`）からのアプリのコマンドは権限を確かめずに実行される。試作では、AtCoderのページに`http://tauri.localhost/`のiframeを差し込むとアプリのページが読み込まれ、宣言があることで`ruby_info`などが拒否された。
-3. AtCoder用のWebViewは`on_navigation`で`https://atcoder.jp`以外への移動を止める。ページ全体の移動は止まるが、iframeの読み込みは止まらないため、2を省略しない。外部サイトへのリンクは開かない。新しいウィンドウで開くAtCoderのリンクは同じページで開く（[右端のブラウザと問題の読み取り](#右端のブラウザと問題の読み取り)）。
+3. 右端のブラウザのWebViewは`on_navigation`で、許可したオリジン（AtCoderと、設定で追加したもの）以外への移動を止める。ページ全体の移動は止まるが、iframeの読み込みは止まらないため、2を省略しない。許可していないサイトへのリンクは開かない。新しいウィンドウで開く許可したオリジンのリンクは同じページで開く（[右端のブラウザと問題の読み取り](#右端のブラウザと問題の読み取り)）。
 
 試作のWindows CIでは、AtCoderのページから`ruby_info`・試作のコマンド・通知・ウィンドウのタイトル変更がすべて「not allowed by ACL」で拒否され、IPCのURLへ直接送った要求も500で拒否された。画面のWebViewからは同じコマンドを実行できた。
 
