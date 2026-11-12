@@ -4,7 +4,7 @@
 use atcoder_ruby_ide::{
     browser_origins, browser_target, contest_top, fetch_page, http_client, is_allowed, is_atcoder,
     is_rurima_page, is_task_page, read_task_page, rurima_page, rurima_target, submissions_page,
-    unix_now, Contests, Submissions, Workspaces, RURIMA_HOME,
+    unix_now, Contests, Submissions, Workspaces, ATCODER_ORIGIN, RURIMA_HOME,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -17,7 +17,6 @@ use url::Url;
 pub const HOME: &str = "home";
 /// The るりま window over the AtCoder pages (D3).
 const RURIMA: &str = "rurima";
-const ATCODER: &str = "https://atcoder.jp";
 
 #[derive(Clone, Copy, Default, Deserialize)]
 pub struct Bounds {
@@ -55,16 +54,18 @@ pub struct Browser {
 
 /// The origin pages are loaded from. UI tests point it at a local server; normal runs use AtCoder.
 pub fn origin() -> String {
-    std::env::var("ATCODER_IDE_TEST_ORIGIN").unwrap_or_else(|_| ATCODER.into())
+    std::env::var("ATCODER_IDE_TEST_ORIGIN").unwrap_or_else(|_| ATCODER_ORIGIN.into())
 }
 pub fn to_origin(url: &str) -> Result<Url, String> {
-    Url::parse(&url.replacen(ATCODER, &origin(), 1)).map_err(|e| e.to_string())
+    Url::parse(&url.replacen(ATCODER_ORIGIN, &origin(), 1)).map_err(|e| e.to_string())
 }
 /// The real URL of a loaded page, undoing the UI tests' origin.
 fn real_url(url: &Url) -> Url {
     let origin = origin();
     match url.as_str().strip_prefix(origin.trim_end_matches('/')) {
-        Some(rest) if origin != ATCODER => Url::parse(&format!("{ATCODER}{rest}")).ok(),
+        Some(rest) if origin != ATCODER_ORIGIN => {
+            Url::parse(&format!("{ATCODER_ORIGIN}{rest}")).ok()
+        }
         _ => None,
     }
     .unwrap_or_else(|| url.clone())
@@ -446,7 +447,7 @@ impl Browser {
         let home = builder(
             app.handle(),
             HOME,
-            to_origin(&format!("{ATCODER}/")).unwrap(),
+            to_origin(&format!("{ATCODER_ORIGIN}/")).unwrap(),
             None,
         );
         let _home = window.add_child(
@@ -532,8 +533,10 @@ pub async fn browser_home(
     url: Option<String>,
 ) -> Result<(), String> {
     let home = app.get_webview(HOME).ok_or("ブラウザを準備できません。")?;
-    home.navigate(to_origin(&url.unwrap_or_else(|| format!("{ATCODER}/")))?)
-        .map_err(|e| e.to_string())?;
+    home.navigate(to_origin(
+        &url.unwrap_or_else(|| format!("{ATCODER_ORIGIN}/")),
+    )?)
+    .map_err(|e| e.to_string())?;
     *browser.shown.lock().unwrap() = HOME.into();
     browser.apply(&app);
     show_current_url(&app, &browser);
