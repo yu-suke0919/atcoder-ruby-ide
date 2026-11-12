@@ -486,7 +486,7 @@ fn generated_code_reads_the_whole_input_with_ruby() {
 }
 
 #[test]
-fn new_files_start_with_reading_code_but_converted_and_copied_files_do_not() {
+fn new_files_start_with_reading_code_but_copied_files_do_not() {
     let root = tempfile::tempdir().unwrap();
     let workspaces = Workspaces::new(root.path());
     let html = std::fs::read_to_string("../tests/fixtures/input-formats/abc081_b.html").unwrap();
@@ -498,8 +498,6 @@ fn new_files_start_with_reading_code_but_converted_and_copied_files_do_not() {
         .join("workspaces")
         .join("abs")
         .join("practice_1");
-    std::fs::create_dir_all(&directory).unwrap();
-    std::fs::write(directory.join("solution.rb"), "puts 'mine'").unwrap();
     let mut documents = DocumentStore::default();
     let opened = workspaces
         .open(URL, "B", documents.revision(), &mut documents)
@@ -508,7 +506,10 @@ fn new_files_start_with_reading_code_but_converted_and_copied_files_do_not() {
     let read = |name: &str| {
         std::fs::read_to_string(directory.join("files").join(format!("{name}.rb"))).unwrap()
     };
-    assert_eq!(opened.document.code, "puts 'mine'");
+    assert_eq!(opened.document.code, code);
+    documents
+        .save(opened.document.revision, "puts 'mine'")
+        .unwrap();
     assert_eq!(read("B_2"), code);
     assert_eq!(workspaces.create_file(URL, "B").unwrap(), "B_3");
     assert_eq!(read("B_3"), code);
@@ -737,145 +738,51 @@ fn tasks_without_samples_open_with_one_uncompared_empty_case() {
     );
 }
 
+/// The one-time conversions of U3a (solution.rb to files/) and U3b (cases.json to samples.json)
+/// are gone: files left from before them are neither read nor touched, even unreadable ones.
 #[test]
-fn existing_solutions_and_cases_are_reused_when_the_task_is_read_for_the_first_time() {
-    let root = tempfile::tempdir().unwrap();
-    let directory = root.path().join("workspaces/abs/practice_1");
-    std::fs::create_dir_all(&directory).unwrap();
-    std::fs::write(directory.join("solution.rb"), "puts 'before U2b'").unwrap();
-    std::fs::write(
-        directory.join("cases.json"),
-        include_bytes!("fixtures/cases-without-tolerance.json"),
-    )
-    .unwrap();
-    let workspaces = Workspaces::new(root.path());
-    workspaces
-        .store_task(&parse_task(URL, HTML).unwrap())
-        .unwrap();
-    let mut documents = DocumentStore::default();
-    let opened = workspaces
-        .open(URL, "A", documents.revision(), &mut documents)
-        .unwrap();
-    assert_eq!(opened.document.code, "puts 'before U2b'");
-    assert_eq!(opened.samples.cases[0].stdin, "保存済み\r\n");
-    // solution.rb becomes the first file once and stays as it was.
-    assert_eq!(opened.files, ["A_1", "A_2"]);
-    let read = |name: &str| std::fs::read_to_string(directory.join(name)).unwrap();
-    assert_eq!(read("files/A_1.rb"), "puts 'before U2b'");
-    assert_eq!(read("files/A_2.rb"), "");
-    assert_eq!(read("solution.rb"), "puts 'before U2b'");
-    std::fs::write(directory.join("solution.rb"), "puts 'changed later'").unwrap();
-    let reopened = workspaces
-        .open(URL, "A", documents.revision(), &mut documents)
-        .unwrap();
-    assert_eq!(reopened.document.code, "puts 'before U2b'");
-}
-
-#[test]
-fn per_sample_tolerances_become_the_problem_tolerance_once_and_cases_json_stays() {
-    let root = tempfile::tempdir().unwrap();
-    let directory = root.path().join("workspaces/abs/practice_1");
-    std::fs::create_dir_all(&directory).unwrap();
-    let old = r#"{"cases":[{"stdin":"1\r\n","expectedOutput":"1\n","compare":false},{"stdin":"2","expectedOutput":"2.000001","compare":true,"tolerance":1e-6},{"stdin":"3","expectedOutput":"","compare":true,"tolerance":1e-9}]}"#;
-    std::fs::write(directory.join("cases.json"), old).unwrap();
-    let workspaces = Workspaces::new(root.path());
-    workspaces
-        .store_task(&parse_task(URL, HTML).unwrap())
-        .unwrap();
-    let mut documents = DocumentStore::default();
-    let opened = workspaces
-        .open(URL, "A", documents.revision(), &mut documents)
-        .unwrap();
-    // The first tolerance found becomes the problem's; inputs, outputs and compare stay.
-    assert_eq!(opened.samples.tolerance, Some(1e-6));
-    let texts: Vec<_> = opened
-        .samples
-        .cases
-        .iter()
-        .map(|case| {
-            (
-                case.stdin.as_str(),
-                case.expected_output.as_str(),
-                case.compare,
-            )
-        })
-        .collect();
-    assert_eq!(
-        texts,
-        [
-            ("1\r\n", "1\n", false),
-            ("2", "2.000001", true),
-            ("3", "", true)
-        ]
-    );
-    assert_eq!(
-        std::fs::read_to_string(directory.join("cases.json")).unwrap(),
-        old
-    );
-    std::fs::write(directory.join("cases.json"), r#"{"cases":[]}"#).unwrap();
-    let reopened = workspaces
-        .open(URL, "A", documents.revision(), &mut documents)
-        .unwrap();
-    assert_eq!(reopened.samples, opened.samples);
-}
-
-#[test]
-fn unreadable_old_samples_are_left_as_they_were_and_named_on_open() {
-    let root = tempfile::tempdir().unwrap();
-    // Joined part by part so the message's path matches on Windows too.
-    let directory = root
-        .path()
-        .join("workspaces")
-        .join("abs")
-        .join("practice_1");
-    std::fs::create_dir_all(&directory).unwrap();
-    std::fs::write(directory.join("cases.json"), "not json").unwrap();
-    let workspaces = Workspaces::new(root.path());
-    workspaces
-        .store_task(&parse_task(URL, HTML).unwrap())
-        .unwrap();
-    let mut documents = DocumentStore::default();
-    let error = workspaces
-        .open(URL, "A", documents.revision(), &mut documents)
-        .unwrap_err();
-    assert!(
-        error.contains(&directory.join("cases.json").display().to_string()),
-        "{error}"
-    );
-    assert!(!directory.join("samples.json").exists());
-    assert_eq!(
-        std::fs::read_to_string(directory.join("cases.json")).unwrap(),
-        "not json"
-    );
-}
-
-#[test]
-fn a_solution_that_cannot_be_converted_is_left_as_it_was() {
-    let root = tempfile::tempdir().unwrap();
-    let directory = root.path().join("workspaces/abs/practice_1");
-    // A directory where solution.rb should be cannot be read, so nothing is converted.
-    std::fs::create_dir_all(directory.join("solution.rb")).unwrap();
-    std::fs::write(directory.join("solution.rb/keep.txt"), "keep").unwrap();
-    let workspaces = Workspaces::new(root.path());
-    workspaces
-        .store_task(&parse_task(URL, HTML).unwrap())
-        .unwrap();
-    let mut documents = DocumentStore::default();
-    let error = workspaces
-        .open(URL, "A", documents.revision(), &mut documents)
-        .unwrap_err();
-    assert!(error.contains("solution.rb"), "{error}");
-    let mut names: Vec<_> = std::fs::read_dir(&directory)
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
-        .collect();
-    names.sort();
-    assert_eq!(names, ["samples.json", "solution.rb", "task.json"]);
-    assert_eq!(
-        std::fs::read_to_string(directory.join("solution.rb/keep.txt")).unwrap(),
-        "keep"
-    );
-    assert_eq!(documents.path(), None);
+fn files_left_from_before_u3a_and_u3b_are_not_read_or_touched() {
+    for (solution, cases) in [
+        (
+            Some("puts 'before U2b'"),
+            Some(&include_bytes!("fixtures/cases-without-tolerance.json")[..]),
+        ),
+        (None, Some(&b"not json"[..])),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("workspaces/abs/practice_1");
+        std::fs::create_dir_all(&directory).unwrap();
+        if let Some(solution) = solution {
+            std::fs::write(directory.join("solution.rb"), solution).unwrap();
+        }
+        if let Some(cases) = cases {
+            std::fs::write(directory.join("cases.json"), cases).unwrap();
+        }
+        let workspaces = Workspaces::new(root.path());
+        let task = parse_task(URL, HTML).unwrap();
+        workspaces.store_task(&task).unwrap();
+        let mut documents = DocumentStore::default();
+        let opened = workspaces
+            .open(URL, "A", documents.revision(), &mut documents)
+            .unwrap();
+        assert_eq!(opened.files, ["A_1", "A_2"]);
+        // Both files start from the task, as in a workspace that never had solution.rb.
+        let second = std::fs::read_to_string(directory.join("files/A_2.rb")).unwrap();
+        assert_eq!(opened.document.code, second);
+        assert_ne!(Some(opened.document.code.as_str()), solution);
+        let samples: Vec<_> = task.samples.iter().map(SampleCase::from).collect();
+        assert_eq!(opened.samples.cases, samples);
+        assert_eq!(opened.samples.tolerance, None);
+        if let Some(solution) = solution {
+            assert_eq!(
+                std::fs::read_to_string(directory.join("solution.rb")).unwrap(),
+                solution
+            );
+        }
+        if let Some(cases) = cases {
+            assert_eq!(std::fs::read(directory.join("cases.json")).unwrap(), cases);
+        }
+    }
 }
 
 #[test]
