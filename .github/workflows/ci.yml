@@ -68,7 +68,7 @@ jobs:
           cache: npm
       - uses: dtolnay/rust-toolchain@1.99.1
         with:
-          components: rustfmt
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
@@ -83,6 +83,13 @@ jobs:
       - run: npm run prepare:gems
       - run: npm run prepare:lsp
       - run: cargo fmt --all --check
+      # No other job builds the Linux desktop app. It needs WebKitGTK, and vendor/wsl/ holds only
+      # resources of the Windows app.
+      - name: Clippy over the library, the tests and the Linux desktop app
+        run: |
+          sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev
+          mkdir -p vendor/wsl
+          cargo clippy --locked --workspace --all-targets --features desktop -- -D warnings
       - run: npm test
       - run: npx playwright install --with-deps chromium
       - name: Browser UI tests with the real Rust and Ruby backend

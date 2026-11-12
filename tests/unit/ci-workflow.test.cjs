@@ -32,3 +32,14 @@ test('CI caches the built Ruby, gems and Ruby LSP under the files that decide th
   assert.equal(cache.with.path, '.cache/wsl');
   assert.equal(cache.with.key, `wsl-runtime-\${{ hashFiles(${inputs.map(file => `'${file}'`).join(', ')}) }}`);
 });
+
+// Nothing else builds the desktop app on Linux, which the development app and its
+// non-Windows paths use, and Clippy's warnings would otherwise pile up unseen.
+test('CI runs Clippy over the library, the tests and the Linux desktop app, failing on warnings', () => {
+  const linux = workflow.jobs.linux;
+  const run = linux.steps.map(step => step.run ?? '').join('\n');
+  const toolchain = linux.steps.find(step => step.uses?.startsWith('dtolnay/rust-toolchain@'));
+  assert.match(toolchain.with.components, /\bclippy\b/);
+  assert.match(run, /cargo clippy --locked --workspace --all-targets --features desktop -- -D warnings/);
+  assert.match(run, /libwebkit2gtk-4\.1-dev/);
+});

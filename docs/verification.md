@@ -797,3 +797,9 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 - 項目はHTTPSのオリジンとし、ホスト名が完全に一致するページだけを開ける。サブドメインをまとめて許す書き方は、意図しないサイトまで開けるようになるため持たない。一覧は他の設定と同じく画面の`localStorage`に保存し、起動時と変更のたびに`browser_set_origins`でRustへ送る。Rustが項目を確かめて直し、受け付けた一覧だけを画面が保存する。
 - これまで`is_allowed`（許可するオリジン）を「AtCoderのページか」の意味でも使っていた提出一覧・コンテストのトップの判定を、`is_atcoder`に分けた。問題のページの読み取りも、読み込んだページがAtCoderのときだけにした。追加したドメインに`/contests/<id>/submissions/me`のようなパスがあっても読み取らない。
 - 失敗するテストを先に用意した。Rustは、ドメイン・URL・ポート付きの入力をHTTPSのオリジンに直すこと、HTTP・`file:`・`javascript:`・空・ホスト名なし・AtCoder・重複を理由付きで受け付けないこと、追加したオリジンをURL欄から開けてサブドメイン・別のポート・HTTPは開けないこと（理由に一覧を示す）、追加したドメインの提出一覧・コンテストのトップの形のパスを読み取らないことを確かめる。画面テストは、設定での追加（HTTP・AtCoder・重複の理由の表示、入力欄が空になる）、URL欄から開けること（WindowsのネイティブではAtCoder以外の実サイトへ移動しないよう省く）、サブドメインを開けないこと、再読み込み後も残ること、削除、読めない保存値が空に戻ることを確かめる。
+
+## CIにClippyとLinux向けのデスクトップ版のビルドを加える（F2）
+
+- main fc65db3から開始。LinuxのCIは`npm test`（`desktop`なし）だけをビルドし、`main.rs`・`browser.rs`をビルドするのはWindowsのジョブだけだった。Linux向けのデスクトップ版（`#[cfg(not(windows))]`の経路と開発用の`npm start`）はどのCIでもビルドされず、Clippyも実行していなかった。
+- 失敗するテストを先に用意した。CIの単体テストは、LinuxのジョブがClippyの部品を入れ、WebKitGTKを入れて`cargo clippy --locked --workspace --all-targets --features desktop -- -D warnings`を実行することを確かめる。
+- クラウドセッション（Ubuntu 24.04）に`libwebkit2gtk-4.1-dev`を入れて、Linux向けのデスクトップ版がビルドできることを確かめた。tauri-buildはリソースの`vendor/wsl/`がないと失敗するため、空のフォルダーを作る（READMEとクラウドセッションの資料に書いた）。Clippyの警告は2件だった。`wsl.rs`の`map_or(false, …)`を`is_ok_and`にし、Tauriのコマンドで引数が8つの`run_ruby`には、同じく引数の多い`cover_layout`と同じく`too_many_arguments`を許した。

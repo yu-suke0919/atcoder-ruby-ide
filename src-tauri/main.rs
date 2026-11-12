@@ -140,6 +140,7 @@ async fn ruby_info(state: tauri::State<'_, AppState>) -> Result<Value, String> {
     ask(&state, "ruby_info", Value::Null).await
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 async fn run_ruby(
     state: tauri::State<'_, AppState>,

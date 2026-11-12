@@ -29,9 +29,8 @@ pub fn ensure_distribution(
     let mut list = wsl();
     list.args(["-l", "-q"]);
     // With no distribution at all wsl.exe fails; that only means ours is missing too.
-    let registered = run(list).map_or(false, |(_, output)| {
-        output.lines().any(|name| name.trim() == DISTRIBUTION)
-    });
+    let registered =
+        run(list).is_ok_and(|(_, output)| output.lines().any(|name| name.trim() == DISTRIBUTION));
     if registered {
         let mut read = wsl();
         read.args(["-d", DISTRIBUTION, "-e", "cat", VERSION_FILE]);
