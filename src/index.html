@@ -40,8 +40,8 @@
       <div class="splitter" data-split="editor" role="separator" aria-orientation="horizontal" aria-label="エディタとサンプルの境目" title="ドラッグで高さを変更、ダブルクリックで元に戻す"></div>
       <div class="io-row">
         <section class="panel input-panel" aria-labelledby="input-heading">
-          <div class="panel-heading"><div class="panel-label"><h3 id="input-heading">サンプル</h3><span id="case-count" class="subtle">1 ケース</span></div><span id="problem-limits" class="subtle" aria-label="問題の制限"></span></div>
-          <div class="case-toolbar"><div id="case-tabs" class="case-tabs" role="tablist" aria-label="サンプル"></div><button id="case-add" class="quiet-button" title="サンプルを追加" aria-label="ケース追加">＋</button><button id="case-remove" class="quiet-button" title="選んでいるサンプルを削除" aria-label="ケース削除">削除</button></div>
+          <div class="panel-heading"><div class="panel-label"><h3 id="input-heading">サンプル</h3><span id="case-count" class="subtle">1 件</span></div><span id="problem-limits" class="subtle" aria-label="問題の制限"></span></div>
+          <div class="case-toolbar"><div id="case-tabs" class="case-tabs" role="tablist" aria-label="サンプル"></div><button id="case-add" class="quiet-button" title="サンプルを追加" aria-label="サンプルを追加">＋</button><button id="case-remove" class="quiet-button" title="選んでいるサンプルを削除" aria-label="サンプルを削除">削除</button></div>
           <div class="sample-fields">
             <div class="sample-field">
               <label for="stdin">標準入力</label>
@@ -93,7 +93,7 @@
       </div>
     </section>
   </div>
-  <footer class="statusbar"><span class="status-left"><span class="status-dot"></span>ローカル実行<span id="message" role="status">ヒント：Ctrl + Enter でも実行できます。</span></span><span title="メモリ上限は、Rubyとその子プロセスが使用中のメモリ（RSS）の合計で、問題のメモリ制限（不明なら1024 MiB）を使います。AtCoderの判定と同じ測り方ではありません。"><span id="execution-limit" title="選択ケースの実行時の打ち切り時間です。制限既知は問題の制限＋1秒（最低5秒・最大30秒）。正確な値は開始時に確定します。">既定上限 5 秒</span> <span class="separator">·</span> 入力上限 1 MiB・出力上限 合計 1 MiB</span></footer>
+  <footer class="statusbar"><span class="status-left"><span class="status-dot"></span>ローカル実行<span id="message" role="status">ヒント：Ctrl + Enter でも実行できます。</span></span><span title="メモリ上限は、Rubyとその子プロセスが使用中のメモリ（RSS）の合計で、問題のメモリ制限（不明なら1024 MiB）を使います。AtCoderの判定と同じ測り方ではありません。"><span id="execution-limit" title="選んでいるサンプルの実行時の打ち切り時間です。制限既知は問題の制限＋1秒（最低5秒・最大30秒）。正確な値は開始時に確定します。">既定上限 5 秒</span> <span class="separator">·</span> 入力上限 1 MiB・出力上限 合計 1 MiB</span></footer>
   <dialog id="settings-dialog" aria-labelledby="settings-dialog-heading">
     <h2 id="settings-dialog-heading">設定</h2>
     <label><input id="copy-on-match" type="checkbox">全サンプル一致でコードをコピー</label>

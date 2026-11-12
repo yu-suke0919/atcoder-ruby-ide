@@ -62,7 +62,7 @@ export class SampleCases {
 
   replace(data, { saved = false, tolerance = null } = {}) {
     if (!Array.isArray(data) || data.length < 1 || data.length > MAX_CASES) {
-      throw new Error('ケースは 1〜100 件にしてください。');
+      throw new Error('サンプルは 1〜100 件にしてください。');
     }
     const items = data.map(createCase);
     this.items = items;
