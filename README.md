@@ -109,7 +109,7 @@ npm run package:win
 ```
 
 Ruby のソースは公式配布元から取得し、[固定した SHA-256](config/ruby-wsl.json) を検証します。
-配布物は `artifacts/`、容量と同梱物のハッシュは `artifacts/reports/` に生成します。両配布物で、未保存コードからの補完取得を WSL の Ruby LSP で検証します。
+配布物は `artifacts/`、容量は `artifacts/reports/` に生成します。両配布物で、未保存コードからの補完取得を WSL の Ruby LSP で検証します。
 [GitHub Actions](.github/workflows/ci.yml) は、WSL へ置くイメージの作成と確認とリリース `wsl-images` への配置（Ubuntu 22.04）、Linux の共通・画面テストと、Windows のビルド・ZIP 展開相当のアプリ・NSIS インストール後のアプリ起動スモークテスト（WSL1）を実行します。
 資料だけの変更（`docs/**` とルートの `*.md`）では実行せず、同じブランチ・PR に新しい push があると古い実行を止めます。
 成功した Windows ジョブの Artifacts から ZIP またはインストーラーを取得できます。

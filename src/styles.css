@@ -6,7 +6,7 @@ button { cursor: pointer; border: 1px solid transparent; border-radius: 6px; bac
 button:hover:enabled { background: #2a3243; color: white; }
 button:focus-visible, textarea:focus-visible, pre:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 button:disabled { opacity: .35; cursor: default; }
-.ruby-mark { display: grid; place-items: center; width: 42px; height: 42px; background: #3a2536; color: #fb829f; border: 1px solid #71405b; border-radius: 12px; font-size: 27px; }
+.ruby-mark { display: grid; place-items: center; width: 28px; height: 28px; background: #3a2536; color: #fb829f; border: 1px solid #71405b; border-radius: 8px; font-size: 17px; }
 .environment { display: flex; align-items: center; gap: 8px; min-width: 0; border: 1px solid var(--border); border-radius: 7px; padding: 9px 12px; color: #c0cadd; font: 11px Consolas, monospace; max-width: 50%; }
 #ruby-version { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .live-dot, .status-dot { width: 6px; height: 6px; background: #69c5a2; border-radius: 50%; display: inline-block; flex-shrink: 0; }
@@ -19,13 +19,9 @@ button:disabled { opacity: .35; cursor: default; }
 .file-tabs [role="tab"][aria-selected="true"] { background: #2d2540; color: white; box-shadow: inset 0 -2px var(--accent); }
 .file-add { flex-shrink: 0; font-size: 14px; }
 h3 { font-weight: 500; font-size: 12px; margin: 0; }
-.file-icon { color: #bca4ff; font-size: 19px; }
-.language-pill { color: #e7a5b5; background: #382733; border-radius: 4px; padding: 3px 6px; font-size: 9px; }
 .subtle { font-size: 10px; color: var(--muted); }
-.editor-toolbar { padding: 8px 10px; border-bottom: 1px solid #232c39; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: space-between; flex-shrink: 0; }
 .save-status { display: inline-flex; gap: 6px; align-items: center; }
 #save-state[data-state="failed"] { color: #ff8b8b; }
-.shortcut { font-size: 10px; color: #6f7d94; padding-right: 5px; }
 .editor-container { background: #141922; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .completion-state { display: flex; align-items: center; gap: 8px; height: 28px; flex-shrink: 0; padding: 0 13px; color: var(--muted); font-size: 10px; }
 .completion-state span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -39,8 +35,7 @@ textarea { resize: none; border: 0; border-radius: 0; color: #d5deed; background
 .editor-footer { display: flex; justify-content: space-between; align-items: center; height: 34px; padding: 0 13px; color: var(--muted); border-top: 1px solid var(--border); font-size: 10px; gap: 15px; }
 #file-path { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 #cursor-position { white-space: nowrap; }
-.case-toolbar { display: flex; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-.case-toolbar { align-items: center; }
+.case-toolbar { display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .case-toolbar button { font-size: 10px; padding: 4px 6px; }
 .case-tabs { display: flex; gap: 3px; min-width: 0; overflow-x: auto; flex: 1; }
 /* A sample's tab shows its verdict by color. */
@@ -53,7 +48,6 @@ textarea { resize: none; border: 0; border-radius: 0; color: #d5deed; background
 .case-tabs [data-state="warning"] { box-shadow: inset 0 -2px #f2c77d; }
 .cases-summary { font-size: 10px; color: var(--muted); padding: 4px 16px; flex-shrink: 0; }
 .input-panel { display: flex; flex-direction: column; }
-.section-number { font-size: 9px; color: #a7a0cf; border: 1px solid #47425d; border-radius: 4px; padding: 3px 4px; }
 .sample-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); flex: 1; min-height: 0; }
 .sample-field { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .sample-field + .sample-field { border-left: 1px solid var(--border); }
@@ -76,8 +70,7 @@ textarea { resize: none; border: 0; border-radius: 0; color: #d5deed; background
 .stdout-dot { background: #76c5ab; }
 .stderr-dot { background: #f08e9d; }
 pre { margin: 0; padding: 0 16px 12px; white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; font: 12px/21px Consolas, "Liberation Mono", monospace; }
-#stdout { flex: 1.4; min-height: calc(1lh + 12px); color: #b9ebd7; }
-#stdout { contain: size; }
+#stdout { flex: 1.4; min-height: calc(1lh + 12px); color: #b9ebd7; contain: size; }
 .error-heading { border-top: 1px solid #252d3c; }
 #error-location { color: #f5a3b2; text-decoration: underline; }
 .stderr-panel { flex-shrink: 0; border-top: 1px solid #252d3c; }
@@ -123,7 +116,6 @@ pre { margin: 0; padding: 0 16px 12px; white-space: pre-wrap; overflow-wrap: any
 ::-webkit-scrollbar-thumb { background: #394356; border-radius: 5px; }
 .topbar { height: 48px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); background: #151a24; flex-shrink: 0; }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.ruby-mark { width: 28px; height: 28px; font-size: 17px; border-radius: 8px; }
 h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 .brand-caption { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app { --rail-width: 56px; flex: 1; min-height: 0; display: grid; grid-template-columns: 56px 5px 190px 5px minmax(480px, 55fr) 5px minmax(360px, 45fr); }
@@ -189,7 +181,6 @@ h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 /* The るりま window (D3): the blue of its pages' title, rounded like the panes. */
 .rurima-toggle { white-space: nowrap; color: #c9c9ff; border-color: #33a; }
 .rurima-toggle:hover, .rurima-toggle[aria-pressed="true"] { background: #33a; color: #fff; border-color: #33a; }
-.browser-host { position: relative; }
 /* The windows that slide over the AtCoder page (D3, D4) and the darkened picture of it. */
 .browser-cover { position: absolute; inset: 0; overflow: hidden; background: #0c1016; }
 .browser-cover[hidden] { display: none; }
@@ -231,7 +222,7 @@ h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 #browser-url { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font: 12px Consolas, monospace; }
 .browser-message { margin: 0; padding: 4px 10px; color: #f5a3b2; font-size: 11px; flex-shrink: 0; }
 .browser-message:empty { display: none; }
-.browser-host { flex: 1; min-width: 0; min-height: 0; background: #0c1016; display: grid; place-items: center; color: var(--muted); font-size: 11px; padding: 16px; text-align: center; }
+.browser-host { position: relative; flex: 1; min-width: 0; min-height: 0; background: #0c1016; display: grid; place-items: center; color: var(--muted); font-size: 11px; padding: 16px; text-align: center; }
 .statusbar { display: flex; justify-content: space-between; padding: 6px 16px; border-top: 1px solid var(--border); color: #75849b; font-size: 10px; flex-shrink: 0; background: #121720; }
 #contest-dialog, #save-failed-dialog, #file-rename-dialog, #file-delete-dialog, #settings-dialog { width: min(560px, calc(100vw - 36px)); padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); }
 #contest-dialog::backdrop, #save-failed-dialog::backdrop, #file-rename-dialog::backdrop, #file-delete-dialog::backdrop, #settings-dialog::backdrop { background: #000a; }
@@ -249,7 +240,7 @@ h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 .origin-form button { border-color: var(--border); }
 #origin-message:empty { display: none; }
 #origin-message { color: #f5a3b2; }
-.dialog-actions, .repair-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 @media (max-height: 760px) {
   .io-row .panel-heading { height: 28px; }
   .input-footer { padding: 3px 10px; }
