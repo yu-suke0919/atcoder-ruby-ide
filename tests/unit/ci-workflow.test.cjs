@@ -43,4 +43,6 @@ test('CI runs Clippy over the library and tests, and over the Windows desktop ap
   assert.equal(toolchain.with.targets, 'x86_64-pc-windows-msvc');
   assert.match(run, /cargo clippy --locked --workspace --all-targets -- -D warnings/);
   assert.match(run, /cargo clippy --locked --target x86_64-pc-windows-msvc --features desktop --bin atcoder-ruby-ide -- -D warnings/);
+  // Tauri's build script compiles the Windows resources with llvm-rc.
+  assert.match(run, /apt-get install -y llvm\b/);
 });

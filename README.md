@@ -85,7 +85,7 @@ cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 ```
 
-デスクトップアプリはWindows向けにだけビルドします。Linuxでは、Windows向けのデスクトップアプリを `rustup target add x86_64-pc-windows-msvc` の後に `cargo clippy --locked --target x86_64-pc-windows-msvc --features desktop --bin atcoder-ruby-ide -- -D warnings` で確かめられます（空の `vendor/wsl/` が要ります）。
+デスクトップアプリはWindows向けにだけビルドします。Linuxでは、Windows向けのデスクトップアプリを `rustup target add x86_64-pc-windows-msvc` の後に `cargo clippy --locked --target x86_64-pc-windows-msvc --features desktop --bin atcoder-ruby-ide -- -D warnings` で確かめられます（空の `vendor/wsl/` と、Tauri がアイコンのリソースを作る `llvm-rc`（Ubuntuでは `llvm`）が要ります）。
 
 `npm ci` はCodeMirrorのバンドル・ライセンスを `src/vendor/` に生成します。エディタの依存や `scripts/codemirror.mjs` を変更した場合は `npm run prepare:editor` で再生成します。表示時にCDNや外部サービスへ接続しません。
 

@@ -802,4 +802,5 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 
 - main fc65db3から開始。Linux向けのデスクトップアプリ（`#[cfg(not(windows))]`の経路と開発用の`npm start`）は、どのCIでもビルドされていなかった。Linuxの画面テストはテスト用ホストとheadless Chromiumで動き、デスクトップアプリを使わないため、Windows向けだけにした（利用者の判断、2026-11-12）。Linuxで`--features desktop`をビルドすると「The desktop app is built only for Windows.」で止まる。Linux向けのエージェントの起動・ページの撮影の代わり・`#[cfg(windows)]`の条件を`main.rs`と`browser.rs`から消した。
 - Clippyはどのジョブでも実行していなかった。失敗するテストを先に用意した。CIの単体テストは、Linuxのジョブが、ライブラリとテストのClippyと、Windowsのターゲット（`x86_64-pc-windows-msvc`）でのデスクトップアプリのClippyを、警告をエラーにして実行することを確かめる。Windowsのターゲットの型の確かめはWebKitGTKもWindowsのSDKも要らず、クラウドセッションでも動いた（tauri-buildのアイコンのリソースはGNUのコンパイラーで作れないと警告するが、確かめには影響しない）。
+- 最初のCIで、Windowsのターゲットの確かめが、Tauriのビルドスクリプト（tauri-winres）がアイコンのリソースを作る`llvm-rc`を見つけられずに失敗した（`NotAttempted("llvm-rc")`）。クラウドセッションには`llvm`が入っていたため通っていた。`llvm-rc`を隠すと同じエラーになり、戻すと通ることを確かめ、CIでは`llvm-rc`がなければ`llvm`を入れるようにした。
 - 見つかった警告は2件だった。`wsl.rs`の`map_or(false, …)`を`is_ok_and`にし、Tauriのコマンドで引数が8つの`run_ruby`には、同じく引数の多い`cover_layout`と同じく`too_many_arguments`を許した。

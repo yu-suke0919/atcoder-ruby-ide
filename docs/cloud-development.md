@@ -76,6 +76,10 @@ rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt
   --target x86_64-pc-windows-msvc \
   && status+=("rust: ok") || status+=("rust: FAILED")
 
+# Windows向けのデスクトップアプリをClippyで確かめるとき、Tauriがアイコンのリソースを作るllvm-rc
+command -v llvm-rc >/dev/null || { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq llvm; } \
+  && status+=("llvm-rc: ok") || status+=("llvm-rc: FAILED")
+
 # 画面テスト用のChromium
 if npx -y "playwright@$PLAYWRIGHT_VERSION" install --with-deps chromium \
   || npx -y "playwright@$PLAYWRIGHT_VERSION" install chromium; then
