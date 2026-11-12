@@ -1373,6 +1373,51 @@ test('M20/U5b: a judging submission keeps updating its color after another task 
   await colored('follow_a', 'ac', 30000);
 });
 
+test('D5: domains added in the settings open in the browser, stay after a reload and can be removed', async () => {
+  const origins = page.locator('#browser-origins li');
+  const typed = page.locator('#origin-input');
+  const said = page.locator('#origin-message');
+  const openSettings = () => page.getByRole('button', { name: '設定', exact: true }).click();
+  const add = async text => { await typed.fill(text); await page.getByRole('button', { name: '追加', exact: true }).click(); };
+  const open = async url => { await page.locator('#browser-url').fill(url); await page.locator('#browser-url').press('Enter'); };
+  await openSettings();
+  assert.deepEqual(await origins.allTextContents(), ['https://atcoder.jp常に開ける']);
+  // Only HTTPS origins with a domain, each once, and not AtCoder again.
+  await add('http://kenkoooo.com');
+  await said.filter({ hasText: 'HTTPS' }).waitFor();
+  await add('atcoder.jp/contests');
+  await said.filter({ hasText: 'AtCoder' }).waitFor();
+  await add('kenkoooo.com/atcoder/');
+  await page.waitForFunction(() => document.querySelectorAll('#browser-origins li').length === 2);
+  assert.equal(await origins.nth(1).textContent(), 'https://kenkoooo.com削除');
+  assert.equal(await typed.inputValue(), '');
+  assert.equal(await said.textContent(), '');
+  await add('https://kenkoooo.com/');
+  await said.filter({ hasText: 'すでに' }).waitFor();
+  await page.locator('#settings-close').click();
+  // The URL field opens the added domain; a subdomain of it is still refused.
+  if (runner !== 'native') {
+    await open('kenkoooo.com/atcoder/');
+    await page.waitForFunction(() => document.getElementById('browser-url').value === 'https://kenkoooo.com/atcoder/');
+    assert.equal(await page.locator('#browser-message').textContent(), '');
+  }
+  await open('https://www.kenkoooo.com/');
+  await page.locator('#browser-message').filter({ hasText: 'https://atcoder.jp、https://kenkoooo.com' }).waitFor();
+  // Kept after a reload, then removed.
+  await page.reload(); await waitInitialized(page);
+  await openSettings();
+  assert.equal(await origins.count(), 2);
+  await page.getByRole('button', { name: 'https://kenkoooo.com を削除' }).click();
+  await page.waitForFunction(() => document.querySelectorAll('#browser-origins li').length === 1);
+  await page.locator('#settings-close').click();
+  await open('https://kenkoooo.com/');
+  await page.locator('#browser-message').filter({ hasText: /開けるのは https:\/\/atcoder\.jp のページだけです/ }).waitFor();
+  // A saved list the app cannot read goes back to none.
+  await page.evaluate(() => localStorage.setItem('atcoder-ide-browser-origins', '["http://x.example"]'));
+  await page.reload(); await waitInitialized(page);
+  assert.equal(await page.evaluate(() => localStorage.getItem('atcoder-ide-browser-origins')), '[]');
+});
+
 test('D3: the るりま window slides over the darkened AtCoder page with its own URL field and search field, and searches from F1 and the right-click menu', async () => {
   const google = words => `https://www.google.com/search?${new URLSearchParams({ q: `${words} site:docs.ruby-lang.org` })}`;
   const toggle = page.locator('#rurima-toggle');

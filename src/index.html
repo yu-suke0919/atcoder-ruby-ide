@@ -98,6 +98,11 @@
     <h2 id="settings-dialog-heading">設定</h2>
     <label><input id="copy-on-match" type="checkbox">全サンプル一致でコードをコピー</label>
     <p class="dialog-help">比較するサンプルが実行ですべて一致になったら、開いているファイルのコードをクリップボードへコピーします。</p>
+    <h3 class="settings-heading">ブラウザで開けるドメイン</h3>
+    <ul id="browser-origins" class="origin-list" aria-label="ブラウザで開けるドメイン"></ul>
+    <form id="origin-form" class="origin-form"><input id="origin-input" aria-label="追加するドメインかURL" placeholder="kenkoooo.com や https://kenkoooo.com/atcoder/" spellcheck="false" autocomplete="off"><button type="submit">追加</button></form>
+    <p id="origin-message" class="dialog-help" role="status"></p>
+    <p class="dialog-help">AtCoderのほかに右端のブラウザで開けるサイトです。HTTPSのページだけで、ホスト名が一致するページを開けます。アプリが読み取るのはAtCoderのページだけです。</p>
     <div class="dialog-actions"><button id="settings-close">閉じる</button></div>
   </dialog>
   <dialog id="contest-dialog" aria-labelledby="contest-dialog-heading">

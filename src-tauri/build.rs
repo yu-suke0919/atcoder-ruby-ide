@@ -31,6 +31,7 @@ fn main() {
             "browser_task",
             "browser_close_tasks",
             "browser_open",
+            "browser_set_origins",
             "browser_history",
             "browser_reload",
             "rurima_show",

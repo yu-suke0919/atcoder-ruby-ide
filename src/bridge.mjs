@@ -33,6 +33,8 @@ export const ide = {
   browserTask: url => invoke('browser_task', { url }),
   browserCloseTasks: () => invoke('browser_close_tasks'),
   browserOpen: url => invoke('browser_open', { url }),
+  // Sets the domains added in the settings; resolves to them as HTTPS origins.
+  browserSetOrigins: origins => invoke('browser_set_origins', { origins }),
   browserHistory: forward => invoke('browser_history', { forward }),
   browserReload: () => invoke('browser_reload'),
   rurimaShow: query => invoke('rurima_show', { query }),

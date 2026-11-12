@@ -1,9 +1,10 @@
 //! The AtCoder pages in the right column: one home page and one page per task of the selected
-//! contest. Pages cannot call the app; the app reads a task page after it has loaded.
+//! contest, which may also go to the origins added in the settings (D5). Pages cannot call the
+//! app; the app reads a task page after it has loaded, and only AtCoder's pages.
 use atcoder_ruby_ide::{
-    browser_target, contest_top, fetch_page, http_client, is_allowed, is_rurima_page, is_task_page,
-    read_task_page, rurima_page, rurima_target, submissions_page, unix_now, Contests, Submissions,
-    Workspaces, RURIMA_HOME,
+    browser_origins, browser_target, contest_top, fetch_page, http_client, is_allowed, is_atcoder,
+    is_rurima_page, is_task_page, read_task_page, rurima_page, rurima_target, submissions_page,
+    unix_now, Contests, Submissions, Workspaces, RURIMA_HOME,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -48,6 +49,8 @@ pub struct Browser {
     /// lies, empty for the graph. The screen draws the window around it, and the AtCoder pages
     /// are hidden behind a picture of them.
     cover: Mutex<Option<Bounds>>,
+    /// The origins added in the settings, besides AtCoder (D5).
+    origins: Mutex<Vec<String>>,
 }
 
 /// The origin pages are loaded from. UI tests point it at a local server; normal runs use AtCoder.
@@ -57,17 +60,21 @@ pub fn origin() -> String {
 pub fn to_origin(url: &str) -> Result<Url, String> {
     Url::parse(&url.replacen(ATCODER, &origin(), 1)).map_err(|e| e.to_string())
 }
-/// The AtCoder URL of a loaded page, undoing the UI tests' origin.
-fn from_origin(url: &Url) -> Option<Url> {
+/// The real URL of a loaded page, undoing the UI tests' origin.
+fn real_url(url: &Url) -> Url {
     let origin = origin();
-    let url = match url.as_str().strip_prefix(origin.trim_end_matches('/')) {
-        Some(rest) if origin != ATCODER => Url::parse(&format!("{ATCODER}{rest}")).ok()?,
-        _ => url.clone(),
-    };
-    is_allowed(&url).then_some(url)
+    match url.as_str().strip_prefix(origin.trim_end_matches('/')) {
+        Some(rest) if origin != ATCODER => Url::parse(&format!("{ATCODER}{rest}")).ok(),
+        _ => None,
+    }
+    .unwrap_or_else(|| url.clone())
 }
-fn allowed(url: &Url) -> bool {
-    from_origin(url).is_some()
+/// Whether the pages may go to a URL: AtCoder or an origin added in the settings.
+fn allowed(app: &tauri::AppHandle, url: &Url) -> bool {
+    is_allowed(
+        &real_url(url),
+        &app.state::<Browser>().origins.lock().unwrap(),
+    )
 }
 
 /// The るりま window's pages in UI tests come from a local server, each site under its own path.
@@ -114,8 +121,8 @@ fn show_url(webview: &tauri::Webview, url: &Url) {
     if *browser.shown.lock().unwrap() != webview.label() {
         return;
     }
-    if let Some(url) = from_origin(url) {
-        let _ = webview.emit_to("main", "browser-url", url.as_str());
+    if allowed(webview.app_handle(), url) {
+        let _ = webview.emit_to("main", "browser-url", real_url(url).as_str());
     }
 }
 fn shown(app: &tauri::AppHandle, browser: &Browser) -> Result<tauri::Webview, String> {
@@ -229,7 +236,7 @@ fn read_submissions(webview: &tauri::Webview, since: Instant) {
             let shown_list = || {
                 app.get_webview(&label)
                     .and_then(|webview| webview.url().ok())
-                    .and_then(|url| from_origin(&url))
+                    .map(|url| real_url(&url))
                     .filter(|url| submissions_page(url).is_some())
             };
             let Some(page) = shown_list() else {
@@ -392,11 +399,12 @@ fn builder(
     task: Option<String>,
 ) -> WebviewBuilder<tauri::Wry> {
     let (app_for_window, label_for_window) = (app.clone(), label.to_string());
+    let app_for_page = app.clone();
     let mut builder = WebviewBuilder::new(label, WebviewUrl::External(url))
-        .on_navigation(allowed)
+        .on_navigation(move |url| allowed(&app_for_page, url))
         .on_new_window(move |url, _| {
-            // AtCoder links that open a new window stay in the same page; others are not opened.
-            if allowed(&url) {
+            // Allowed links that open a new window stay in the same page; others are not opened.
+            if allowed(&app_for_window, &url) {
                 if let Some(webview) = app_for_window.get_webview(&label_for_window) {
                     let _ = webview.navigate(url);
                 }
@@ -406,16 +414,16 @@ fn builder(
     builder = builder.on_page_load(move |webview, payload| {
         show_url(&webview, payload.url());
         if payload.event() == tauri::webview::PageLoadEvent::Finished {
-            match from_origin(payload.url()) {
-                Some(url) if submissions_page(&url).is_some() => {
-                    read_submissions(&webview, Instant::now())
-                }
-                Some(url) if contest_top(&url).is_some() => read_contest_top(&webview, url),
-                _ => {}
+            let url = real_url(payload.url());
+            if submissions_page(&url).is_some() {
+                read_submissions(&webview, Instant::now());
+            } else if contest_top(&url).is_some() {
+                read_contest_top(&webview, url);
             }
         }
         if let Some(task_url) = &task {
             if payload.event() == tauri::webview::PageLoadEvent::Finished
+                && is_atcoder(&real_url(payload.url()))
                 && is_task_page(task_url, payload.url())
             {
                 read_if_needed(&webview, task_url.clone());
@@ -600,6 +608,18 @@ pub async fn browser_close_tasks(
     Ok(())
 }
 
+/// Sets the origins added in the settings (D5), each typed as a domain or a URL, and returns
+/// them as HTTPS origins. One that cannot be added leaves the list as it was.
+#[tauri::command]
+pub async fn browser_set_origins(
+    browser: tauri::State<'_, Browser>,
+    origins: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let origins = browser_origins(&origins)?;
+    *browser.origins.lock().unwrap() = origins.clone();
+    Ok(origins)
+}
+
 /// Opens a URL typed in the URL field in the shown page.
 #[tauri::command]
 pub async fn browser_open(
@@ -607,7 +627,8 @@ pub async fn browser_open(
     browser: tauri::State<'_, Browser>,
     url: String,
 ) -> Result<(), String> {
-    let url = to_origin(browser_target(&url)?.as_str())?;
+    let origins = browser.origins.lock().unwrap().clone();
+    let url = to_origin(browser_target(&url, &origins)?.as_str())?;
     shown(&app, &browser)?
         .navigate(url)
         .map_err(|e| e.to_string())

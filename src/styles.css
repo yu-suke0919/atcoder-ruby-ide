@@ -239,6 +239,16 @@ h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 #contest-url, #file-rename-input { display: block; width: 100%; margin-top: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 8px; font: inherit; }
 .dialog-help, #contest-message, #save-failed-message, #file-rename-message, #file-delete-message { color: var(--muted); font-size: 11px; line-height: 1.6; white-space: pre-line; }
 #contest-message[data-error="true"], #file-rename-message { color: #f5a3b2; }
+.settings-heading { margin: 18px 0 6px; font-size: 13px; }
+.origin-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 6px; }
+.origin-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 4px 4px 10px; font: 12px Consolas, monospace; min-height: 30px; }
+.origin-list li + li { border-top: 1px solid var(--border); }
+.origin-list button { padding: 3px 8px; font: 11px "Segoe UI", sans-serif; }
+.origin-form { display: flex; gap: 6px; margin-top: 8px; }
+#origin-input { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 6px 8px; font: 12px Consolas, monospace; }
+.origin-form button { border-color: var(--border); }
+#origin-message:empty { display: none; }
+#origin-message { color: #f5a3b2; }
 .dialog-actions, .repair-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 @media (max-height: 760px) {
   .io-row .panel-heading { height: 28px; }

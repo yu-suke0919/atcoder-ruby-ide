@@ -470,6 +470,7 @@ fn main() {
             browser::browser_task,
             browser::browser_close_tasks,
             browser::browser_open,
+            browser::browser_set_origins,
             browser::browser_history,
             browser::browser_reload,
             browser::rurima_show,
