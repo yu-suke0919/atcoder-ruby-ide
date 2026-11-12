@@ -72,7 +72,8 @@ fi
 
 # Rust（rust-toolchain.tomlの版）
 command -v rustup >/dev/null || curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal
-rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt \
+rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy \
+  --target x86_64-pc-windows-msvc \
   && status+=("rust: ok") || status+=("rust: FAILED")
 
 # 画面テスト用のChromium
@@ -101,6 +102,8 @@ cargo --version         # rust-toolchain.toml の版
 bash scripts/cloud-session.sh && tail -20 /tmp/atcoder-ruby-ide-session.log
 npm test
 cargo fmt --all --check
+cargo clippy --locked --workspace --all-targets -- -D warnings
+mkdir -p vendor/wsl && cargo clippy --locked --target x86_64-pc-windows-msvc --features desktop --bin atcoder-ruby-ide -- -D warnings
 npm run test:e2e
 ```
 
@@ -118,7 +121,7 @@ npm run test:e2e
 ```markdown
 docs/roadmap.md の U2 を実装する。他の項目には手を付けない。
 - AGENTS.md の順番（資料 → 失敗するテスト → 最小実装 → 不要コード・資料矛盾の確認）を守り、verification.md に記録する。
-- Linux の npm test・cargo fmt --all --check・npm run test:e2e をセッション内で通す。
+- Linux の npm test・cargo fmt --all --check・cargo clippy（2つ）・npm run test:e2e をセッション内で通す。
 - PR を作成し、Linux と Windows の CI の成功を確認してから報告する。マージはしない。
 - 判断が分かれる点や、調査で前提が崩れた点は、実装する前に報告する。
 - 手元での確認が必要な項目（ログイン・参加登録・提出、WSL2）は、確認手順を PR 本文に書く。

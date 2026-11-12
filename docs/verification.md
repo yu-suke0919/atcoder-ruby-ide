@@ -797,3 +797,9 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 - 項目はHTTPSのオリジンとし、ホスト名が完全に一致するページだけを開ける。サブドメインをまとめて許す書き方は、意図しないサイトまで開けるようになるため持たない。一覧は他の設定と同じく画面の`localStorage`に保存し、起動時と変更のたびに`browser_set_origins`でRustへ送る。Rustが項目を確かめて直し、受け付けた一覧だけを画面が保存する。
 - これまで`is_allowed`（許可するオリジン）を「AtCoderのページか」の意味でも使っていた提出一覧・コンテストのトップの判定を、`is_atcoder`に分けた。問題のページの読み取りも、読み込んだページがAtCoderのときだけにした。追加したドメインに`/contests/<id>/submissions/me`のようなパスがあっても読み取らない。
 - 失敗するテストを先に用意した。Rustは、ドメイン・URL・ポート付きの入力をHTTPSのオリジンに直すこと、HTTP・`file:`・`javascript:`・空・ホスト名なし・AtCoder・重複を理由付きで受け付けないこと、追加したオリジンをURL欄から開けてサブドメイン・別のポート・HTTPは開けないこと（理由に一覧を示す）、追加したドメインの提出一覧・コンテストのトップの形のパスを読み取らないことを確かめる。画面テストは、設定での追加（HTTP・AtCoder・重複の理由の表示、入力欄が空になる）、URL欄から開けること（WindowsのネイティブではAtCoder以外の実サイトへ移動しないよう省く）、サブドメインを開けないこと、再読み込み後も残ること、削除、読めない保存値が空に戻ることを確かめる。
+
+## デスクトップアプリをWindows向けだけにし、CIでClippyを実行する（F2）
+
+- main fc65db3から開始。Linux向けのデスクトップアプリ（`#[cfg(not(windows))]`の経路と開発用の`npm start`）は、どのCIでもビルドされていなかった。Linuxの画面テストはテスト用ホストとheadless Chromiumで動き、デスクトップアプリを使わないため、Windows向けだけにした（利用者の判断、2026-11-12）。Linuxで`--features desktop`をビルドすると「The desktop app is built only for Windows.」で止まる。Linux向けのエージェントの起動・ページの撮影の代わり・`#[cfg(windows)]`の条件を`main.rs`と`browser.rs`から消した。
+- Clippyはどのジョブでも実行していなかった。失敗するテストを先に用意した。CIの単体テストは、Linuxのジョブが、ライブラリとテストのClippyと、Windowsのターゲット（`x86_64-pc-windows-msvc`）でのデスクトップアプリのClippyを、警告をエラーにして実行することを確かめる。Windowsのターゲットの型の確かめはWebKitGTKもWindowsのSDKも要らず、クラウドセッションでも動いた（tauri-buildのアイコンのリソースはGNUのコンパイラーで作れないと警告するが、確かめには影響しない）。
+- 見つかった警告は2件だった。`wsl.rs`の`map_or(false, …)`を`is_ok_and`にし、Tauriのコマンドで引数が8つの`run_ruby`には、同じく引数の多い`cover_layout`と同じく`too_many_arguments`を許した。
