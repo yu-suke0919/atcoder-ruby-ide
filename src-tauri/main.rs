@@ -1,6 +1,9 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod browser;
+mod rurima;
+#[cfg(windows)]
+mod webview2;
 
 use atcoder_ruby_ide::{
     fetch_page, http_client, unix_now, AgentClient, Contest, Contests, DocumentResult,
@@ -438,7 +441,7 @@ fn main() {
             // The screen's own text can be searched for in るりま from the right-click menu too.
             #[cfg(windows)]
             if let Some(main) = app.get_webview("main") {
-                browser::add_search_menu(&main);
+                webview2::add_search_menu(&main);
             }
             Ok(())
         })
@@ -473,10 +476,10 @@ fn main() {
             browser::browser_set_origins,
             browser::browser_history,
             browser::browser_reload,
-            browser::rurima_show,
+            rurima::rurima_show,
             browser::cover_layout,
-            browser::rurima_history,
-            browser::rurima_reload,
+            rurima::rurima_history,
+            rurima::rurima_reload,
             browser::browser_snapshot
         ])
         .build(context)

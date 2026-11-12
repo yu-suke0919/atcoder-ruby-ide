@@ -803,3 +803,10 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 - main fc65db3から開始。AtCoderのオリジンが、`navigation.rs`の`ATCODER_ORIGIN`と`browser.rs`の`ATCODER`の2つの定数と、`contests.rs`・`submissions.rs`・`task.rs`・テスト用ホストの文字列に分かれていた。`ATCODER_ORIGIN`だけにし、コンテストのURLは`navigation.rs`の`contest_url`で作る。問題のURLの検証は、スキーム・ホスト・ポートを個別に比べる代わりに`is_atcoder`（オリジンの比較）を使う。既定のポート（443）を書いたURLは`url`がポートなしに直すため、受け付けるURLは変わらない。利用者に見せる例のURLは文のまま残した。
 - ブラウザーの画面テストは、配るファイルを手で列挙していたため、D4で新しいモジュールを加え忘れて全滅した。アプリと同じく`src/`の下を配り（`src/`の外へ出るパスと、HTML・スクリプト・CSS以外は404）、使っていないフォントの種類を外した。
 - 挙動は変えないため、既存のテストを変えずに通ることを確かめた。
+
+## 右端のブラウザのRustを分ける（F5）
+
+- F4のブランチから開始。827行の`browser.rs`から、るりまの窓（テスト用の置き換え・WebViewの作成・`rurima_show`・`rurima_history`・`rurima_reload`、133行）を`rurima.rs`へ、WebView2だけにある機能（右クリックの「るりまを全文検索」とページの撮影。`unsafe`を含み、Windowsだけ）を`webview2.rs`へ移した。`browser.rs`は602行になった。コマンドの名前は変えていない。提出一覧の追跡はWebViewの状態に依存するため残した。
+- Windowsだけのコードはクラウドセッションでビルドできないため、`x86_64-pc-windows-msvc`のターゲットを入れて、Linuxから`cargo clippy --target x86_64-pc-windows-msvc --features desktop`で型を確かめた。移した右クリックの処理で`Manager`がスコープになくエラーになったのを、この確かめで見つけて直した。移す前後で、WindowsとLinuxのどちらでも警告は既知の2件だけだった。
+- ブリッジが送る引数の名前とTauriのコマンドの引数の名前を比べるNodeのテストは、`main.rs`と`browser.rs`だけからコマンドを読んでいたため、`rurima.rs`へ移した`rurima_show`を見つけられずに失敗した。`src-tauri/`のすべての`.rs`から読むようにした（テストの変更はこの1行だけ）。
+- 右クリックのメニューと、窓の背景のAtCoderのページの画像は、WindowsのCIでも操作できないため、利用者の手元で確かめる。
