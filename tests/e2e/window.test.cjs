@@ -31,3 +31,18 @@ test('U2c: the window size and position come back on the next start', { skip: ru
     await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
+
+// Preparing the agent the first time can take minutes; closing must not wait for it to stop a
+// run that is not there.
+test('closing with nothing running does not ask to stop a run', { skip: runner !== 'browser' && 'reads the commands the screen sends to the test host' }, async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'IDE close '));
+  const app = await launch(root);
+  try {
+    await app.page.waitForFunction(() => !document.getElementById('ruby-recheck').disabled);
+    await Promise.all([once(app.child, 'exit', { signal: AbortSignal.timeout(30000) }), requestClose(app)]);
+    assert.equal(app.commands.includes('stop_ruby'), false, app.commands.join(', '));
+  } finally {
+    await close(app);
+    await rm(root, { recursive: true, force: true });
+  }
+});

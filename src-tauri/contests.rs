@@ -70,7 +70,7 @@ pub struct Contest {
     /// Empty for a contest joined before its start, whose task list cannot be seen yet.
     pub tasks: Vec<ContestTask>,
     /// Added or updated from a registration seen in the browser, until hidden a day after its end
-    /// (docs/problem-library.md#参加登録の読み取りu6a).
+    /// (docs/problem-library.md#参加登録の読み取り).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub joined: bool,
     /// The times as the contest's top page writes them, `2026-11-07T21:00:00+09:00`.

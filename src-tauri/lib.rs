@@ -27,7 +27,7 @@ pub mod wsl;
 pub use agent_client::AgentClient;
 #[cfg(unix)]
 pub use commands::{ruby_info, RubyInfo};
-pub use comparison::{decode_output, first_difference, OutputDifference};
+pub use comparison::{decode_output, first_difference};
 pub use contests::{
     contest_top, fetch_page, http_client, parse_task_list, unix_now, Contest, ContestKey,
     ContestTask, Contests, RegisteredContest,
@@ -39,10 +39,10 @@ pub use input_code::{input_code, reading_forms};
 pub use lsp::{LspInfo, RubyLsp};
 pub use navigation::{
     browser_origins, browser_target, is_allowed, is_atcoder, is_rurima_page, rurima_page,
-    rurima_target, ATCODER_ORIGIN, RURIMA_HOME, RURIMA_ORIGINS,
+    rurima_target, ATCODER_ORIGIN, RURIMA_HOME,
 };
 #[cfg(unix)]
-pub use runner::{Output, PreparedRun, RunRequest, RunResult, Runner};
+pub use runner::{Output, RunRequest, RunResult, Runner};
 pub use samples::{load_samples, save_samples, ProblemSample, SampleCase, Samples};
 pub use submissions::{submissions_page, SubmissionUpdate, Submissions, TaskResult};
 pub use task::{

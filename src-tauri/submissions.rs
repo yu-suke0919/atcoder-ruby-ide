@@ -1,5 +1,5 @@
 //! The user's submissions, read from the submission list shown in the right column, and the color
-//! of each task: AC, judging or other (docs/problem-library.md#提出一覧の読み取りu5a).
+//! of each task: AC, judging or other (docs/problem-library.md#提出一覧の読み取り).
 use crate::contests::ContestKey;
 use crate::files::{read_limited, write_atomic};
 use crate::navigation::{contest_url, ATCODER_ORIGIN};

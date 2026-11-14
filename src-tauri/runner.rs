@@ -1,5 +1,6 @@
+use crate::comparison::OutputDifference;
 use crate::files::MAX_TEXT_BYTES;
-use crate::{decode_output, first_difference, process::ProcessTree, OutputDifference};
+use crate::{decode_output, first_difference, process::ProcessTree};
 use serde::Serialize;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -312,7 +313,8 @@ impl PreparedRun {
             .join()
             .map_err(|_| "標準エラーの受信に失敗しました。")?;
         notifier.join().map_err(|_| "出力の通知に失敗しました。")?;
-        cleanup(directory.path()).map_err(|e| format!("一時ファイルを削除できません: {e}"))?;
+        std::fs::remove_dir_all(directory.path())
+            .map_err(|e| format!("一時ファイルを削除できません: {e}"))?;
         if let Some(error) = wait_error {
             return Err(error);
         }
@@ -404,12 +406,11 @@ impl PreparedRun {
 }
 
 fn source_error_line(stderr: &str, source: &Path, line_count: usize) -> Option<usize> {
-    let source = source.to_str()?.replace('\\', "/");
-    let normalized = stderr.replace('\\', "/");
-    normalized.lines().find_map(|line| {
+    let source = source.to_str()?;
+    stderr.lines().find_map(|line| {
         let line = line.trim_start();
         let frame = line.strip_prefix("from ").unwrap_or(line);
-        let rest = frame.strip_prefix(&source)?.strip_prefix(':')?;
+        let rest = frame.strip_prefix(source)?.strip_prefix(':')?;
         let (number, message) = rest.split_once(':')?;
         if message.trim_start().starts_with("warning:") {
             return None;
@@ -417,23 +418,6 @@ fn source_error_line(stderr: &str, source: &Path, line_count: usize) -> Option<u
         let number = number.parse::<usize>().ok()?;
         (number > 0 && number <= line_count).then_some(number)
     })
-}
-
-fn cleanup(directory: &Path) -> std::io::Result<()> {
-    for attempt in 0..=3 {
-        match std::fs::remove_dir_all(directory) {
-            Ok(()) => return Ok(()),
-            Err(error)
-                if cfg!(windows)
-                    && attempt < 3
-                    && matches!(error.raw_os_error(), Some(5 | 32 | 33 | 145)) =>
-            {
-                std::thread::sleep(Duration::from_millis(50 * (attempt + 1)))
-            }
-            Err(error) => return Err(error),
-        }
-    }
-    unreachable!()
 }
 
 #[cfg(test)]
@@ -454,17 +438,6 @@ mod tests {
             Some(3)
         );
         assert_eq!(source_error_line("/tmp/日本語 space/solution.rb:1: warning: already initialized constant A\n/tmp/日本語 space/solution.rb:2:in main: boom", source, 3), Some(2));
-    }
-
-    #[test]
-    fn error_frames_accept_windows_path_separators_and_drive_letters() {
-        let source = Path::new(r"C:\Users\日本語 space\solution.rb");
-        for stderr in [
-            "C:/Users/日本語 space/solution.rb:2:in main",
-            "\tfrom C:\\Users\\日本語 space\\solution.rb:2:in main",
-        ] {
-            assert_eq!(source_error_line(stderr, source, 3), Some(2));
-        }
     }
 
     #[test]
