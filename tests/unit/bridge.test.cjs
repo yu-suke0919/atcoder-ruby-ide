@@ -98,7 +98,8 @@ test('the bridge sends each command the argument names Tauri reads from the Rust
   const camel = name => name.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
   const injected = /^(tauri::)?(AppHandle|State|Window|Webview|WebviewWindow)\b/;
   const commands = new Map();
-  for (const file of ['main.rs', 'browser.rs']) {
+  // Every file of the app, so commands moved to another module are still read.
+  for (const file of fs.readdirSync(path.join(__dirname, '../../src-tauri')).filter(name => name.endsWith('.rs'))) {
     const source = fs.readFileSync(path.join(__dirname, '../../src-tauri', file), 'utf8');
     for (const [, name, params] of source.matchAll(/#\[tauri::command\]\s*(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*\(([^)]*)\)/g)) {
       // Commas inside generics such as State<'_, AppState> do not separate parameters.

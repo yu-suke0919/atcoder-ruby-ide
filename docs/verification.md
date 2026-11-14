@@ -835,3 +835,9 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 
 - F4のブランチから開始（画面テストが`src/`の下を配るため、新しいモジュールを一覧に加えなくてよい）。1,278行の`renderer.js`から、AtCoderのページの上の窓（るりま・グラフ、約190行）を`cover.mjs`へ、歯車の設定（約60行）を`settings.mjs`へ移した。どちらも状態を自分の中に閉じ、`renderer.js`とは、窓をしまう・グラフを描き直す・問題の形を渡す関数と、全部一致でコピーするか・追加したドメインを読み込む関数だけでつながる。保存・問題を開く・実行・ファイルのタブは`fileBusy`・`running`・`activeProblem`などを共有するため分けなかった。`renderer.js`は1,033行になった。
 - 移動だけのため、画面テスト103件を変えずに通し、画面のスクリプトのエラーが出ないことを確かめた。
+## 右端のブラウザのRustを分ける（F5）
+
+- F4のブランチから開始。827行の`browser.rs`から、るりまの窓（テスト用の置き換え・WebViewの作成・`rurima_show`・`rurima_history`・`rurima_reload`、133行）を`rurima.rs`へ、WebView2だけにある機能（右クリックの「るりまを全文検索」とページの撮影。`unsafe`を含み、Windowsだけ）を`webview2.rs`へ移した。`browser.rs`は602行になった。コマンドの名前は変えていない。提出一覧の追跡はWebViewの状態に依存するため残した。
+- Windowsだけのコードはクラウドセッションでビルドできないため、`x86_64-pc-windows-msvc`のターゲットを入れて、Linuxから`cargo clippy --target x86_64-pc-windows-msvc --features desktop`で型を確かめた。移した右クリックの処理で`Manager`がスコープになくエラーになったのを、この確かめで見つけて直した。移す前後で、WindowsとLinuxのどちらでも警告は既知の2件だけだった。
+- ブリッジが送る引数の名前とTauriのコマンドの引数の名前を比べるNodeのテストは、`main.rs`と`browser.rs`だけからコマンドを読んでいたため、`rurima.rs`へ移した`rurima_show`を見つけられずに失敗した。`src-tauri/`のすべての`.rs`から読むようにした（テストの変更はこの1行だけ）。
+- 右クリックのメニューと、窓の背景のAtCoderのページの画像は、WindowsのCIでも操作できないため、利用者の手元で確かめる。
