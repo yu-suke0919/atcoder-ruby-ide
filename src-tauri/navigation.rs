@@ -4,6 +4,11 @@ use url::Url;
 /// The origin the browser always opens, and the only one whose pages the app reads.
 pub const ATCODER_ORIGIN: &str = "https://atcoder.jp";
 
+/// The URL of a contest's top page, `https://atcoder.jp/contests/<id>`.
+pub(crate) fn contest_url(id: &str) -> String {
+    format!("{ATCODER_ORIGIN}/contests/{id}")
+}
+
 fn same_origin(url: &Url, origin: &str) -> bool {
     Url::parse(origin).is_ok_and(|origin| origin.origin() == url.origin())
 }

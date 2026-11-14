@@ -4,7 +4,7 @@
 use atcoder_ruby_ide::{
     agent::Agent, browser_origins, browser_target, contest_top, fetch_page, http_client,
     read_task_page, rurima_target, submissions_page, unix_now, AgentClient, Contests,
-    DocumentStore, Submissions, Workspaces, RURIMA_HOME,
+    DocumentStore, Submissions, Workspaces, ATCODER_ORIGIN, RURIMA_HOME,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -51,7 +51,7 @@ fn main() {
     let origin = std::env::var("ATCODER_IDE_TEST_ORIGIN").unwrap_or_default();
     let page = |url: &str| {
         let client = http_client()?;
-        fetch_page(&client, &url.replacen("https://atcoder.jp", &origin, 1), "")
+        fetch_page(&client, &url.replacen(ATCODER_ORIGIN, &origin, 1), "")
     };
     let sink = Arc::new(Mutex::new(io::stdout()));
     // Counts the pages shown, so a submission list knows when another page hides it.
@@ -199,7 +199,8 @@ fn main() {
             }
             // There are no pages here: the shown URL changes as the real browser reports it.
             "browser_home" => {
-                let url = args["url"].as_str().unwrap_or("https://atcoder.jp/");
+                let home = format!("{ATCODER_ORIGIN}/");
+                let url = args["url"].as_str().unwrap_or(&home);
                 send(&sink, json!({"appEvent": "browser-url", "payload": url}));
                 read_contest_top(&sink, url);
                 Ok(Value::Null)
@@ -243,7 +244,7 @@ fn main() {
                             http_client().and_then(|client| {
                                 fetch_page(
                                     &client,
-                                    &url.as_str().replacen("https://atcoder.jp", &origin, 1),
+                                    &url.as_str().replacen(ATCODER_ORIGIN, &origin, 1),
                                     "",
                                 )
                             })

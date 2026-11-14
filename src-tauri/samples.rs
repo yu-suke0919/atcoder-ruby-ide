@@ -68,12 +68,12 @@ fn validate_texts<'a>(
     mut texts: impl ExactSizeIterator<Item = (&'a str, &'a str)>,
 ) -> Result<(), String> {
     if !(1..=100).contains(&texts.len()) {
-        return Err("ケースは 1〜100 件にしてください。".into());
+        return Err("サンプルは 1〜100 件にしてください。".into());
     }
     if texts
         .any(|(stdin, expected)| stdin.len() > MAX_TEXT_BYTES || expected.len() > MAX_TEXT_BYTES)
     {
-        return Err("各ケースの入力・期待出力は 1 MiB 以下にしてください。".into());
+        return Err("各サンプルの入力・期待出力は 1 MiB 以下にしてください。".into());
     }
     Ok(())
 }

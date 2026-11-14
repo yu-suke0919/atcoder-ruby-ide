@@ -740,19 +740,19 @@ async function selectCase(number) {
   await page.locator('#case-tabs [role="tab"]').nth(number - 1).click();
 }
 async function resetCases() {
-  while (await page.getByLabel('サンプルケース', { exact: true }).locator('option').count() > 1) {
-    await page.getByRole('button', { name: 'ケース削除', exact: true }).click();
+  while (await page.locator('#case-tabs [role="tab"]').count() > 1) {
+    await page.getByRole('button', { name: 'サンプルを削除', exact: true }).click();
   }
   await page.getByRole('checkbox', { name: '期待出力と比較' }).uncheck();
 }
 async function addCase(stdin, expected = stdin) {
-  await page.getByRole('button', { name: 'ケース追加', exact: true }).click();
+  await page.getByRole('button', { name: 'サンプルを追加', exact: true }).click();
   await page.getByTestId('stdin').fill(stdin);
   await page.getByTestId('expected-output').fill(expected);
 }
 
 test('M13: cases keep independent inputs, expectations and results', async () => {
-  assert.equal(await page.getByRole('button', { name: 'ケース削除', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'サンプルを削除', exact: true }).isDisabled(), true);
   await page.getByTestId('code-editor').fill('puts STDIN.read.upcase');
   await page.getByTestId('stdin').fill('one');
   await page.getByRole('checkbox', { name: '期待出力と比較' }).check();
@@ -866,7 +866,7 @@ test('M13: a batch uses starting code and inputs without restoring stale compari
   try {
     await page.getByRole('button', { name: '全件実行', exact: true }).click();
     await page.getByTestId('stdout').filter({ hasText: 'ready' }).waitFor();
-    assert.equal(await page.getByRole('button', { name: 'ケース追加', exact: true }).isDisabled(), true);
+    assert.equal(await page.getByRole('button', { name: 'サンプルを追加', exact: true }).isDisabled(), true);
     await selectCase(2);
     await page.getByTestId('stdin').fill('edited');
     await page.getByTestId('code-editor').fill('puts "changed code"');
@@ -1532,7 +1532,7 @@ test('M16: a task without saved data is read from its page with samples and limi
   assert.equal(await page.locator('#stdin').inputValue(), '1 2\n');
   assert.equal(await page.locator('#expected-output').inputValue(), '3\n');
   assert.equal(await page.locator('#compare-output').isChecked(), true);
-  assert.equal(await page.locator('#case-count').textContent(), '2 ケース');
+  assert.equal(await page.locator('#case-count').textContent(), '2 件');
   assert.equal(await page.locator('#problem-limits').textContent(), '実行時間制限 2 秒 / メモリ制限 256 MiB');
   const task = JSON.parse(await readFile(path.join(problem.workspace, 'task.json'), 'utf8'));
   assert.deepEqual(task, { url: problem.url, samples: [{ stdin: '1 2\n', expectedOutput: '3\n' }, { stdin: '10 20\n', expectedOutput: '30\n' }], timeLimitMs: 2000, memoryLimitMiB: 256 });
