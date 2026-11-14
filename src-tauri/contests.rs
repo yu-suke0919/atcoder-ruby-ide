@@ -1,5 +1,6 @@
 //! Registered contests and problem sets with their official task lists.
 use crate::files::{read_limited, write_atomic};
+use crate::navigation::contest_url;
 use crate::task::{TaskKey, MAX_HTML_BYTES};
 use reqwest::blocking::Client;
 use scraper::{Html, Selector};
@@ -43,7 +44,7 @@ impl ContestKey {
         ));
         let key = TaskKey::parse(probe.as_str())?;
         Ok(Self {
-            url: format!("https://atcoder.jp/contests/{}", key.contest),
+            url: contest_url(&key.contest),
             id: key.contest,
             task: task.map(|_| key.url),
         })
@@ -158,7 +159,7 @@ pub fn contest_top(url: &Url) -> Option<String> {
     if !crate::is_atcoder(url) || parts.len() != 3 || parts[1] != "contests" {
         return None;
     }
-    ContestKey::parse(&format!("https://atcoder.jp/contests/{}", parts[2]))
+    ContestKey::parse(&contest_url(parts[2]))
         .ok()
         .map(|key| key.url)
 }
@@ -368,7 +369,7 @@ impl Contests {
             let Some(id) = name.to_str().and_then(|name| name.strip_suffix(".json")) else {
                 continue;
             };
-            let Ok(key) = ContestKey::parse(&format!("https://atcoder.jp/contests/{id}")) else {
+            let Ok(key) = ContestKey::parse(&contest_url(id)) else {
                 continue;
             };
             if let Ok(contest) = self.load(&key) {

@@ -825,3 +825,8 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 - 配布物の照合は、C3c以降は`runtime.json`1つしか守っていなかった。ハッシュの一覧（`wsl-manifest.json`）をやめ、ポータブル版とインストール先の`wsl/`に`runtime.json`だけがあり、元と同じことを確かめる処理に置き換え、Nodeの単体テストを加えた。一覧を作る処理はRuby LSPの準備物のテストが使うため残した（Windows向けの分岐を消した）。
 - ライブラリが外へ出していたが外で使われない`OutputDifference`・`PreparedRun`・`RURIMA_ORIGINS`の公開をやめた。
 - 失敗するテストを先に用意した。スタイルシートのクラスが画面のHTMLかスクリプトで使われていることを確かめる（修正前は`.editor-toolbar`・`.file-icon`・`.language-pill`・`.section-number`・`.shortcut`で失敗した）。それらを消し、2回に分けて書いていた`.ruby-mark`・`.case-toolbar`・`#stdout`・`.browser-host`を1つにまとめ、`.repair-actions`を`.dialog-actions`にそろえた。`.status-dot`は`.live-dot`と共有する規則と大きさの上書きで、意図した形のため残した。スクリプトなしで表示した画面の1280×720と1920×1080の画像と全要素の計算済みスタイルが、変更の前後で一致することを確かめた。
+## 重複をなくす（F4）
+
+- main fc65db3から開始。AtCoderのオリジンが、`navigation.rs`の`ATCODER_ORIGIN`と`browser.rs`の`ATCODER`の2つの定数と、`contests.rs`・`submissions.rs`・`task.rs`・テスト用ホストの文字列に分かれていた。`ATCODER_ORIGIN`だけにし、コンテストのURLは`navigation.rs`の`contest_url`で作る。問題のURLの検証は、スキーム・ホスト・ポートを個別に比べる代わりに`is_atcoder`（オリジンの比較）を使う。既定のポート（443）を書いたURLは`url`がポートなしに直すため、受け付けるURLは変わらない。利用者に見せる例のURLは文のまま残した。
+- ブラウザーの画面テストは、配るファイルを手で列挙していたため、D4で新しいモジュールを加え忘れて全滅した。アプリと同じく`src/`の下を配り（`src/`の外へ出るパスと、HTML・スクリプト・CSS以外は404）、使っていないフォントの種類を外した。
+- 挙動は変えないため、既存のテストを変えずに通ることを確かめた。
