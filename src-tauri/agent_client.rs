@@ -5,11 +5,12 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 const DIED: &str = "Rubyのエージェントが終了しました。";
+const CLOSED: &str = "アプリを終了しています。";
 /// Longer than any request the agent itself bounds (Ruby LSP starts within 30 seconds).
 const ANSWER_LIMIT: Duration = Duration::from_secs(60);
 const EXIT_LIMIT: Duration = Duration::from_secs(2);
@@ -56,6 +57,11 @@ impl Runs {
 pub struct AgentClient {
     command: Box<dyn Fn() -> Result<Command, String> + Send + Sync>,
     connection: Arc<Mutex<Option<Arc<Connection>>>>,
+    /// Held while the agent is prepared and started, which the first time takes minutes. The
+    /// connection is not locked meanwhile, so `pid` and `shutdown` do not wait for it.
+    starting: Mutex<()>,
+    /// Set by `shutdown`: the agent is not started again.
+    closed: AtomicBool,
     runs: Arc<Runs>,
     next_id: AtomicU64,
 }
@@ -68,6 +74,8 @@ impl AgentClient {
         Self {
             command: Box::new(command),
             connection: Arc::default(),
+            starting: Mutex::default(),
+            closed: AtomicBool::new(false),
             runs: Arc::default(),
             next_id: AtomicU64::new(1),
         }
@@ -114,8 +122,10 @@ impl AgentClient {
     }
 
     /// Closes the agent's stdin so that it stops its runs and exits; kills it after 2 seconds.
-    /// Returns after everything the agent wrote has been delivered.
+    /// Returns after everything the agent wrote has been delivered. An agent still being prepared
+    /// is not waited for, and is not started afterwards.
     pub fn shutdown(&self) {
+        self.closed.store(true, Ordering::SeqCst);
         let Some(connection) = self.connection.lock().unwrap().take() else {
             return;
         };
@@ -158,11 +168,24 @@ impl AgentClient {
     }
 
     fn connect(&self) -> Result<Arc<Connection>, String> {
-        let mut slot = self.connection.lock().unwrap();
-        if let Some(connection) = slot.as_ref() {
-            return Ok(Arc::clone(connection));
+        let current = || self.connection.lock().unwrap().as_ref().map(Arc::clone);
+        if let Some(connection) = current() {
+            return Ok(connection);
         }
-        let mut child = (self.command)()?
+        let _starting = self.starting.lock().unwrap();
+        if let Some(connection) = current() {
+            return Ok(connection);
+        }
+        if self.closed.load(Ordering::SeqCst) {
+            return Err(CLOSED.into());
+        }
+        let command = (self.command)();
+        let mut slot = self.connection.lock().unwrap();
+        // Closed while preparing: shutdown found no agent to stop, so none is started.
+        if self.closed.load(Ordering::SeqCst) {
+            return Err(CLOSED.into());
+        }
+        let mut child = command?
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())

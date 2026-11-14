@@ -55,7 +55,7 @@ impl ProcessTree {
 }
 
 /// Whether Ruby runs with --jit: not on WSL1, whose kernel release ends with "Microsoft" and where
-/// starting YJIT took about 8 seconds (docs/atcoder-runtime.md#jitc5).
+/// starting YJIT took about 8 seconds (docs/atcoder-runtime.md#jit).
 pub(crate) fn jit() -> bool {
     static JIT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *JIT.get_or_init(|| {
