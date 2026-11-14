@@ -817,3 +817,11 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 - Clippyはどのジョブでも実行していなかった。失敗するテストを先に用意した。CIの単体テストは、Linuxのジョブが、ライブラリとテストのClippyと、Windowsのターゲット（`x86_64-pc-windows-msvc`）でのデスクトップアプリのClippyを、警告をエラーにして実行することを確かめる。Windowsのターゲットの型の確かめはWebKitGTKもWindowsのSDKも要らず、クラウドセッションでも動いた（tauri-buildのアイコンのリソースはGNUのコンパイラーで作れないと警告するが、確かめには影響しない）。
 - 最初のCIで、Windowsのターゲットの確かめが、Tauriのビルドスクリプト（tauri-winres）がアイコンのリソースを作る`llvm-rc`を見つけられずに失敗した（`NotAttempted("llvm-rc")`）。クラウドセッションには`llvm`が入っていたため通っていた。`llvm-rc`を隠すと同じエラーになり、戻すと通ることを確かめ、CIでは`llvm-rc`がなければ`llvm`を入れるようにした。
 - 見つかった警告は2件だった。`wsl.rs`の`map_or(false, …)`を`is_ok_and`にし、Tauriのコマンドで引数が8つの`run_ruby`には、同じく引数の多い`cover_layout`と同じく`too_many_arguments`を許した。
+## 動かないコードと使われていないものを消す（F3）
+
+- main fc65db3から開始。全体レビューで見つかった、動かないコード・使われていないものを消した。
+- Runnerは、C4からLinux向けにだけビルドするため、エラー行の抽出でのWindowsのパス区切りの置き換えと、Windowsの共有違反での一時フォルダーの削除の再試行（`cfg!(windows)`）は実行されなかった。ドライブ文字のテストとともに消した。Runnerはエージェントに入るため、エージェントのバイナリが変わり、次のイメージの版で利用者は一度取得し直す。
+- C5より前のJITの調査スクリプト（VMスタックを32 MiBに固定していた）とそのテストを消した。JITが有効なことは、Runnerのテストと`npm run check:wsl`が確かめる。
+- 配布物の照合は、C3c以降は`runtime.json`1つしか守っていなかった。ハッシュの一覧（`wsl-manifest.json`）をやめ、ポータブル版とインストール先の`wsl/`に`runtime.json`だけがあり、元と同じことを確かめる処理に置き換え、Nodeの単体テストを加えた。一覧を作る処理はRuby LSPの準備物のテストが使うため残した（Windows向けの分岐を消した）。
+- ライブラリが外へ出していたが外で使われない`OutputDifference`・`PreparedRun`・`RURIMA_ORIGINS`の公開をやめた。
+- 失敗するテストを先に用意した。スタイルシートのクラスが画面のHTMLかスクリプトで使われていることを確かめる（修正前は`.editor-toolbar`・`.file-icon`・`.language-pill`・`.section-number`・`.shortcut`で失敗した）。それらを消し、2回に分けて書いていた`.ruby-mark`・`.case-toolbar`・`#stdout`・`.browser-host`を1つにまとめ、`.repair-actions`を`.dialog-actions`にそろえた。`.status-dot`は`.live-dot`と共有する規則と大きさの上書きで、意図した形のため残した。スクリプトなしで表示した画面の1280×720と1920×1080の画像と全要素の計算済みスタイルが、変更の前後で一致することを確かめた。
