@@ -853,6 +853,12 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 - 手で戻す手順：`solution.rb`の中身を`files/<表示番号>_1.rb`へ写す。`cases.json`は、各サンプルの`tolerance`を消し、最初に現れた値をファイルの先頭の`tolerance`にして`samples.json`として置く（アプリを閉じてから行う）。
 - 失敗するテストを先に用意した。Rustは、`solution.rb`と`cases.json`（固定データ、読めない`cases.json`も）を残した作業領域を開くと、どちらも読まずに問題から2つのファイルとサンプルを作り、古いファイルをそのまま残すことを確かめる（修正前は変換して失敗した）。変換を確かめていた4件のテストを消し、読み込みのコードのテストは`solution.rb`を使わずに、保存したファイルのコピーを確かめるようにした。
 
+## CIのアクションをNode.js 24向けにし、WSL1の指定を効かせる
+
+- main 4ce9a33から開始。Phase Fをマージした後のmainのCIは成功したが、注釈が6件あった。3件は`actions/checkout@v4`などがNode.js 20向けで、GitHubがNode.js 24で強制的に動かしているという非推奨の警告。1件は`Vampire/setup-wsl@v3`が`wsl-version`という入力を知らないという警告で、この入力はv4で加わったため、v3では無視されていた（v3は既定でWSL1を使うため、結果としてWSL1で動いていた）。残りの2件はGitHubのキャッシュの一時的な障害で、このリポジトリでは直せない。
+- 各アクションの最新のタグの`action.yml`を取得し、Node.js 24で動くことと、使っている入力（`name`・`path`・`if-no-files-found`・`retention-days`・`cache`・`distribution`・`wsl-version`）が残り、既定の挙動（アップロードはZIPにする、ダウンロードは展開して不一致ならエラーにする）が変わらないことを確かめた。checkoutのv7はプルリクエストのフォークの扱い（`pull_request_target`）、setup-nodeのv5〜v7は`packageManager`による自動キャッシュと`registry-url`の扱いが変わったが、どちらも使っていない。checkout v7、setup-node v7、cache v6、upload-artifact v7、download-artifact v8、setup-wsl v7にした。setup-wsl v7は`wsl-version`の既定が2のため、`wsl-version: 1`が効くようになる。`Swatinem/rust-cache@v2`と`ruby/setup-ruby@v1`は、すでにNode.js 24で動く。
+- 失敗するテストを先に用意した。CIの単体テストは、各アクションがNode.js 24で動くと確かめた版以上で、setup-wslが`wsl-version: 1`を指定していることを確かめる（修正前は`actions/checkout@v4`で失敗した）。
+
 ## 利用者の手元での確認（Issue #84）
 
 - PR #58〜#82の本文で手元の確認を求め、結果を記録していなかった項目を[Issue #84](https://github.com/yu-suke0919/atcoder-ruby-ide/issues/84)のチェックリストにまとめ、利用者がWindowsの実アプリ（WSL2）で確かめた（2026-11-14）。開始時刻の項目は、ABC484（2026-11-14 21:00 JST開始）で確かめた。

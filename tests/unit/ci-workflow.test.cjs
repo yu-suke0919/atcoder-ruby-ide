@@ -46,3 +46,18 @@ test('CI runs Clippy over the library and tests, and over the Windows desktop ap
   // Tauri's build script compiles the Windows resources with llvm-rc.
   assert.match(run, /apt-get install -y llvm\b/);
 });
+
+// GitHub runs actions built for Node.js 20 on Node.js 24 with a deprecation warning, and an
+// input an action does not know is ignored with a warning: setup-wsl reads wsl-version from v4.
+// The majors below are the first ones checked to run on Node.js 24.
+test('CI uses actions that run on Node.js 24 and setup-wsl that applies wsl-version', () => {
+  const minimum = { 'actions/checkout': 5, 'actions/setup-node': 5, 'actions/cache': 5, 'actions/upload-artifact': 7, 'actions/download-artifact': 8, 'Vampire/setup-wsl': 7 };
+  const steps = Object.values(workflow.jobs).flatMap(job => job.steps);
+  const used = steps.filter(step => step.uses).map(step => step.uses.split('@'));
+  for (const [action, version] of used.filter(([action]) => action in minimum)) {
+    assert.ok(Number(version.replace(/^v/, '')) >= minimum[action], `${action}@${version}`);
+  }
+  for (const action of Object.keys(minimum)) assert.ok(used.some(([name]) => name === action), action);
+  const wsl = steps.find(step => step.uses?.startsWith('Vampire/setup-wsl@'));
+  assert.equal(wsl.with['wsl-version'], 1);
+});
