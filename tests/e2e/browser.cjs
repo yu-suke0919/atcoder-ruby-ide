@@ -86,7 +86,9 @@ async function launch(root, { hostEnv = {} } = {}) {
     app.page = await app.browser.newPage({ viewport: { width: 1280, height: 850 } });
     app.page.setDefaultTimeout(15000);
     app.page.on('pageerror', error => console.error('Browser UI error:', error));
-    await app.page.exposeBinding('__testInvoke', async (_, command, args) => app.request(command, args));
+    // Every command the screen sends, in order.
+    app.commands = [];
+    await app.page.exposeBinding('__testInvoke', async (_, command, args) => { app.commands.push(command); return app.request(command, args); });
     await app.page.exposeBinding('__testDestroy', async () => {
       await app.request('shutdown');
       setTimeout(() => app.page.close().catch(() => {}), 10);

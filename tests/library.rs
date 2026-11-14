@@ -1193,7 +1193,7 @@ fn live_atcoder_task_list_and_ended_task_pages_run_every_sample() {
     }
 }
 
-// Pages of the user's submissions, saved while logged in (docs/problem-library.md#提出一覧の読み取りu5a).
+// Pages of the user's submissions, saved while logged in (docs/problem-library.md#提出一覧の読み取り).
 const WAITING: &str = include_str!("fixtures/submissions/waiting.html");
 const PROGRESS: &str = include_str!("fixtures/submissions/progress.html");
 const PROGRESS_TLE: &str = include_str!("fixtures/submissions/progress-tle.html");
