@@ -424,3 +424,36 @@ fn a_failing_start_is_reported_and_tried_again_on_the_next_request() {
     assert!(client.request("ruby_info", Value::Null).unwrap()["version"].is_string());
     assert_eq!(*attempts.lock().unwrap(), 2);
 }
+
+/// Preparing the agent can take minutes the first time (downloading and importing the Linux
+/// image). Meanwhile the app must still be able to look at the agent and close.
+#[test]
+fn closing_does_not_wait_for_the_agent_being_prepared_nor_start_it_afterwards() {
+    let (release, prepared) = mpsc::channel::<()>();
+    let prepared = Mutex::new(prepared);
+    let client = Arc::new(AgentClient::new(move || {
+        let _ = prepared.lock().unwrap().recv();
+        Ok(agent_command())
+    }));
+    let first = Arc::clone(&client);
+    let request = std::thread::spawn(move || first.request("ruby_info", Value::Null));
+    std::thread::sleep(Duration::from_millis(200));
+    // Run where a wait shows as a timeout, not as a test that never ends.
+    let closing = Arc::clone(&client);
+    let (closed, done) = mpsc::channel();
+    std::thread::spawn(move || {
+        let pid = closing.pid();
+        closing.shutdown();
+        let _ = closed.send(pid);
+    });
+    let pid = done.recv_timeout(Duration::from_secs(1));
+    release.send(()).unwrap();
+    assert_eq!(
+        pid,
+        Ok(None),
+        "pid() and shutdown() waited for the preparation"
+    );
+    assert!(request.join().unwrap().is_err());
+    assert_eq!(client.pid(), None);
+    assert!(client.request("ruby_info", Value::Null).is_err());
+}

@@ -68,7 +68,8 @@ jobs:
           cache: npm
       - uses: dtolnay/rust-toolchain@1.99.1
         with:
-          components: rustfmt
+          components: rustfmt, clippy
+          targets: x86_64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
@@ -83,6 +84,15 @@ jobs:
       - run: npm run prepare:gems
       - run: npm run prepare:lsp
       - run: cargo fmt --all --check
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      # The desktop app is built only for Windows; its Windows target needs no WebKitGTK, so it is
+      # checked here before the slower Windows job. Tauri compiles the app's icon resource with
+      # llvm-rc (from llvm), and vendor/wsl/ is a resource of the app.
+      - name: Clippy over the Windows desktop app
+        run: |
+          command -v llvm-rc || { sudo apt-get update && sudo apt-get install -y llvm; }
+          mkdir -p vendor/wsl
+          cargo clippy --locked --target x86_64-pc-windows-msvc --features desktop --bin atcoder-ruby-ide -- -D warnings
       - run: npm test
       - run: npx playwright install --with-deps chromium
       - name: Browser UI tests with the real Rust and Ruby backend

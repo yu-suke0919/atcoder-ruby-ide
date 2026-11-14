@@ -1,6 +1,7 @@
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { mkdtemp, readFile, access, rm } = require('node:fs/promises');
+const { verifyRuntimeJson } = require('./package-windows.cjs');
 const path = require('node:path');
 const { tmpdir } = require('node:os');
 const assert = require('node:assert/strict');
@@ -19,9 +20,7 @@ async function main() {
   await execute(installer, ['/S', `/D=${directory}`], { timeout: 120000, windowsVerbatimArguments: true });
   const executable = path.join(directory, 'atcoder-ruby-ide.exe');
   await access(executable);
-  const runtime = JSON.parse(await readFile(path.join(root, 'artifacts/reports/wsl-manifest.json'), 'utf8'));
-  assert.deepEqual(Object.keys(runtime), ['runtime.json']); // The image is downloaded, not installed.
-  for (const name of Object.keys(runtime)) await access(path.join(directory, 'wsl', name));
+  await verifyRuntimeJson(path.join(directory, 'wsl')); // The image is downloaded, not installed.
   let app;
   try {
     process.env.APP_EXE = executable;

@@ -976,7 +976,8 @@ ide.onCloseRequested(async event => {
   updateButtons();
   try {
     if (!await leaveProblem()) return;
-    await stop();
+    // Only a run is stopped: the agent may still be being prepared, which can take minutes.
+    if (running) await stop();
     await currentRun?.catch(() => {});
     await ide.destroy();
     destroyed = true;

@@ -594,8 +594,8 @@ fn m06_timeout_and_output_cap() {
         "timeout"
     );
     assert!(runner.prepare(RunRequest::default()).is_ok());
-    // Output limiting is independent of the short timeout used above. Cold Windows
-    // Ruby startup can exceed 200 ms under concurrent test load.
+    // Output limiting is independent of the short timeout used above. A cold Ruby
+    // startup can exceed 200 ms under concurrent test load.
     let runner = Runner::new(Duration::from_secs(5), 1024);
     let result = runner
         .prepare(request("loop { print 'あいうえお' }", ""))
