@@ -102,29 +102,25 @@ pub(crate) fn list(workspace: &Path) -> Result<Vec<String>, String> {
     Ok(names)
 }
 
-/// Makes `files/` on first use: `<label>_1` holds the old `solution.rb` (or `template`) and
-/// `<label>_2` starts with `template`, the task's reading code or nothing. The files are written to a temporary folder that becomes `files/`
-/// only when complete, so a failure leaves the workspace as it was, `solution.rb` included.
+/// Makes `files/` on first use with `<label>_1` and `<label>_2`, both starting with `template`,
+/// the task's reading code or nothing. The files are written to a temporary folder that becomes
+/// `files/` only when complete, so a failure leaves no half-made `files/`.
 pub(crate) fn ensure(workspace: &Path, label: &str, template: &str) -> Result<(), String> {
     let files = workspace.join(FILES);
     if files.exists() {
         return Ok(());
     }
-    let solution = workspace.join("solution.rb");
-    let first = if solution.try_exists().map_err(|e| e.to_string())? {
-        read_limited(&solution, MAX_TEXT_BYTES)
-            .map_err(|e| format!("solution.rb を変換できません（元のまま残します）: {e}"))?
-    } else {
-        template.as_bytes().to_vec()
-    };
     let temporary = tempfile::Builder::new()
         .prefix(".files-")
         .tempdir_in(workspace)
         .map_err(|e| format!("作業領域を作成できません: {e}"))?;
     let prefix = prefix(label);
-    for (number, data) in [(1, first.as_slice()), (2, template.as_bytes())] {
-        std::fs::write(temporary.path().join(format!("{prefix}_{number}.rb")), data)
-            .map_err(|e| format!("作業領域を作成できません: {e}"))?;
+    for number in [1, 2] {
+        std::fs::write(
+            temporary.path().join(format!("{prefix}_{number}.rb")),
+            template,
+        )
+        .map_err(|e| format!("作業領域を作成できません: {e}"))?;
     }
     std::fs::rename(temporary.path(), &files)
         .map_err(|e| format!("作業領域を作成できません: {e}"))?;

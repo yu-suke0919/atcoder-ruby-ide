@@ -91,39 +91,6 @@ pub fn load_samples(path: &Path) -> Result<Samples, String> {
     Ok(samples)
 }
 
-/// Reads the `cases.json` of U3a and before, where each sample had its own tolerance. The
-/// first tolerance found becomes the problem's. Used once, to write `samples.json`.
-pub(crate) fn convert_cases(path: &Path) -> Result<Samples, String> {
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct OldCase {
-        stdin: String,
-        expected_output: String,
-        compare: bool,
-        tolerance: Option<f64>,
-    }
-    #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct OldFile {
-        cases: Vec<OldCase>,
-    }
-    let old: OldFile = read_json(path)?;
-    let samples = Samples {
-        tolerance: old.cases.iter().find_map(|case| case.tolerance),
-        cases: old
-            .cases
-            .into_iter()
-            .map(|case| SampleCase {
-                stdin: case.stdin,
-                expected_output: case.expected_output,
-                compare: case.compare,
-            })
-            .collect(),
-    };
-    validate(&samples)?;
-    Ok(samples)
-}
-
 pub fn save_samples(samples: Samples, path: &Path) -> Result<(), String> {
     validate(&samples)?;
     let data = serde_json::to_vec_pretty(&samples).map_err(|e| e.to_string())?;

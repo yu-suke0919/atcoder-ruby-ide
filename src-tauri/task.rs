@@ -2,7 +2,6 @@
 //! solution and samples for that task.
 use crate::files::{read_limited, write_atomic, MAX_TEXT_BYTES};
 use crate::navigation::contest_url;
-use crate::samples::convert_cases;
 use crate::{
     load_samples, save_samples, solutions, DocumentResult, DocumentStore, ProblemSample,
     SampleCase, Samples,
@@ -153,20 +152,9 @@ fn open_files(
     std::fs::create_dir_all(directory).map_err(|e| format!("作業領域を作成できません: {e}"))?;
     let sample_path = directory.join("samples.json");
     if !sample_path.try_exists().map_err(|e| e.to_string())? {
-        // cases.json of U3a and before is converted once and left as it was.
-        let old = directory.join("cases.json");
-        let initial = if old.try_exists().map_err(|e| e.to_string())? {
-            convert_cases(&old).map_err(|e| {
-                format!(
-                    "サンプルを変換できません（{} は元のまま残します）: {e}",
-                    old.display()
-                )
-            })?
-        } else {
-            Samples {
-                tolerance: None,
-                cases: initial_cases,
-            }
+        let initial = Samples {
+            tolerance: None,
+            cases: initial_cases,
         };
         let data = serde_json::to_vec_pretty(&initial).map_err(|e| e.to_string())?;
         create_if_missing(&sample_path, &data)?;
