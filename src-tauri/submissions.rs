@@ -1,7 +1,8 @@
 //! The user's submissions, read from the submission list shown in the right column, and the color
-//! of each task: AC, judging or other (docs/problem-library.md#提出一覧の読み取りu5a).
+//! of each task: AC, judging or other (docs/problem-library.md#提出一覧の読み取り).
 use crate::contests::ContestKey;
 use crate::files::{read_limited, write_atomic};
+use crate::navigation::{contest_url, ATCODER_ORIGIN};
 use crate::task::TaskKey;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
@@ -59,7 +60,7 @@ pub fn submissions_page(url: &Url) -> Option<String> {
     {
         return None;
     }
-    ContestKey::parse(&format!("https://atcoder.jp/contests/{}", parts[2]))
+    ContestKey::parse(&contest_url(parts[2]))
         .ok()
         .map(|key| key.url)
 }
@@ -78,7 +79,7 @@ fn parse(contest: &ContestKey, html: &str) -> Vec<Submission> {
         .select(&rows)
         .filter_map(|row| {
             let task = TaskKey::parse(&format!(
-                "https://atcoder.jp{}",
+                "{ATCODER_ORIGIN}{}",
                 row.select(&task).next()?.attr("href")?
             ))
             .ok()?;

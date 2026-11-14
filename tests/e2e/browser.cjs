@@ -72,13 +72,18 @@ async function launch(root, { hostEnv = {} } = {}) {
     }
   });
   try {
-    const assets = new Map([['/', 'index.html'], ...['index.html', 'renderer.js', 'bridge.mjs', 'sample-cases.mjs', 'editor.mjs', 'ruby-completion.mjs', 'lsp-completion.mjs', 'ruby-methods.mjs', 'ruby-receivers.mjs', 'layout.mjs', 'graph.mjs', 'graph-view.mjs', 'vendor/editor/codemirror.mjs', 'styles.css'].map(name => [`/${name}`, name])]);
+    // Serves src/ as the app does (frontendDist), so a new module needs no list here.
+    const src = path.join(repo, 'src');
+    const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' };
     app.server = http.createServer(async (req, res) => {
-      const name = assets.get(new URL(req.url, 'http://localhost').pathname);
-      if (!name) { res.writeHead(404).end(); return; }
-      res.setHeader('Content-Type', /\.m?js$/.test(name) ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : name.endsWith('.woff2') ? 'font/woff2' : 'text/html');
+      const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+      const file = path.join(src, pathname === '/' ? 'index.html' : pathname);
+      const type = types[path.extname(file)];
+      const data = type && file.startsWith(src + path.sep) ? await readFile(file).catch(() => null) : null;
+      if (!data) { res.writeHead(404).end(); return; }
+      res.setHeader('Content-Type', type);
       res.setHeader('Content-Security-Policy', require('../../src-tauri/tauri.conf.json').app.security.csp);
-      res.end(await readFile(path.join(repo, 'src', name)));
+      res.end(data);
     });
     await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
     const executablePath = process.env.CHROMIUM_PATH || (!existsSync(chromium.executablePath()) && existsSync('/usr/bin/chromium') ? '/usr/bin/chromium' : undefined);
@@ -86,7 +91,9 @@ async function launch(root, { hostEnv = {} } = {}) {
     app.page = await app.browser.newPage({ viewport: { width: 1280, height: 850 } });
     app.page.setDefaultTimeout(15000);
     app.page.on('pageerror', error => console.error('Browser UI error:', error));
-    await app.page.exposeBinding('__testInvoke', async (_, command, args) => app.request(command, args));
+    // Every command the screen sends, in order.
+    app.commands = [];
+    await app.page.exposeBinding('__testInvoke', async (_, command, args) => { app.commands.push(command); return app.request(command, args); });
     await app.page.exposeBinding('__testDestroy', async () => {
       await app.request('shutdown');
       setTimeout(() => app.page.close().catch(() => {}), 10);

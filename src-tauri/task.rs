@@ -1,6 +1,7 @@
 //! A task's samples and limits read from its AtCoder page, and the workspace that holds the user's
 //! solution and samples for that task.
 use crate::files::{read_limited, write_atomic, MAX_TEXT_BYTES};
+use crate::navigation::contest_url;
 use crate::samples::convert_cases;
 use crate::{
     load_samples, save_samples, solutions, DocumentResult, DocumentStore, ProblemSample,
@@ -32,11 +33,9 @@ impl TaskKey {
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
         };
-        if url.scheme() != "https"
-            || url.host_str() != Some("atcoder.jp")
+        if !crate::is_atcoder(&url)
             || !url.username().is_empty()
             || url.password().is_some()
-            || url.port().is_some()
             || parts.len() != 5
             || parts[1] != "contests"
             || parts[3] != "tasks"
@@ -49,10 +48,7 @@ impl TaskKey {
             );
         }
         Ok(Self {
-            url: format!(
-                "https://atcoder.jp/contests/{}/tasks/{}",
-                parts[2], parts[4]
-            ),
+            url: format!("{}/tasks/{}", contest_url(parts[2]), parts[4]),
             contest: parts[2].into(),
             task: parts[4].into(),
         })
