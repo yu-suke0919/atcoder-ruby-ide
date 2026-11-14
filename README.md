@@ -82,7 +82,10 @@ npm run prepare:gems
 npm run prepare:lsp
 npm test
 cargo fmt --all --check
+cargo clippy --locked --workspace --all-targets -- -D warnings
 ```
+
+デスクトップアプリはWindows向けにだけビルドします。Linuxでは、Windows向けのデスクトップアプリを `rustup target add x86_64-pc-windows-msvc` の後に `cargo clippy --locked --target x86_64-pc-windows-msvc --features desktop --bin atcoder-ruby-ide -- -D warnings` で確かめられます（空の `vendor/wsl/` と、Tauri がアイコンのリソースを作る `llvm-rc`（Ubuntuでは `llvm`）が要ります）。
 
 `npm ci` はCodeMirrorのバンドル・ライセンスを `src/vendor/` に生成します。エディタの依存や `scripts/codemirror.mjs` を変更した場合は `npm run prepare:editor` で再生成します。表示時にCDNや外部サービスへ接続しません。
 
@@ -110,7 +113,7 @@ npm run package:win
 
 Ruby のソースは公式配布元から取得し、[固定した SHA-256](config/ruby-wsl.json) を検証します。
 配布物は `artifacts/`、容量と同梱物のハッシュは `artifacts/reports/` に生成します。両配布物で、未保存コードからの補完取得を WSL の Ruby LSP で検証します。
-[GitHub Actions](.github/workflows/ci.yml) は、WSL へ置くイメージの作成と確認とリリース `wsl-images` への配置（Ubuntu 22.04）、Linux の共通・画面テストと、Windows のビルド・ZIP 展開相当のアプリ・NSIS インストール後のアプリ起動スモークテスト（WSL1）を実行します。
+[GitHub Actions](.github/workflows/ci.yml) は、WSL へ置くイメージの作成と確認とリリース `wsl-images` への配置（Ubuntu 22.04）、Linux の共通・画面テストとClippy（Windows向けのデスクトップアプリを含む）と、Windows のビルド・ZIP 展開相当のアプリ・NSIS インストール後のアプリ起動スモークテスト（WSL1）を実行します。
 資料だけの変更（`docs/**` とルートの `*.md`）では実行せず、同じブランチ・PR に新しい push があると古い実行を止めます。
 成功した Windows ジョブの Artifacts から ZIP またはインストーラーを取得できます。
 
