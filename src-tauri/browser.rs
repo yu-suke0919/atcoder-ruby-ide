@@ -324,7 +324,6 @@ impl Browser {
             LogicalPosition::new(0.0, 0.0),
             LogicalSize::new(1.0, 1.0),
         )?;
-        #[cfg(windows)]
         crate::webview2::add_search_menu(&_home);
         Ok(())
     }
@@ -445,7 +444,6 @@ pub async fn browser_task(
                         LogicalSize::new(1.0, 1.0),
                     )
                     .map_err(|e| e.to_string())?;
-                #[cfg(windows)]
                 crate::webview2::add_search_menu(&_page);
                 browser.tasks.lock().unwrap().insert(url, label.clone());
                 label
@@ -539,26 +537,18 @@ pub async fn browser_snapshot(
     browser: tauri::State<'_, Browser>,
 ) -> Result<tauri::ipc::Response, String> {
     let webview = shown(&app, &browser)?;
-    #[cfg(windows)]
-    {
-        let (sender, receiver) = std::sync::mpsc::channel();
-        webview
-            .with_webview(move |platform| crate::webview2::capture(platform, sender))
-            .map_err(|e| e.to_string())?;
-        let picture = tauri::async_runtime::spawn_blocking(move || {
-            receiver
-                .recv_timeout(Duration::from_secs(3))
-                .unwrap_or_default()
-        })
-        .await
+    let (sender, receiver) = std::sync::mpsc::channel();
+    webview
+        .with_webview(move |platform| crate::webview2::capture(platform, sender))
         .map_err(|e| e.to_string())?;
-        Ok(tauri::ipc::Response::new(picture))
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = webview;
-        Ok(tauri::ipc::Response::new(Vec::new()))
-    }
+    let picture = tauri::async_runtime::spawn_blocking(move || {
+        receiver
+            .recv_timeout(Duration::from_secs(3))
+            .unwrap_or_default()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(tauri::ipc::Response::new(picture))
 }
 
 /// Goes back or forward in the shown page's history.

@@ -108,7 +108,6 @@ pub async fn rurima_show(
                     LogicalSize::new(1.0, 1.0),
                 )
                 .map_err(|e| e.to_string())?;
-            #[cfg(windows)]
             crate::webview2::add_search_menu(&_rurima);
         }
     }

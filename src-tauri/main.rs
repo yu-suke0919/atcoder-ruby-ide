@@ -1,8 +1,12 @@
-#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+// The desktop app is built only for Windows; Linux tests the library and the screen without it
+// (docs/architecture.md#最小構成).
+#[cfg(not(windows))]
+compile_error!("The desktop app is built only for Windows.");
 
 mod browser;
 mod rurima;
-#[cfg(windows)]
 mod webview2;
 
 use atcoder_ruby_ide::{
@@ -22,87 +26,70 @@ struct AppState {
     contest_lock: Arc<Mutex<()>>,
 }
 
-/// Ruby and Ruby LSP run in the agent (docs/architecture.md#wslのエージェント). On Windows the
-/// app's own WSL distribution is checked once per app run, and downloaded and registered when it is
-/// missing or another version; on Linux the agent built next to the app runs the development Ruby.
+/// Ruby and Ruby LSP run in the agent (docs/architecture.md#wslのエージェント). The app's own WSL
+/// distribution is checked once per app run, and downloaded and registered when it is missing or
+/// another version.
 fn agent(app: &tauri::AppHandle) -> AgentClient {
-    #[cfg(windows)]
-    {
-        use atcoder_ruby_ide::wsl;
-        use std::time::Duration;
-        let resources = app
-            .path()
-            .resource_dir()
-            .map(|dir| dir.join("wsl"))
-            .map_err(|e| e.to_string());
-        let location = app
-            .path()
-            .app_local_data_dir()
-            .map(|dir| dir.join("wsl"))
-            .map_err(|e| e.to_string());
-        let ready = Mutex::new(false);
-        let app = app.clone();
-        AgentClient::new(move || {
-            let mut ready = ready.lock().unwrap();
-            if !*ready {
-                let resources = resources.as_ref().map_err(String::clone)?;
-                let location = location.as_ref().map_err(String::clone)?;
-                let manifest: Value = serde_json::from_slice(
-                    &std::fs::read(resources.join("runtime.json"))
-                        .map_err(|e| format!("同梱物の情報を読めません: {e}"))?,
-                )
-                .map_err(|e| e.to_string())?;
-                let field = |name: &str| {
-                    manifest[name]
-                        .as_str()
-                        .ok_or(format!("Linuxの情報に{name}がありません。"))
-                };
-                let (url, sha256) = (field("url")?, field("sha256")?);
-                wsl::ensure_distribution(
-                    wsl::wsl,
-                    |file| {
-                        // The screen shows the download; a report per megabyte is enough.
-                        let mut shown = 0;
-                        wsl::download(
-                            url,
-                            sha256,
-                            file,
-                            Duration::from_secs(30),
-                            |received, total| {
-                                if received - shown >= 1 << 20 || Some(received) == total {
-                                    shown = received;
-                                    use tauri::Emitter;
-                                    let _ = app.emit(
-                                        "runtime-download",
-                                        json!({"received": received, "total": total}),
-                                    );
-                                }
-                            },
-                        )
-                    },
-                    field("version")?,
-                    location,
-                    Duration::from_secs(120),
-                )?;
-                *ready = true;
-            }
-            Ok(wsl::agent_command(wsl::wsl()))
-        })
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = app;
-        AgentClient::new(|| {
-            let agent = std::env::current_exe()
-                .map_err(|e| e.to_string())?
-                .with_file_name("atcoder-ruby-agent");
-            let mut command = std::process::Command::new(agent);
-            command
-                .arg(std::env::var_os("RUBY_PATH").unwrap_or_else(|| "ruby".into()))
-                .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../vendor/ruby-lsp"));
-            Ok(command)
-        })
-    }
+    use atcoder_ruby_ide::wsl;
+    use std::time::Duration;
+    let resources = app
+        .path()
+        .resource_dir()
+        .map(|dir| dir.join("wsl"))
+        .map_err(|e| e.to_string());
+    let location = app
+        .path()
+        .app_local_data_dir()
+        .map(|dir| dir.join("wsl"))
+        .map_err(|e| e.to_string());
+    let ready = Mutex::new(false);
+    let app = app.clone();
+    AgentClient::new(move || {
+        let mut ready = ready.lock().unwrap();
+        if !*ready {
+            let resources = resources.as_ref().map_err(String::clone)?;
+            let location = location.as_ref().map_err(String::clone)?;
+            let manifest: Value = serde_json::from_slice(
+                &std::fs::read(resources.join("runtime.json"))
+                    .map_err(|e| format!("同梱物の情報を読めません: {e}"))?,
+            )
+            .map_err(|e| e.to_string())?;
+            let field = |name: &str| {
+                manifest[name]
+                    .as_str()
+                    .ok_or(format!("Linuxの情報に{name}がありません。"))
+            };
+            let (url, sha256) = (field("url")?, field("sha256")?);
+            wsl::ensure_distribution(
+                wsl::wsl,
+                |file| {
+                    // The screen shows the download; a report per megabyte is enough.
+                    let mut shown = 0;
+                    wsl::download(
+                        url,
+                        sha256,
+                        file,
+                        Duration::from_secs(30),
+                        |received, total| {
+                            if received - shown >= 1 << 20 || Some(received) == total {
+                                shown = received;
+                                use tauri::Emitter;
+                                let _ = app.emit(
+                                    "runtime-download",
+                                    json!({"received": received, "total": total}),
+                                );
+                            }
+                        },
+                    )
+                },
+                field("version")?,
+                location,
+                Duration::from_secs(120),
+            )?;
+            *ready = true;
+        }
+        Ok(wsl::agent_command(wsl::wsl()))
+    })
 }
 
 /// Runs a blocking agent request off the main thread.
@@ -143,6 +130,7 @@ async fn ruby_info(state: tauri::State<'_, AppState>) -> Result<Value, String> {
     ask(&state, "ruby_info", Value::Null).await
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 async fn run_ruby(
     state: tauri::State<'_, AppState>,
@@ -410,17 +398,14 @@ async fn file_delete(
 }
 
 fn main() {
-    // UI tests open a debugging port on Windows. Child webviews share the WebView2 environment,
-    // so they need the same arguments.
-    #[cfg(windows)]
+    // UI tests open a debugging port. Child webviews share the WebView2 environment, so they need
+    // the same arguments.
     let browser_args = std::env::var("ATCODER_IDE_TEST_PORT").ok().map(|port| {
         let port: u16 = port
             .parse()
             .expect("ATCODER_IDE_TEST_PORT must be a port number");
         format!("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port={port}")
     });
-    #[cfg(not(windows))]
-    let browser_args: Option<String> = None;
     let mut context = tauri::generate_context!();
     if let Some(args) = &browser_args {
         for window in &mut context.config_mut().app.windows {
@@ -439,7 +424,6 @@ fn main() {
             });
             Browser::create_home(app, browser_args.clone())?;
             // The screen's own text can be searched for in るりま from the right-click menu too.
-            #[cfg(windows)]
             if let Some(main) = app.get_webview("main") {
                 webview2::add_search_menu(&main);
             }

@@ -32,3 +32,17 @@ test('CI caches the built Ruby, gems and Ruby LSP under the files that decide th
   assert.equal(cache.with.path, '.cache/wsl');
   assert.equal(cache.with.key, `wsl-runtime-\${{ hashFiles(${inputs.map(file => `'${file}'`).join(', ')}) }}`);
 });
+
+// The desktop app is built only for Windows; Linux checks it through the Windows target, which
+// needs no WebKitGTK, before the slower Windows job. Clippy's warnings fail the run.
+test('CI runs Clippy over the library and tests, and over the Windows desktop app from Linux', () => {
+  const linux = workflow.jobs.linux;
+  const run = linux.steps.map(step => step.run ?? '').join('\n');
+  const toolchain = linux.steps.find(step => step.uses?.startsWith('dtolnay/rust-toolchain@'));
+  assert.match(toolchain.with.components, /\bclippy\b/);
+  assert.equal(toolchain.with.targets, 'x86_64-pc-windows-msvc');
+  assert.match(run, /cargo clippy --locked --workspace --all-targets -- -D warnings/);
+  assert.match(run, /cargo clippy --locked --target x86_64-pc-windows-msvc --features desktop --bin atcoder-ruby-ide -- -D warnings/);
+  // Tauri's build script compiles the Windows resources with llvm-rc.
+  assert.match(run, /apt-get install -y llvm\b/);
+});

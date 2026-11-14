@@ -66,7 +66,8 @@ async function launch(root, { hostEnv = {} } = {}) {
     }
     page.setDefaultTimeout(15000);
     page.on('pageerror', error => console.error('WebView error:', error));
-    // The first start places the runtime in WSL, which the app allows 60 seconds (slow on CI's WSL1).
+    // The first start downloads and registers the app's WSL distribution, which the app allows
+    // 120 seconds for (slow on CI's WSL1).
     await page.getByTestId('ruby-version').filter({ hasText: /ruby \d+\.\d+\.\d+\b/i }).waitFor({ timeout: 90000 }).catch(async error => {
       // The reason is in the title of the Ruby status; the page text only says that Ruby failed.
       throw new Error(`Ruby check failed: ${await page.getByTestId('ruby-version').getAttribute('title').catch(() => '')}`, { cause: error });
