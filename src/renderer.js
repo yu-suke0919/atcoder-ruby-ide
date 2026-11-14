@@ -205,7 +205,7 @@ function updateCaseList() {
     tab.addEventListener('click', () => { cases.selected = index; showCase(); });
     return tab;
   }));
-  $('case-count').textContent = `${cases.items.length} ケース`;
+  $('case-count').textContent = `${cases.items.length} 件`;
   const done = cases.items.filter(item => item.status && !['running', 'canceled'].includes(item.status)).length;
   const count = state => cases.items.filter(item => item.comparison === state).length;
   const errors = cases.items.filter(item => ['failed', 'timeout', 'output-limit', 'memory-limit', 'error'].includes(item.status)).length;
