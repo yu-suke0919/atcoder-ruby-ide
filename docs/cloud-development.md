@@ -128,7 +128,7 @@ docs/roadmap.md の U2 を実装する。他の項目には手を付けない。
 - Linux の npm test・cargo fmt --all --check・cargo clippy（2つ）・npm run test:e2e をセッション内で通す。
 - PR を作成し、Linux と Windows の CI の成功を確認してから報告する。マージはしない。
 - 判断が分かれる点や、調査で前提が崩れた点は、実装する前に報告する。
-- 手元での確認が必要な項目（ログイン・参加登録・提出、WSL2）は、確認手順を PR 本文に書く。
+- 手元での確認が必要な項目（ログイン・参加登録・提出、WSL2）は、確認手順を PR 本文に書き、docs/manual-checks.md にも加える。
 ```
 
 ## 制約

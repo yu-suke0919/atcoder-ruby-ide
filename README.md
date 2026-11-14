@@ -9,6 +9,7 @@ WSL2の準備は必要ですが、Ruby のインストールや PATH 設定は�
 - [クラウドセッションでの開発](docs/cloud-development.md)
 - [構成と検証方針](docs/architecture.md)
 - [検証記録](docs/verification.md)
+- [手元での確認](docs/manual-checks.md)
 - [レビューで維持する修正](docs/review.md)
 - [複数サンプル](docs/multi-sample.md)
 - [AtCoder 問題の取得と作業領域](docs/problem-library.md)
