@@ -740,7 +740,6 @@ fn delayed_notification_after_process_exit_does_not_cause_timeout() {
     assert_eq!(result.comparison, Some(true));
 }
 
-#[cfg(unix)]
 #[test]
 fn r02_cleanup_failure_releases_reservation() {
     use std::os::unix::fs::PermissionsExt;
@@ -825,7 +824,6 @@ fn m08_source_open_and_save_enforce_utf8_byte_limit_without_changing_current_doc
     assert!(store.open(candidate).is_err());
     assert_eq!(store.path(), Some(current.as_path()));
 }
-#[cfg(unix)]
 #[test]
 fn escaped_descendant_cannot_hold_runner_busy_after_timeout() {
     let runner = Runner::new(Duration::from_millis(500), 1048576);

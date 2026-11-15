@@ -7,7 +7,7 @@ Claude Code のクラウドセッション（[claude.ai/code](https://claude.ai/
 - リポジトリの`CLAUDE.md`が[開発ルール](../AGENTS.md)を読み込む。実装の順番と範囲は[ロードマップ](roadmap.md)に従う。
 - 環境の**セットアップスクリプト**がNode.js・Ruby・Rust・Chromiumを用意する。約5分以内に終わると、その状態が保存され、以後のセッションはインストール済みの状態で始まる。
 - セッションのコマンドは`~/.bashrc`・`~/.profile`を読まずに環境のPATHで動く。そのため、セットアップスクリプトはNode.jsとRubyの実行ファイルのリンクを、PATHで既存の`/opt/node22/bin`・`/usr/local/bin`より前にある`~/.local/bin`に置く。
-- `CLAUDE.md`の指示により、セッションの最初に`scripts/cloud-session.sh`を実行し、npmパッケージ・gem・Ruby LSPを準備する。依存の入力が変わっていなければ何もしない。手元の環境では何もしない。結果は`/tmp/atcoder-ruby-ide-session.log`に残す。
+- `CLAUDE.md`の指示により、セッションの最初に`scripts/cloud-session.sh`を実行し、npmパッケージ・gem・Ruby LSPを準備する。依存の入力が変わっていなければ何もしない。手元の環境では何もしない。結果は`/tmp/atcoder-ruby-ide-session.log`に残し、失敗したときはその最後の数行を表示する。RubyがAtCoderと同じ固定の版（`config/ruby-wsl.json`）でなければ、gemとRuby LSPを準備できないため、何もせずにその版と下のセットアップスクリプトを直すよう表示する。
 - セッション開始時に自動で実行したい場合は、利用者が`.claude/settings.json`のSessionStartフックに`bash "$CLAUDE_PROJECT_DIR"/scripts/cloud-session.sh`を追加する（[フックの設定](https://code.claude.com/docs/en/cloud-environments#install-dependencies-with-a-sessionstart-hook)）。
 
 ## 環境の作成
