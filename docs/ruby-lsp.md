@@ -4,7 +4,7 @@ Shopify Ruby LSPをローカルの別プロセスとして利用し、CodeMirror
 
 - Rubyは競技実行と同じ固定済み3.4.xを使う。LSP用の追加gemは`vendor/ruby-lsp/gems`へ分離し、競技用の標準gemディレクトリには追加しない。
 - `config/ruby-lsp.json`へRuby LSPと依存gemのバージョンを固定する。Rubyに含まれるPrism・RBS・logger・Bundlerも指定バージョンを確認する。追加するpure Ruby gemはRubyGemsのSHA-256を検証し、ライセンスごと準備する。C拡張のビルドは行わない。Ruby更新で同梱依存が変われば、固定情報とテストも見直す。
-- LSPの解析対象（インデックス）：LSPの固定Gemfileは、[採用した競技用gem](atcoder-runtime.md#追加するgem)を既定のグループに、Ruby LSPと依存gemを`development`グループに書く。Ruby LSPは`development`だけのgemを解析しないため、ac-library-rbなどの競技用gemとRubyの標準ライブラリのAPIが補完候補に出て、Ruby LSP・RBSなどの内部のAPIは出ない。bit_utilsが依存するbackportsは、古いRuby向けに組み込みのメソッドを定義し直す600のファイルからなるため、初期化の`indexing.excludedGems`で解析から外す。競技用gemは競技実行のRubyの標準gemディレクトリにあるものを参照し、LSP用には複製しない。競技実行の側からLSP用gemが見えない分離は変えない（C3b）。
+- LSPの解析対象（インデックス）：LSPの固定Gemfileは、[採用した競技用gem](atcoder-runtime.md#追加するgem)を既定のグループに、Ruby LSPと依存gemを`development`グループに書く。Ruby LSPは`development`だけのgemを解析しないため、ac-library-rbなどの競技用gemとRubyの標準ライブラリのAPIが補完候補に出て、Ruby LSP・RBSなどの内部のAPIは出ない。bit_utilsが依存するbackportsは、古いRuby向けに組み込みのメソッドを定義し直す600のファイルからなるため、初期化の`indexing.excludedGems`で解析から外す。競技用gemは競技実行のRubyの標準gemディレクトリにあるものを参照し、LSP用には複製しない。競技実行の側からLSP用gemが見えない分離は変えない。
 - `npm run prepare:lsp`で固定gemとGemfile・lock・起動スクリプトを用意する。移動後に無効になるRubyGemsのCLI用リンクは除去し、固定Gemfileで`Bundler.setup`した後、gem内の公式ruby-lsp実行ファイルをRubyから直接読み込む。起動時のcomposed bundle生成・bundle install・自動更新を使わず、ネットワーク不要とする。
 - 起動時は外部のRUBYOPT・RUBYLIB・GEM_HOME・GEM_PATH・BUNDLE_*を除去し、専用のGemfileとgem探索先を設定する。Bundlerのユーザー設定を無視する。競技実行の環境隔離は維持する。
 - Rustの`RubyLsp`が1つのセッションを管理する。Tauriコマンドは`lsp_start`・`lsp_complete`・`lsp_stop`。最初の補完（入力中の自動表示を含む）で起動し、アプリ起動だけではLSPを起動しない。二重起動は同じセッションを返す。
