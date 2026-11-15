@@ -1482,6 +1482,20 @@ test('D3: the るりま window slides over the darkened AtCoder page with its ow
   assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
 });
 
+// A dialog covers the window and hides the browser pages, so the るりま window must not come out
+// behind it.
+test('D3: F1 and the right-click search do nothing while a dialog is open', async () => {
+  await page.locator('#settings-open').click();
+  await page.locator('#settings-dialog').waitFor();
+  await page.keyboard.press('F1');
+  if (runner !== 'native') await page.evaluate(() => window.__testEvent('rurima-search', 'each_slice'));
+  await pause(300);
+  assert.equal(await page.locator('#rurima-toggle').getAttribute('aria-pressed'), 'false');
+  assert.equal(await page.locator('#browser-cover').isHidden(), true);
+  await page.locator('#settings-close').click();
+  await page.waitForFunction(() => !document.querySelector('dialog[open]'));
+});
+
 test('M17/U6c: a joined contest about to start is announced in the app and flashes the taskbar', async () => {
   const contest = `${testContest}-notice`;
   await seedWorkspaceProblem(app, contest, 'notice_a', { label: 'A', title: '知らせ' });
