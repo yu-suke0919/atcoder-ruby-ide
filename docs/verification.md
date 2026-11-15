@@ -858,3 +858,11 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 - main 4ce9a33から開始。Phase Fをマージした後のmainのCIは成功したが、注釈が6件あった。3件は`actions/checkout@v4`などがNode.js 20向けで、GitHubがNode.js 24で強制的に動かしているという非推奨の警告。1件は`Vampire/setup-wsl@v3`が`wsl-version`という入力を知らないという警告で、この入力はv4で加わったため、v3では無視されていた（v3は既定でWSL1を使うため、結果としてWSL1で動いていた）。残りの2件はGitHubのキャッシュの一時的な障害で、このリポジトリでは直せない。
 - 各アクションの最新のタグの`action.yml`を取得し、Node.js 24で動くことと、使っている入力（`name`・`path`・`if-no-files-found`・`retention-days`・`cache`・`distribution`・`wsl-version`）が残り、既定の挙動（アップロードはZIPにする、ダウンロードは展開して不一致ならエラーにする）が変わらないことを確かめた。checkoutのv7はプルリクエストのフォークの扱い（`pull_request_target`）、setup-nodeのv5〜v7は`packageManager`による自動キャッシュと`registry-url`の扱いが変わったが、どちらも使っていない。checkout v7、setup-node v7、cache v6、upload-artifact v7、download-artifact v8、setup-wsl v7にした。setup-wsl v7は`wsl-version`の既定が2のため、`wsl-version: 1`が効くようになる。`Swatinem/rust-cache@v2`と`ruby/setup-ruby@v1`は、すでにNode.js 24で動く。
 - 失敗するテストを先に用意した。CIの単体テストは、各アクションがNode.js 24で動くと確かめた版以上で、setup-wslが`wsl-version: 1`を指定していることを確かめる（修正前は`actions/checkout@v4`で失敗した）。
+
+## Phase Fの後の資料の整理
+
+- main bf229a6の全体レビューから開始。ロードマップは、Phase Fをすべてマージした後も「次はPhase F」とF0〜F7の計画のままで、「browser.rsはクラウドセッションでビルドできない」という、F2でLinuxからWindowsのターゲットを確かめられるようになった後には誤りの記述も残っていた。現在地にPhase Fの要約を加え、計画と順番の節を消した（経緯はこの検証記録にある）。
+- 「選択中のコンテストが自動で非表示になると問題のページが閉じる」という利用者の判断（2026-11-12）がロードマップにしかなかったため、画面の仕様に書いた。`selectContest(null)`の動き（問題のページを閉じ、ブラウザにAtCoderのホームを出し、エディタの問題はそのまま）に合わせた。
+- F1では見出しと受入条件の表からだけロードマップの項目名を外していた。仕様の本文に残っていた「（C5）」「（D2）」のような項目名の注記32行分を外した。調査の節の見出し（U0・C0）、`scripts/build-wsl-runtime.sh`が参照する`Rubyのビルド（C3a）`、「C4で削除した」「U6aで…を加えた」のような経緯の文は残した。
+- 開発の順番（資料 → 失敗するテスト → 最小実装 → 不要コード・資料矛盾の確認）を、比較の詳細仕様に2回、MVPに1回書いていた。比較の詳細仕様からは消し、MVPは開発ルールへの参照にした。
+- 資料どうしのリンクのテストが通ることを確かめた。
