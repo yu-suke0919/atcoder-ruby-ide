@@ -858,3 +858,8 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 - main 4ce9a33から開始。Phase Fをマージした後のmainのCIは成功したが、注釈が6件あった。3件は`actions/checkout@v4`などがNode.js 20向けで、GitHubがNode.js 24で強制的に動かしているという非推奨の警告。1件は`Vampire/setup-wsl@v3`が`wsl-version`という入力を知らないという警告で、この入力はv4で加わったため、v3では無視されていた（v3は既定でWSL1を使うため、結果としてWSL1で動いていた）。残りの2件はGitHubのキャッシュの一時的な障害で、このリポジトリでは直せない。
 - 各アクションの最新のタグの`action.yml`を取得し、Node.js 24で動くことと、使っている入力（`name`・`path`・`if-no-files-found`・`retention-days`・`cache`・`distribution`・`wsl-version`）が残り、既定の挙動（アップロードはZIPにする、ダウンロードは展開して不一致ならエラーにする）が変わらないことを確かめた。checkoutのv7はプルリクエストのフォークの扱い（`pull_request_target`）、setup-nodeのv5〜v7は`packageManager`による自動キャッシュと`registry-url`の扱いが変わったが、どちらも使っていない。checkout v7、setup-node v7、cache v6、upload-artifact v7、download-artifact v8、setup-wsl v7にした。setup-wsl v7は`wsl-version`の既定が2のため、`wsl-version: 1`が効くようになる。`Swatinem/rust-cache@v2`と`ruby/setup-ruby@v1`は、すでにNode.js 24で動く。
 - 失敗するテストを先に用意した。CIの単体テストは、各アクションがNode.js 24で動くと確かめた版以上で、setup-wslが`wsl-version: 1`を指定していることを確かめる（修正前は`actions/checkout@v4`で失敗した）。
+
+## ダイアログを開いている間のF1
+
+- main bf229a6から開始。設定などのアプリ内のダイアログを開いている間もF1が効き、ダイアログの後ろでるりまの窓が出た（AtCoderのページはダイアログの間は隠れている）。Windowsの右クリックの「るりまを全文検索」も同じだった。
+- 失敗するテストを先に用意した。画面テストは、設定のダイアログを開いてF1を押し、右クリックの検索のイベントを送っても（ブラウザーのテスト用ホストのみ）、窓が出ないことを確かめる（修正前は窓が出た）。ダイアログを開いている間は、F1（ブラウザの既定の動作は止めたまま）と右クリックの検索を無視する。

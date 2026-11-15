@@ -137,15 +137,18 @@ export function setupCover({ ide, sample, searchText, browserMessage, message })
     event.preventDefault();
     if ($('rurima-search').value.trim()) openRurima($('rurima-search').value);
   });
+  // A dialog covers the window and hides the browser pages: the window does not come out behind it.
+  const dialogOpen = () => Boolean(document.querySelector('dialog[open]'));
   // F1 searches for the selected text (in the editor, the word at the cursor without a selection).
   document.addEventListener('keydown', event => {
     if (event.key !== 'F1') return;
     event.preventDefault();
+    if (dialogOpen()) return;
     const text = $('editor-host').contains(document.activeElement) ? searchText() : String(window.getSelection() ?? '');
     openRurima(text.trim() ? text : null);
   });
   // The right-click item 「るりまを全文検索」 of Windows sends the selected text.
-  ide.onRurimaSearch(text => openRurima(text)).catch(error => message(String(error), true));
+  ide.onRurimaSearch(text => { if (!dialogOpen()) openRurima(text); }).catch(error => message(String(error), true));
 
   // The graph window (D4) draws the selected sample's input by the form the task's input format
   // gave, or by one chosen by hand until another problem opens.
