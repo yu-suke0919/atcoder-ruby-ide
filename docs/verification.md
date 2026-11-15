@@ -858,3 +858,9 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 - main 4ce9a33から開始。Phase Fをマージした後のmainのCIは成功したが、注釈が6件あった。3件は`actions/checkout@v4`などがNode.js 20向けで、GitHubがNode.js 24で強制的に動かしているという非推奨の警告。1件は`Vampire/setup-wsl@v3`が`wsl-version`という入力を知らないという警告で、この入力はv4で加わったため、v3では無視されていた（v3は既定でWSL1を使うため、結果としてWSL1で動いていた）。残りの2件はGitHubのキャッシュの一時的な障害で、このリポジトリでは直せない。
 - 各アクションの最新のタグの`action.yml`を取得し、Node.js 24で動くことと、使っている入力（`name`・`path`・`if-no-files-found`・`retention-days`・`cache`・`distribution`・`wsl-version`）が残り、既定の挙動（アップロードはZIPにする、ダウンロードは展開して不一致ならエラーにする）が変わらないことを確かめた。checkoutのv7はプルリクエストのフォークの扱い（`pull_request_target`）、setup-nodeのv5〜v7は`packageManager`による自動キャッシュと`registry-url`の扱いが変わったが、どちらも使っていない。checkout v7、setup-node v7、cache v6、upload-artifact v7、download-artifact v8、setup-wsl v7にした。setup-wsl v7は`wsl-version`の既定が2のため、`wsl-version: 1`が効くようになる。`Swatinem/rust-cache@v2`と`ruby/setup-ruby@v1`は、すでにNode.js 24で動く。
 - 失敗するテストを先に用意した。CIの単体テストは、各アクションがNode.js 24で動くと確かめた版以上で、setup-wslが`wsl-version: 1`を指定していることを確かめる（修正前は`actions/checkout@v4`で失敗した）。
+
+## クラウドセッションの準備の理由の表示と、残り物の削除
+
+- main bf229a6の全体レビューから開始。クラウド環境のセットアップスクリプトのRubyが固定の3.4.5でなく3.4.12のとき、`scripts/cloud-session.sh`はRuby LSPの準備で失敗し、「Dependency preparation failed.」としか表示しなかった（このセッションで起きた）。失敗する前に、準備済みの印も消していた。
+- 失敗するテストを先に用意した。Nodeの単体テストは、PATHの先頭に別の版のRubyと、呼ばれたら失敗する`npm`を置いて実行し、見つけた版と固定の版、直し方の資料が表示され、`npm`が呼ばれないことを確かめる（修正前は`npm`を呼んで失敗した）。Rubyの版を最初に確かめ、違えば何もせずに直し方を表示する。準備に失敗したときは、ログの最後の5行も表示する。固定の版のRuby 3.4.5では、今までどおり準備が済むことを確かめた。
+- U2bで削除した機能の固定データ2つ（問題文の画像の`internal-diagram.svg`、単問キャッシュの`problem-without-limits.json`）は、どのテストからも使われていなかったため消した。`tests/contract.rs`はRunnerを使うためLinuxでしかビルドしないので、2つのテストの`#[cfg(unix)]`を外した。
