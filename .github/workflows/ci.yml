@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   # The runtime the app places in WSL: Ruby 3.4.5 built here, gems, Ruby LSP and the agent.
-  # Ubuntu 22.04 keeps glibc old enough for the Ubuntu that `wsl --install` sets up.
+  # Built on Ubuntu 22.04, the same Ubuntu the distribution is made from (ubuntu:22.04).
   wsl-runtime:
     runs-on: ubuntu-22.04
     # Puts the image on the wsl-images release, where the app downloads it from.

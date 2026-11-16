@@ -903,3 +903,10 @@ after 8 s timeout: sleeps, timeout groups: 0, 0
 
 - main 2c695e5から開始。クラウドセッションはrootで動くため、`r02_cleanup_failure_releases_reservation`が失敗し、その時点でcargoが止まって、後に続く`library`・`ruby_lsp`・`wsl`のRustのテストとNodeの単体テストが実行されなかった。資料の「それ以外が成功すればよい」を確かめられなかった。
 - 修正前に、rootで`npm test`が`contract`で止まり、Nodeの単体テストが実行されないことを確かめた。rootのときは`r02`を、理由を出して確かめずに終える。rootでないCIでは今までどおり確かめる。
+
+## 資料の食い違いを直す
+
+- main 2c695e5の全体レビューから開始。子プロセスから除く環境変数を、構成と検証方針の「コマンドとRuby起動の共通処理」は実装どおり（RUBYOPT・RUBYLIB・GEM_HOME・GEM_PATH・RUBYGEMS_GEMDEPS・BUNDLE_*・BUNDLER_ORIG_*）に書いていたが、同じ資料の「実行・出力・停止」、実行環境の資料、Ruby LSPの資料は一部だけを挙げていた。一覧はその節だけに置き、ほかはリンクにした。
+- Rubyの実行環境の調査（C0）の節は「C1以降はこの節に従う」としていたが、置き場所（ホームの下でなく`/opt/atcoder-ruby-ide`）・エージェントの起動・メモリ上限は後で決め直した。調査の時点の記録とし、現行は各節を正とすると書いた。
+- CIの`wsl-runtime`ジョブのコメントは、Ubuntu 22.04でビルドする理由を「`wsl --install`が入れるUbuntu向けにglibcを古く保つ」としていたが、利用者のUbuntuは使わない。ディストリビューションを作る`ubuntu:22.04`と同じだからと直した。
+- 資料どうしのリンクのテストが通ることを確かめた。
