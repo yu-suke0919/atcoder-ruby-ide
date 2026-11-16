@@ -1,7 +1,7 @@
 //! Registered contests and problem sets with their official task lists.
 use crate::files::{read_limited, write_atomic};
-use crate::navigation::contest_url;
-use crate::task::{TaskKey, MAX_HTML_BYTES};
+use crate::navigation::{contest_top, contest_url, ContestKey, TaskKey};
+use crate::task::MAX_HTML_BYTES;
 use reqwest::blocking::Client;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
@@ -13,42 +13,7 @@ use url::Url;
 
 const MAX_CONTEST_BYTES: usize = 2 * 1024 * 1024;
 
-/// A contest URL, or a task URL whose contest is registered and whose task is opened.
-pub struct ContestKey {
-    pub url: String,
-    pub id: String,
-    pub task: Option<String>,
-}
 impl ContestKey {
-    pub fn parse(value: &str) -> Result<Self, String> {
-        let parsed = Url::parse(value.trim())
-            .map_err(|_| "コンテストまたは問題のURLを入力してください。")?;
-        let parts: Vec<_> = parsed.path().trim_end_matches('/').split('/').collect();
-        let invalid =
-            || "https://atcoder.jp/contests/<id> または問題のURLを入力してください。".to_string();
-        if parts.len() < 3 || parts[1] != "contests" {
-            return Err(invalid());
-        }
-        // Reuse the origin, credential and identifier rules of task URLs.
-        let mut probe = parsed.clone();
-        let task = match parts.len() {
-            3 => None,
-            4 if parts[3] == "tasks" => None,
-            5 if parts[3] == "tasks" => Some(parts[4]),
-            _ => return Err(invalid()),
-        };
-        probe.set_path(&format!(
-            "/contests/{}/tasks/{}",
-            parts[2],
-            task.unwrap_or("probe")
-        ));
-        let key = TaskKey::parse(probe.as_str())?;
-        Ok(Self {
-            url: contest_url(&key.contest),
-            id: key.contest,
-            task: task.map(|_| key.url),
-        })
-    }
     fn path(&self, root: &Path) -> PathBuf {
         root.join("contests").join(format!("{}.json", self.id))
     }
@@ -151,17 +116,6 @@ pub fn unix_now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs() as i64)
-}
-
-/// The contest URL when `url` is a contest's top page, `/contests/<id>`.
-pub fn contest_top(url: &Url) -> Option<String> {
-    let parts: Vec<_> = url.path().trim_end_matches('/').split('/').collect();
-    if !crate::is_atcoder(url) || parts.len() != 3 || parts[1] != "contests" {
-        return None;
-    }
-    ContestKey::parse(&contest_url(parts[2]))
-        .ok()
-        .map(|key| key.url)
 }
 
 /// What a contest's top page says: its name, whether the user is registered and its times.

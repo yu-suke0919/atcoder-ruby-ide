@@ -1,7 +1,7 @@
 //! A task's samples and limits read from its AtCoder page, and the workspace that holds the user's
 //! solution and samples for that task.
 use crate::files::{read_limited, write_atomic, MAX_TEXT_BYTES};
-use crate::navigation::contest_url;
+use crate::navigation::TaskKey;
 use crate::{
     load_samples, save_samples, solutions, DocumentResult, DocumentStore, ProblemSample,
     SampleCase, Samples,
@@ -11,47 +11,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use url::Url;
 
 pub(crate) const MAX_HTML_BYTES: usize = 4 * MAX_TEXT_BYTES;
 const MAX_TASK_BYTES: usize = 16 * 1024 * 1024;
 
-pub(crate) struct TaskKey {
-    pub(crate) url: String,
-    pub(crate) contest: String,
-    pub(crate) task: String,
-}
 impl TaskKey {
-    pub(crate) fn parse(value: &str) -> Result<Self, String> {
-        let url = Url::parse(value.trim()).map_err(|_| "AtCoder の問題URLを入力してください。")?;
-        let parts: Vec<_> = url.path().trim_end_matches('/').split('/').collect();
-        let valid_id = |id: &str| {
-            !id.is_empty()
-                && id.len() <= 100
-                && id
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-        };
-        if !crate::is_atcoder(&url)
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || parts.len() != 5
-            || parts[1] != "contests"
-            || parts[3] != "tasks"
-            || !valid_id(parts[2])
-            || !valid_id(parts[4])
-        {
-            return Err(
-                "https://atcoder.jp/contests/<contest>/tasks/<task> 形式のURLを入力してください。"
-                    .into(),
-            );
-        }
-        Ok(Self {
-            url: format!("{}/tasks/{}", contest_url(parts[2]), parts[4]),
-            contest: parts[2].into(),
-            task: parts[4].into(),
-        })
-    }
     fn workspace(&self, root: &Path) -> PathBuf {
         root.join("workspaces").join(&self.contest).join(&self.task)
     }
@@ -612,9 +576,4 @@ pub(crate) fn create_if_missing(path: &Path, data: &[u8]) -> Result<(), String> 
 /// Reads a loaded task page into `task.json`. Used by the browser and by the UI test host.
 pub fn read_task_page(workspaces: &Workspaces, url: &str, html: &str) -> Result<(), String> {
     workspaces.store_task(&parse_task(url, html)?)
-}
-
-/// Whether a loaded page address is the given task page, ignoring query and fragment.
-pub fn is_task_page(task_url: &str, loaded: &Url) -> bool {
-    Url::parse(task_url).is_ok_and(|task| task.path() == loaded.path().trim_end_matches('/'))
 }

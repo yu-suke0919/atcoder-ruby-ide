@@ -1,4 +1,4 @@
-//! Which pages the right-hand browser may open.
+//! AtCoder's URLs, and which pages the right-hand browser may open.
 use url::Url;
 
 /// The origin the browser always opens, and the only one whose pages the app reads.
@@ -7,6 +7,100 @@ pub const ATCODER_ORIGIN: &str = "https://atcoder.jp";
 /// The URL of a contest's top page, `https://atcoder.jp/contests/<id>`.
 pub(crate) fn contest_url(id: &str) -> String {
     format!("{ATCODER_ORIGIN}/contests/{id}")
+}
+
+/// An id of a contest or a task: letters, digits, `_` and `-`, up to 100.
+fn valid_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 100
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// The contest id and the rest of the path of an AtCoder URL `/contests/<id>/…`, ignoring a last
+/// `/`, the query and the fragment. URLs with a user name or password are not AtCoder's pages.
+fn contest_path(url: &Url) -> Option<(&str, Vec<&str>)> {
+    if !is_atcoder(url) || !url.username().is_empty() || url.password().is_some() {
+        return None;
+    }
+    let mut parts = url
+        .path()
+        .trim_end_matches('/')
+        .strip_prefix("/contests/")?
+        .split('/');
+    let id = parts.next().filter(|id| valid_id(id))?;
+    Some((id, parts.collect()))
+}
+
+/// A task URL, `https://atcoder.jp/contests/<contest>/tasks/<task>`.
+pub(crate) struct TaskKey {
+    pub(crate) url: String,
+    pub(crate) contest: String,
+    pub(crate) task: String,
+}
+impl TaskKey {
+    pub(crate) fn parse(value: &str) -> Result<Self, String> {
+        let url = Url::parse(value.trim()).map_err(|_| "AtCoder の問題URLを入力してください。")?;
+        contest_path(&url)
+            .and_then(|(contest, rest)| match rest.as_slice() {
+                ["tasks", task] if valid_id(task) => Some(Self {
+                    url: format!("{}/tasks/{task}", contest_url(contest)),
+                    contest: contest.into(),
+                    task: task.to_string(),
+                }),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                "https://atcoder.jp/contests/<contest>/tasks/<task> 形式のURLを入力してください。"
+                    .into()
+            })
+    }
+}
+
+/// A contest URL, or a task URL whose contest is registered and whose task is opened.
+pub struct ContestKey {
+    pub url: String,
+    pub id: String,
+    pub task: Option<String>,
+}
+impl ContestKey {
+    pub fn parse(value: &str) -> Result<Self, String> {
+        let url = Url::parse(value.trim())
+            .map_err(|_| "コンテストまたは問題のURLを入力してください。")?;
+        let invalid =
+            || "https://atcoder.jp/contests/<id> または問題のURLを入力してください。".to_string();
+        let (id, rest) = contest_path(&url).ok_or_else(invalid)?;
+        let task = match rest.as_slice() {
+            [] | ["tasks"] => None,
+            ["tasks", task] if valid_id(task) => Some(format!("{}/tasks/{task}", contest_url(id))),
+            _ => return Err(invalid()),
+        };
+        Ok(Self {
+            url: contest_url(id),
+            id: id.into(),
+            task,
+        })
+    }
+}
+
+/// The contest URL when `url` is a contest's top page, `/contests/<id>`.
+pub fn contest_top(url: &Url) -> Option<String> {
+    contest_path(url)
+        .filter(|(_, rest)| rest.is_empty())
+        .map(|(id, _)| contest_url(id))
+}
+
+/// The contest URL when `url` is the user's submission list, `/contests/<id>/submissions/me`.
+pub fn submissions_page(url: &Url) -> Option<String> {
+    contest_path(url)
+        .filter(|(_, rest)| rest[..] == ["submissions", "me"])
+        .map(|(id, _)| contest_url(id))
+}
+
+/// Whether a loaded page address is the given task page, ignoring query and fragment.
+pub fn is_task_page(task_url: &str, loaded: &Url) -> bool {
+    Url::parse(task_url).is_ok_and(|task| task.path() == loaded.path().trim_end_matches('/'))
 }
 
 fn same_origin(url: &Url, origin: &str) -> bool {

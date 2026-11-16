@@ -1238,6 +1238,10 @@ fn u5a_only_submission_lists_are_read_and_an_unreadable_record_is_kept() {
             "https://example.com/contests/tessoku-book/submissions/me",
             None,
         ),
+        (
+            "https://user:secret@atcoder.jp/contests/tessoku-book/submissions/me",
+            None,
+        ),
     ] {
         let url = url::Url::parse(url).unwrap();
         assert_eq!(submissions_page(&url).as_deref(), contest, "{url}");
@@ -1294,6 +1298,8 @@ fn u6a_only_contest_tops_are_read() {
         ("https://atcoder.jp/contests/", None),
         ("https://atcoder.jp/", None),
         ("https://example.com/contests/abc483", None),
+        ("https://user@atcoder.jp/contests/abc483", None),
+        ("https://atcoder.jp/contests/abc%2F483", None),
     ] {
         let url = url::Url::parse(url).unwrap();
         assert_eq!(contest_top(&url).as_deref(), contest, "{url}");
