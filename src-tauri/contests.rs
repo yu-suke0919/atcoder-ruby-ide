@@ -1,54 +1,25 @@
 //! Registered contests and problem sets with their official task lists.
 use crate::files::{read_limited, write_atomic};
-use crate::navigation::contest_url;
-use crate::task::{TaskKey, MAX_HTML_BYTES};
-use reqwest::blocking::Client;
+use crate::http::MAX_HTML_BYTES;
+use crate::navigation::{contest_top, contest_url, ContestKey, TaskKey};
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::sync::Mutex;
 use url::Url;
 
 const MAX_CONTEST_BYTES: usize = 2 * 1024 * 1024;
-
-/// A contest URL, or a task URL whose contest is registered and whose task is opened.
-pub struct ContestKey {
-    pub url: String,
-    pub id: String,
-    pub task: Option<String>,
+/// Registering, reading a registration from a contest's top and hiding change the same files from
+/// different threads: each reads, changes and saves one at a time, so no change is lost.
+static RECORDS: Mutex<()> = Mutex::new(());
+fn records() -> std::sync::MutexGuard<'static, ()> {
+    RECORDS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
+
 impl ContestKey {
-    pub fn parse(value: &str) -> Result<Self, String> {
-        let parsed = Url::parse(value.trim())
-            .map_err(|_| "コンテストまたは問題のURLを入力してください。")?;
-        let parts: Vec<_> = parsed.path().trim_end_matches('/').split('/').collect();
-        let invalid =
-            || "https://atcoder.jp/contests/<id> または問題のURLを入力してください。".to_string();
-        if parts.len() < 3 || parts[1] != "contests" {
-            return Err(invalid());
-        }
-        // Reuse the origin, credential and identifier rules of task URLs.
-        let mut probe = parsed.clone();
-        let task = match parts.len() {
-            3 => None,
-            4 if parts[3] == "tasks" => None,
-            5 if parts[3] == "tasks" => Some(parts[4]),
-            _ => return Err(invalid()),
-        };
-        probe.set_path(&format!(
-            "/contests/{}/tasks/{}",
-            parts[2],
-            task.unwrap_or("probe")
-        ));
-        let key = TaskKey::parse(probe.as_str())?;
-        Ok(Self {
-            url: contest_url(&key.contest),
-            id: key.contest,
-            task: task.map(|_| key.url),
-        })
-    }
     fn path(&self, root: &Path) -> PathBuf {
         root.join("contests").join(format!("{}.json", self.id))
     }
@@ -151,17 +122,6 @@ pub fn unix_now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs() as i64)
-}
-
-/// The contest URL when `url` is a contest's top page, `/contests/<id>`.
-pub fn contest_top(url: &Url) -> Option<String> {
-    let parts: Vec<_> = url.path().trim_end_matches('/').split('/').collect();
-    if !crate::is_atcoder(url) || parts.len() != 3 || parts[1] != "contests" {
-        return None;
-    }
-    ContestKey::parse(&contest_url(parts[2]))
-        .ok()
-        .map(|key| key.url)
 }
 
 /// What a contest's top page says: its name, whether the user is registered and its times.
@@ -284,54 +244,6 @@ pub fn parse_task_list(url: &str, html: &str) -> Result<Contest, String> {
     Ok(contest)
 }
 
-pub fn http_client() -> Result<Client, String> {
-    Client::builder()
-        .use_native_tls()
-        .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(15))
-        .user_agent(concat!("AtCoder-Ruby-IDE/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(|e| e.to_string())
-}
-
-/// Fetches a page with the browser's cookies. Login redirects and missing permissions are
-/// reported as a request to log in or register in the browser.
-pub fn fetch_page(client: &Client, url: &str, cookie: &str) -> Result<String, String> {
-    let mut request = client.get(url);
-    if !cookie.is_empty() {
-        request = request.header(reqwest::header::COOKIE, cookie);
-    }
-    let response = request
-        .send()
-        .map_err(|e| format!("AtCoderに接続できません: {e}"))?;
-    let status = response.status();
-    if status.is_redirection()
-        || status == reqwest::StatusCode::NOT_FOUND
-        || status == reqwest::StatusCode::FORBIDDEN
-    {
-        return Err(format!(
-            "問題一覧を取得できません（HTTP {}）。ブラウザでログインし、開催中のコンテストは参加登録してください。",
-            status.as_u16()
-        ));
-    }
-    if !status.is_success() {
-        return Err(format!(
-            "問題一覧を取得できません（HTTP {}）。時間をおいて再試行してください。",
-            status.as_u16()
-        ));
-    }
-    let mut bytes = Vec::new();
-    response
-        .take((MAX_HTML_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(|e| format!("問題一覧の読み込みに失敗しました: {e}"))?;
-    if bytes.len() > MAX_HTML_BYTES {
-        return Err("問題一覧は4 MiB以下にしてください。".into());
-    }
-    String::from_utf8(bytes).map_err(|_| "問題一覧がUTF-8ではありません。".into())
-}
-
 pub struct Contests {
     root: PathBuf,
 }
@@ -389,6 +301,7 @@ impl Contests {
         let key = ContestKey::parse(url)?;
         let html = fetch(&format!("{}/tasks?lang=ja", key.url))?;
         let mut contest = parse_task_list(&key.url, &html)?;
+        let _records = records();
         if let Ok(old) = self.load(&key) {
             contest.hidden = old.hidden;
             contest.joined = old.joined;
@@ -420,6 +333,7 @@ impl Contests {
         if !unix_time(&top.end_time).is_some_and(|end| now < end + DAY_SECONDS) {
             return Ok(None);
         }
+        let _records = records();
         let old = if key.path(&self.root).exists() {
             Some(self.load(&key)?)
         } else {
@@ -449,6 +363,7 @@ impl Contests {
     /// Hides the joined contests that ended a day before `now` (Unix time) and returns them. They
     /// are no longer joined, so a contest the user shows again stays shown.
     pub fn hide_ended(&self, now: i64) -> Result<Vec<Contest>, String> {
+        let _records = records();
         let mut hidden = Vec::new();
         for mut contest in self.list()? {
             let ended = contest
@@ -467,6 +382,7 @@ impl Contests {
     }
     pub fn set_hidden(&self, url: &str, hidden: bool) -> Result<Contest, String> {
         let key = ContestKey::parse(url)?;
+        let _records = records();
         let mut contest = self.load(&key)?;
         contest.hidden = hidden;
         self.save(&contest)?;

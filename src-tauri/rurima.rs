@@ -1,9 +1,9 @@
-//! The るりま window over the AtCoder pages (D3): a child webview that opens only the reference
+//! The るりま window over the AtCoder pages: a child webview that opens only the reference
 //! and the search for its full text, placed where the screen draws the window.
 use crate::browser::Browser;
 use atcoder_ruby_ide::{is_rurima_page, rurima_page, rurima_target, RURIMA_HOME};
 use tauri::webview::NewWindowResponse;
-use tauri::{LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl};
+use tauri::{Manager, WebviewBuilder, WebviewUrl};
 use url::Url;
 
 pub const RURIMA: &str = "rurima";
@@ -44,10 +44,10 @@ fn rurima(app: &tauri::AppHandle) -> Result<tauri::Webview, String> {
     app.get_webview(RURIMA)
         .ok_or_else(|| "るりまの窓を準備できません。".into())
 }
-/// The るりま window opens only the reference and the search for its full text (D3).
+/// The るりま window opens only the reference and the search for its full text.
 fn rurima_builder(app: &tauri::AppHandle, url: Url) -> WebviewBuilder<tauri::Wry> {
     let (app_for_window, app_for_page) = (app.clone(), app.clone());
-    let mut builder = WebviewBuilder::new(RURIMA, WebviewUrl::External(url))
+    WebviewBuilder::new(RURIMA, WebviewUrl::External(url))
         .on_navigation(move |url| match rurima_from_origin(url) {
             // Other versions' pages, mostly the latest one's on Google, open as Ruby 3.4's.
             Some(page) => match rurima_page(&page) {
@@ -72,17 +72,12 @@ fn rurima_builder(app: &tauri::AppHandle, url: Url) -> WebviewBuilder<tauri::Wry
             }
             NewWindowResponse::Deny
         })
-        .on_page_load(|webview, payload| crate::browser::show_url(&webview, payload.url()));
-    let args = app.state::<Browser>().args();
-    if let Some(args) = args {
-        builder = builder.additional_browser_args(&args);
-    }
-    builder
+        .on_page_load(|webview, payload| crate::browser::show_url(&webview, payload.url()))
 }
 
 /// Opens the るりま window's page for `query`: words to search for, or a page of the reference
 /// or of the search. The window is made on first use, with the reference's top when there is no
-/// query; `cover_layout` places it (D3).
+/// query; `cover_layout` places it.
 #[tauri::command]
 pub async fn rurima_show(
     app: tauri::AppHandle,
@@ -100,15 +95,7 @@ pub async fn rurima_show(
         }
         None => {
             let url = target.unwrap_or_else(|| Url::parse(RURIMA_HOME).unwrap());
-            let window = app.get_window("main").ok_or("ウィンドウがありません。")?;
-            let _rurima = window
-                .add_child(
-                    rurima_builder(&app, rurima_to_origin(&url)),
-                    LogicalPosition::new(0.0, 0.0),
-                    LogicalSize::new(1.0, 1.0),
-                )
-                .map_err(|e| e.to_string())?;
-            crate::webview2::add_search_menu(&_rurima);
+            crate::browser::add_page(&app, rurima_builder(&app, rurima_to_origin(&url)))?;
         }
     }
     browser.apply(&app);

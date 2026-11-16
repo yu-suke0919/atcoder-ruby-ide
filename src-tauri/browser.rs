@@ -1,5 +1,5 @@
 //! The AtCoder pages in the right column: one home page and one page per task of the selected
-//! contest, which may also go to the origins added in the settings (D5). Pages cannot call the
+//! contest, which may also go to the origins added in the settings. Pages cannot call the
 //! app; the app reads a task page after it has loaded, and only AtCoder's pages.
 use crate::rurima::{rurima_from_origin, RURIMA};
 use atcoder_ruby_ide::{
@@ -41,13 +41,13 @@ pub struct Browser {
     hidden: Mutex<bool>,
     next: Mutex<u64>,
     args: Mutex<Option<String>>,
-    /// Contests whose submission list is being fetched while a submission is judged (U5b).
+    /// Contests whose submission list is being fetched while a submission is judged.
     following: Mutex<HashSet<String>>,
-    /// While a window of the screen (るりま D3, graph D4) is out: where the るりま window's page
+    /// While a window of the screen (るりま, the graph) is out: where the るりま window's page
     /// lies, empty for the graph. The screen draws the window around it, and the AtCoder pages
     /// are hidden behind a picture of them.
     cover: Mutex<Option<Bounds>>,
-    /// The origins added in the settings, besides AtCoder (D5).
+    /// The origins added in the settings, besides AtCoder.
     origins: Mutex<Vec<String>>,
 }
 
@@ -106,46 +106,49 @@ fn show_current_url(app: &tauri::AppHandle, browser: &Browser) {
     }
 }
 
-fn open_workspaces(app: &tauri::AppHandle) -> Result<Workspaces, String> {
-    Ok(Workspaces::new(
-        app.path().app_local_data_dir().map_err(|e| e.to_string())?,
-    ))
+/// Reads the loaded page's HTML, as the browser shows it, and hands it to `handle` on a thread of
+/// its own. The app starts every read; the page cannot call the app.
+fn read_html(
+    webview: &tauri::Webview,
+    handle: impl Fn(tauri::AppHandle, String) + Send + Sync + 'static,
+) {
+    let app = webview.app_handle().clone();
+    let handle = std::sync::Arc::new(handle);
+    let read = webview.eval_with_callback("document.documentElement.outerHTML", move |json| {
+        let html = serde_json::from_str::<String>(&json).unwrap_or_default();
+        let (app, handle) = (app.clone(), std::sync::Arc::clone(&handle));
+        std::thread::spawn(move || handle(app, html));
+    });
+    if let Err(error) = read {
+        eprintln!("cannot read the page of {}: {error}", webview.label());
+    }
 }
 
 /// Reads the loaded task page when its samples are not saved yet and tells the editor.
 fn read_if_needed(webview: &tauri::Webview, task_url: String) {
-    let app = webview.app_handle().clone();
-    let Ok(workspaces) = open_workspaces(&app) else {
+    let Ok(root) = crate::data_dir(webview.app_handle()) else {
         return;
     };
-    if workspaces.task(&task_url).ok().flatten().is_some() {
+    if Workspaces::new(root)
+        .task(&task_url)
+        .ok()
+        .flatten()
+        .is_some()
+    {
         return;
     }
-    let read = webview.eval_with_callback("document.documentElement.outerHTML", move |json| {
-        let html = serde_json::from_str::<String>(&json).unwrap_or_default();
-        let (app, task_url) = (app.clone(), task_url.clone());
-        std::thread::spawn(move || {
-            let error = open_workspaces(&app)
-                .and_then(|workspaces| read_task_page(&workspaces, &task_url, &html))
-                .err();
-            let _ = app.emit_to(
-                "main",
-                "task-page",
-                TaskPage {
-                    url: task_url,
-                    error,
-                },
-            );
-        });
+    read_html(webview, move |app, html| {
+        let error = crate::data_dir(&app)
+            .and_then(|root| read_task_page(&Workspaces::new(root), &task_url, &html))
+            .err();
+        let url = task_url.clone();
+        let _ = app.emit_to("main", "task-page", TaskPage { url, error });
     });
-    if let Err(error) = read {
-        eprintln!("cannot read the task page: {error}");
-    }
 }
 
-/// How often a shown submission list with a judging submission is read again (U5a).
+/// How often a shown submission list with a judging submission is read again.
 const JUDGING_READ_INTERVAL: Duration = Duration::from_secs(3);
-/// How often and how long a hidden or left list is fetched while a submission is judged (U5b).
+/// How often and how long a hidden or left list is fetched while a submission is judged.
 const JUDGING_FETCH_INTERVAL: Duration = Duration::from_secs(10);
 const JUDGING_FETCH_LIMIT: Duration = Duration::from_secs(10 * 60);
 
@@ -160,7 +163,7 @@ fn send_submissions(
 }
 
 /// Fetches the submission list `page` with the browser's cookies while a submission is judged,
-/// after its webview hid or left the list (U5b). One contest is fetched by one thread at a time.
+/// after its webview hid or left the list. One contest is fetched by one thread at a time.
 fn follow_submissions(app: &tauri::AppHandle, page: Url, since: Instant) {
     let Some(contest) = submissions_page(&page) else {
         return;
@@ -174,7 +177,7 @@ fn follow_submissions(app: &tauri::AppHandle, page: Url, since: Instant) {
         let client = http_client()?;
         fetch_page(&client, to_origin(page.as_str())?.as_str(), &cookie)
     };
-    if let Ok(root) = app.path().app_local_data_dir() {
+    if let Ok(root) = crate::data_dir(app) {
         Submissions::new(root).follow_judging(
             page.as_str(),
             JUDGING_FETCH_INTERVAL,
@@ -188,73 +191,49 @@ fn follow_submissions(app: &tauri::AppHandle, page: Url, since: Instant) {
 
 /// Reads the shown submission list into the contest's submissions and tells the screen the colors.
 /// While a submission is judging, AtCoder rewrites the list in place, so it is read again as long
-/// as the webview is shown and still shows it; otherwise the list is fetched (U5b). `since` is when
+/// as the webview is shown and still shows it; otherwise the list is fetched. `since` is when
 /// the judging list was loaded, about when the submission was made.
 fn read_submissions(webview: &tauri::Webview, since: Instant) {
-    let app = webview.app_handle().clone();
     let label = webview.label().to_string();
-    let read = webview.eval_with_callback("document.documentElement.outerHTML", move |json| {
-        let html = serde_json::from_str::<String>(&json).unwrap_or_default();
-        let (app, label) = (app.clone(), label.clone());
-        std::thread::spawn(move || {
-            let shown_list = || {
-                app.get_webview(&label)
-                    .and_then(|webview| webview.url().ok())
-                    .map(|url| real_url(&url))
-                    .filter(|url| submissions_page(url).is_some())
-            };
-            let Some(page) = shown_list() else {
-                return;
-            };
-            let result = app
-                .path()
-                .app_local_data_dir()
-                .map_err(|e| e.to_string())
-                .and_then(|root| Submissions::new(root).read_page(page.as_str(), &html));
-            let judging = result.as_ref().is_ok_and(|update| update.judging);
-            send_submissions(&app, result);
-            if !judging {
-                return;
-            }
-            std::thread::sleep(JUDGING_READ_INTERVAL);
-            let visible = *app.state::<Browser>().shown.lock().unwrap() == label;
-            match (shown_list(), app.get_webview(&label)) {
-                (Some(_), Some(webview)) if visible => read_submissions(&webview, since),
-                _ => follow_submissions(&app, page, since),
-            }
-        });
+    read_html(webview, move |app, html| {
+        let shown_list = || {
+            app.get_webview(&label)
+                .and_then(|webview| webview.url().ok())
+                .map(|url| real_url(&url))
+                .filter(|url| submissions_page(url).is_some())
+        };
+        let Some(page) = shown_list() else {
+            return;
+        };
+        let result = crate::data_dir(&app)
+            .and_then(|root| Submissions::new(root).read_page(page.as_str(), &html));
+        let judging = result.as_ref().is_ok_and(|update| update.judging);
+        send_submissions(&app, result);
+        if !judging {
+            return;
+        }
+        std::thread::sleep(JUDGING_READ_INTERVAL);
+        let visible = *app.state::<Browser>().shown.lock().unwrap() == label;
+        match (shown_list(), app.get_webview(&label)) {
+            (Some(_), Some(webview)) if visible => read_submissions(&webview, since),
+            _ => follow_submissions(&app, page, since),
+        }
     });
-    if let Err(error) = read {
-        eprintln!("cannot read the submission list: {error}");
-    }
 }
 
 /// Reads a loaded contest top page: a registered contest is added or updated and the screen is
-/// told (U6a). Registering changes no URL, so every load of the top is read.
+/// told. Registering changes no URL, so every load of the top is read.
 fn read_contest_top(webview: &tauri::Webview, page: Url) {
-    let app = webview.app_handle().clone();
-    let read = webview.eval_with_callback("document.documentElement.outerHTML", move |json| {
-        let html = serde_json::from_str::<String>(&json).unwrap_or_default();
-        let (app, page) = (app.clone(), page.clone());
-        std::thread::spawn(move || {
-            let lock = std::sync::Arc::clone(&app.state::<crate::AppState>().contest_lock);
-            let _guard = lock.lock().unwrap();
-            let joined = app
-                .path()
-                .app_local_data_dir()
-                .map_err(|e| e.to_string())
-                .and_then(|root| Contests::new(root).join(page.as_str(), &html, unix_now()));
-            let payload = match joined {
-                Ok(None) => return,
-                Ok(Some(contest)) => serde_json::json!({ "contest": contest }),
-                Err(error) => serde_json::json!({ "error": error }),
-            };
-            let _ = app.emit_to("main", "contest-joined", payload);
-        });
+    read_html(webview, move |app, html| {
+        let joined = crate::data_dir(&app)
+            .and_then(|root| Contests::new(root).join(page.as_str(), &html, unix_now()));
+        let payload = match joined {
+            Ok(None) => return,
+            Ok(Some(contest)) => serde_json::json!({ "contest": contest }),
+            Err(error) => serde_json::json!({ "error": error }),
+        };
+        let _ = app.emit_to("main", "contest-joined", payload);
     });
-    if let Err(error) = read {
-        eprintln!("cannot read the contest page: {error}");
-    }
 }
 
 fn builder(
@@ -265,7 +244,7 @@ fn builder(
 ) -> WebviewBuilder<tauri::Wry> {
     let (app_for_window, label_for_window) = (app.clone(), label.to_string());
     let app_for_page = app.clone();
-    let mut builder = WebviewBuilder::new(label, WebviewUrl::External(url))
+    WebviewBuilder::new(label, WebviewUrl::External(url))
         .on_navigation(move |url| allowed(&app_for_page, url))
         .on_new_window(move |url, _| {
             // Allowed links that open a new window stay in the same page; others are not opened.
@@ -275,61 +254,59 @@ fn builder(
                 }
             }
             NewWindowResponse::Deny
-        });
-    builder = builder.on_page_load(move |webview, payload| {
-        show_url(&webview, payload.url());
-        if payload.event() == tauri::webview::PageLoadEvent::Finished {
+        })
+        .on_page_load(move |webview, payload| {
+            show_url(&webview, payload.url());
+            if payload.event() != tauri::webview::PageLoadEvent::Finished {
+                return;
+            }
             let url = real_url(payload.url());
+            if let Some(task_url) = &task {
+                if is_atcoder(&url) && is_task_page(task_url, payload.url()) {
+                    read_if_needed(&webview, task_url.clone());
+                }
+            }
             if submissions_page(&url).is_some() {
                 read_submissions(&webview, Instant::now());
             } else if contest_top(&url).is_some() {
                 read_contest_top(&webview, url);
             }
-        }
-        if let Some(task_url) = &task {
-            if payload.event() == tauri::webview::PageLoadEvent::Finished
-                && is_atcoder(&real_url(payload.url()))
-                && is_task_page(task_url, payload.url())
-            {
-                read_if_needed(&webview, task_url.clone());
-            }
-        }
-    });
-    let args = app.state::<Browser>().args.lock().unwrap().clone();
-    if let Some(args) = args {
+        })
+}
+
+/// Adds a child webview over the main window, hidden until `Browser::apply` places it, with the
+/// UI tests' browser arguments, which every webview of the window needs, and the right-click
+/// search of るりま.
+pub(crate) fn add_page(
+    app: &tauri::AppHandle,
+    mut builder: WebviewBuilder<tauri::Wry>,
+) -> Result<(), String> {
+    if let Some(args) = app.state::<Browser>().args.lock().unwrap().clone() {
         builder = builder.additional_browser_args(&args);
     }
-    builder
+    let window = app.get_window("main").ok_or("ウィンドウがありません。")?;
+    let page = window
+        .add_child(
+            builder,
+            LogicalPosition::new(0.0, 0.0),
+            LogicalSize::new(1.0, 1.0),
+        )
+        .map_err(|e| e.to_string())?;
+    crate::webview2::add_search_menu(&page);
+    Ok(())
 }
 
 impl Browser {
-    /// The browser arguments of the UI tests, which every child webview needs too.
-    pub(crate) fn args(&self) -> Option<String> {
-        self.args.lock().unwrap().clone()
-    }
-
-    pub fn create_home(app: &tauri::App, args: Option<String>) -> tauri::Result<()> {
+    pub fn create_home(app: &tauri::App, args: Option<String>) -> Result<(), String> {
         let browser = app.state::<Browser>();
         *browser.args.lock().unwrap() = args;
         *browser.shown.lock().unwrap() = HOME.into();
-        let window = app.get_window("main").expect("main window");
-        let home = builder(
-            app.handle(),
-            HOME,
-            to_origin(&format!("{ATCODER_ORIGIN}/")).unwrap(),
-            None,
-        );
-        let _home = window.add_child(
-            home,
-            LogicalPosition::new(0.0, 0.0),
-            LogicalSize::new(1.0, 1.0),
-        )?;
-        crate::webview2::add_search_menu(&_home);
-        Ok(())
+        let home = to_origin(&format!("{ATCODER_ORIGIN}/"))?;
+        add_page(app.handle(), builder(app.handle(), HOME, home, None))
     }
 
     /// Places the shown page over the browser column and hides the others. While the るりま
-    /// window is out, the AtCoder pages are hidden and its page lies where the screen asks (D3).
+    /// window is out, the AtCoder pages are hidden and its page lies where the screen asks.
     pub(crate) fn apply(&self, app: &tauri::AppHandle) {
         let shown = self.shown.lock().unwrap().clone();
         let hidden = *self.hidden.lock().unwrap();
@@ -423,7 +400,12 @@ pub async fn browser_task(
     let label =
         match existing.and_then(|label| app.get_webview(&label).map(|webview| (label, webview))) {
             Some((label, webview)) => {
-                if open_workspaces(&app)?.task(&url).ok().flatten().is_none() {
+                if Workspaces::new(crate::data_dir(&app)?)
+                    .task(&url)
+                    .ok()
+                    .flatten()
+                    .is_none()
+                {
                     webview
                         .navigate(to_origin(&url)?)
                         .map_err(|e| e.to_string())?;
@@ -436,15 +418,10 @@ pub async fn browser_task(
                     *next += 1;
                     format!("task-{next}")
                 };
-                let window = app.get_window("main").ok_or("ウィンドウがありません。")?;
-                let _page = window
-                    .add_child(
-                        builder(&app, &label, to_origin(&url)?, Some(url.clone())),
-                        LogicalPosition::new(0.0, 0.0),
-                        LogicalSize::new(1.0, 1.0),
-                    )
-                    .map_err(|e| e.to_string())?;
-                crate::webview2::add_search_menu(&_page);
+                add_page(
+                    &app,
+                    builder(&app, &label, to_origin(&url)?, Some(url.clone())),
+                )?;
                 browser.tasks.lock().unwrap().insert(url, label.clone());
                 label
             }
@@ -478,7 +455,7 @@ pub async fn browser_close_tasks(
     Ok(())
 }
 
-/// Sets the origins added in the settings (D5), each typed as a domain or a URL, and returns
+/// Sets the origins added in the settings, each typed as a domain or a URL, and returns
 /// them as HTTPS origins. One that cannot be added leaves the list as it was.
 #[tauri::command]
 pub async fn browser_set_origins(
@@ -505,8 +482,8 @@ pub async fn browser_open(
 }
 
 /// Puts the AtCoder page aside while a window of the screen is out, with the るりま window's page
-/// where the screen draws it (zero size for the graph window, D4), or, with `open` false, shows
-/// the AtCoder page again. The screen sends a few in a row to slide the window down or up (D3).
+/// where the screen draws it (zero size for the graph window), or, with `open` false, shows
+/// the AtCoder page again. The screen sends a few in a row to slide the window down or up.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn cover_layout(
@@ -529,7 +506,7 @@ pub async fn cover_layout(
 }
 
 /// A JPEG picture of the shown AtCoder page, drawn darkened behind the るりま window: the page
-/// itself lies over the screen, so nothing can be drawn over it (D3). Empty where WebView2's
+/// itself lies over the screen, so nothing can be drawn over it. Empty where WebView2's
 /// `CapturePreview` is not available.
 #[tauri::command]
 pub async fn browser_snapshot(

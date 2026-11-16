@@ -137,7 +137,7 @@ pub(crate) fn create(workspace: &Path, label: &str, template: &str) -> Result<St
         .map(|number| format!("{prefix}_{number}"))
         .find(|name| !names.iter().any(|used| used.eq_ignore_ascii_case(name)))
         .unwrap();
-    crate::task::create_if_missing(&path(workspace, &name)?, template.as_bytes())?;
+    crate::files::create_if_missing(&path(workspace, &name)?, template.as_bytes())?;
     Ok(name)
 }
 

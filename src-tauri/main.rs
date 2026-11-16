@@ -11,8 +11,8 @@ mod webview2;
 
 use atcoder_ruby_ide::{
     fetch_page, http_client, unix_now, AgentClient, Contest, Contests, DocumentResult,
-    DocumentStore, HomeWorkspace, RegisteredContest, Samples, Submissions, TaskResult,
-    TaskWorkspace, Workspaces,
+    DocumentStore, RegisteredContest, Samples, Submissions, TaskResult, TaskWorkspace,
+    WorkspaceFiles, Workspaces,
 };
 use browser::Browser;
 use serde_json::{json, Value};
@@ -23,7 +23,6 @@ use tauri::{ipc::Channel, Manager};
 struct AppState {
     agent: Arc<AgentClient>,
     documents: Arc<Mutex<DocumentStore>>,
-    contest_lock: Arc<Mutex<()>>,
 }
 
 /// Ruby and Ruby LSP run in the agent (docs/architecture.md#wslのエージェント). The app's own WSL
@@ -92,12 +91,20 @@ fn agent(app: &tauri::AppHandle) -> AgentClient {
     })
 }
 
-/// Runs a blocking agent request off the main thread.
-async fn ask(state: &AppState, command: &'static str, args: Value) -> Result<Value, String> {
-    let agent = Arc::clone(&state.agent);
-    tauri::async_runtime::spawn_blocking(move || agent.request(command, args))
+/// Runs work that waits (files, fetching, the agent) off the main thread, where it would block the
+/// window and, on Windows, deadlock WebView2 (docs/architecture.md#右端のブラウザと問題の読み取り).
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(work)
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// Sends a request to the agent.
+async fn ask(state: &AppState, command: &'static str, args: Value) -> Result<Value, String> {
+    let agent = Arc::clone(&state.agent);
+    blocking(move || agent.request(command, args)).await
 }
 
 #[tauri::command]
@@ -151,13 +158,12 @@ async fn run_ruby(
         "problemTimeLimitMs": problem_time_limit_ms,
         "problemMemoryLimitMib": problem_memory_limit_mib,
     });
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         agent.run(args, move |event| {
             let _ = on_event.send(event);
         })
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -172,27 +178,26 @@ async fn document_save(
     code: String,
 ) -> Result<(), String> {
     let documents = Arc::clone(&state.documents);
-    tauri::async_runtime::spawn_blocking(move || documents.lock().unwrap().save(revision, &code))
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(move || documents.lock().unwrap().save(revision, &code)).await
 }
 
 #[tauri::command]
 async fn session_reset(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let agent = Arc::clone(&state.agent);
     let documents = Arc::clone(&state.documents);
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         // Nothing to stop when the agent never started or cannot start.
         if agent.pid().is_some() {
             let _ = agent.request("stop_ruby", Value::Null);
         }
         agent.wait_idle();
         documents.lock().unwrap().reset();
+        Ok(())
     })
     .await
-    .map_err(|e| e.to_string())
 }
 
+/// The app's data folder, where the workspaces, contests and submissions are kept.
 fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path().app_local_data_dir().map_err(|e| e.to_string())
 }
@@ -200,75 +205,48 @@ fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 #[tauri::command]
 async fn contest_list(app: tauri::AppHandle) -> Result<Vec<Contest>, String> {
     let contests = Contests::new(data_dir(&app)?);
-    tauri::async_runtime::spawn_blocking(move || contests.list())
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(move || contests.list()).await
 }
 
-/// The colors of a contest's tasks from the submissions read so far (U5a).
+/// The colors of a contest's tasks from the submissions read so far.
 #[tauri::command]
 async fn submission_states(
     app: tauri::AppHandle,
     contest: String,
 ) -> Result<std::collections::HashMap<String, TaskResult>, String> {
     let submissions = Submissions::new(data_dir(&app)?);
-    tauri::async_runtime::spawn_blocking(move || submissions.states(&contest))
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(move || submissions.states(&contest)).await
 }
 
 /// Registers a contest from its task list, fetched once with the browser's cookies.
 #[tauri::command]
-async fn contest_register(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-    url: String,
-) -> Result<RegisteredContest, String> {
+async fn contest_register(app: tauri::AppHandle, url: String) -> Result<RegisteredContest, String> {
     let contests = Contests::new(data_dir(&app)?);
     let cookie = browser::cookies(&app).await?;
-    let lock = Arc::clone(&state.contest_lock);
-    tauri::async_runtime::spawn_blocking(move || {
-        let _guard = lock.lock().unwrap();
+    blocking(move || {
         let client = http_client()?;
         contests.register(&url, |page| {
             fetch_page(&client, browser::to_origin(page)?.as_str(), &cookie)
         })
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 async fn contest_set_hidden(
     app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
     url: String,
     hidden: bool,
 ) -> Result<Contest, String> {
     let contests = Contests::new(data_dir(&app)?);
-    let lock = Arc::clone(&state.contest_lock);
-    tauri::async_runtime::spawn_blocking(move || {
-        let _guard = lock.lock().unwrap();
-        contests.set_hidden(&url, hidden)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    blocking(move || contests.set_hidden(&url, hidden)).await
 }
 
-/// Hides the joined contests that ended a day ago and returns them (U6a).
+/// Hides the joined contests that ended a day ago and returns them.
 #[tauri::command]
-async fn contest_hide_ended(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<Contest>, String> {
+async fn contest_hide_ended(app: tauri::AppHandle) -> Result<Vec<Contest>, String> {
     let contests = Contests::new(data_dir(&app)?);
-    let lock = Arc::clone(&state.contest_lock);
-    tauri::async_runtime::spawn_blocking(move || {
-        let _guard = lock.lock().unwrap();
-        contests.hide_ended(unix_now())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    blocking(move || contests.hide_ended(unix_now())).await
 }
 
 /// Opens a task's workspace, or returns None while its page has not been read yet.
@@ -282,7 +260,7 @@ async fn task_open(
     let workspaces = Workspaces::new(data_dir(&app)?);
     let documents = Arc::clone(&state.documents);
     let revision = documents.lock().unwrap().revision();
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         if workspaces.task(&url)?.is_none() {
             return Ok(None);
         }
@@ -291,7 +269,6 @@ async fn task_open(
             .map(Some)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Saves a workspace's samples: `home` or a task URL.
@@ -302,24 +279,18 @@ async fn samples_save(
     samples: Samples,
 ) -> Result<(), String> {
     let workspaces = Workspaces::new(data_dir(&app)?);
-    tauri::async_runtime::spawn_blocking(move || workspaces.save_samples(&workspace, samples))
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(move || workspaces.save_samples(&workspace, samples)).await
 }
 
 #[tauri::command]
 async fn home_open(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-) -> Result<HomeWorkspace, String> {
+) -> Result<WorkspaceFiles, String> {
     let workspaces = Workspaces::new(data_dir(&app)?);
     let documents = Arc::clone(&state.documents);
     let revision = documents.lock().unwrap().revision();
-    tauri::async_runtime::spawn_blocking(move || {
-        workspaces.open_home(revision, &mut documents.lock().unwrap())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    blocking(move || workspaces.open_home(revision, &mut documents.lock().unwrap())).await
 }
 
 /// File commands take the workspace: `home` or a task URL.
@@ -332,11 +303,7 @@ async fn file_open(
 ) -> Result<DocumentResult, String> {
     let workspaces = Workspaces::new(data_dir(&app)?);
     let documents = Arc::clone(&state.documents);
-    tauri::async_runtime::spawn_blocking(move || {
-        workspaces.open_file(&workspace, &name, &mut documents.lock().unwrap())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    blocking(move || workspaces.open_file(&workspace, &name, &mut documents.lock().unwrap())).await
 }
 
 #[tauri::command]
@@ -346,9 +313,7 @@ async fn file_create(
     label: String,
 ) -> Result<String, String> {
     let workspaces = Workspaces::new(data_dir(&app)?);
-    tauri::async_runtime::spawn_blocking(move || workspaces.create_file(&workspace, &label))
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(move || workspaces.create_file(&workspace, &label)).await
 }
 
 #[tauri::command]
@@ -359,9 +324,7 @@ async fn file_copy(
     label: String,
 ) -> Result<String, String> {
     let workspaces = Workspaces::new(data_dir(&app)?);
-    tauri::async_runtime::spawn_blocking(move || workspaces.copy_file(&workspace, &name, &label))
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(move || workspaces.copy_file(&workspace, &name, &label)).await
 }
 
 #[tauri::command]
@@ -374,11 +337,8 @@ async fn file_rename(
 ) -> Result<(), String> {
     let workspaces = Workspaces::new(data_dir(&app)?);
     let documents = Arc::clone(&state.documents);
-    tauri::async_runtime::spawn_blocking(move || {
-        workspaces.rename_file(&workspace, &from, &to, &mut documents.lock().unwrap())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    blocking(move || workspaces.rename_file(&workspace, &from, &to, &mut documents.lock().unwrap()))
+        .await
 }
 
 #[tauri::command]
@@ -390,11 +350,7 @@ async fn file_delete(
 ) -> Result<(), String> {
     let workspaces = Workspaces::new(data_dir(&app)?);
     let documents = Arc::clone(&state.documents);
-    tauri::async_runtime::spawn_blocking(move || {
-        workspaces.delete_file(&workspace, &name, &documents.lock().unwrap())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    blocking(move || workspaces.delete_file(&workspace, &name, &documents.lock().unwrap())).await
 }
 
 fn main() {
@@ -420,7 +376,6 @@ fn main() {
             app.manage(AppState {
                 agent: Arc::new(agent(app.handle())),
                 documents: Arc::new(Mutex::new(DocumentStore::default())),
-                contest_lock: Arc::new(Mutex::new(())),
             });
             Browser::create_home(app, browser_args.clone())?;
             // The screen's own text can be searched for in るりま from the right-click menu too.

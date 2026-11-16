@@ -10,6 +10,7 @@ mod contests;
 mod document;
 mod files;
 mod graph_form;
+mod http;
 mod input_code;
 #[cfg(unix)]
 mod lsp;
@@ -22,32 +23,31 @@ mod samples;
 mod solutions;
 mod submissions;
 mod task;
+mod workspace;
 pub mod wsl;
 
 pub use agent_client::AgentClient;
 #[cfg(unix)]
 pub use commands::{ruby_info, RubyInfo};
 pub use comparison::{decode_output, first_difference};
-pub use contests::{
-    contest_top, fetch_page, http_client, parse_task_list, unix_now, Contest, ContestKey,
-    ContestTask, Contests, RegisteredContest,
-};
+pub use contests::{parse_task_list, unix_now, Contest, ContestTask, Contests, RegisteredContest};
 pub use document::{DocumentResult, DocumentStore};
 pub use graph_form::{graph_form, GraphForm};
+pub use http::{fetch_page, http_client};
 pub use input_code::{input_code, reading_forms};
 #[cfg(unix)]
 pub use lsp::{LspInfo, RubyLsp};
 pub use navigation::{
-    browser_origins, browser_target, is_allowed, is_atcoder, is_rurima_page, rurima_page,
-    rurima_target, ATCODER_ORIGIN, RURIMA_HOME,
+    browser_origins, browser_target, contest_top, is_allowed, is_atcoder, is_rurima_page,
+    is_task_page, rurima_page, rurima_target, submissions_page, ContestKey, ATCODER_ORIGIN,
+    RURIMA_HOME,
 };
 #[cfg(unix)]
 pub use runner::{Output, RunRequest, RunResult, Runner};
 pub use samples::{load_samples, save_samples, ProblemSample, SampleCase, Samples};
-pub use submissions::{submissions_page, SubmissionUpdate, Submissions, TaskResult};
-pub use task::{
-    is_task_page, parse_task, read_task_page, HomeWorkspace, Task, TaskWorkspace, Workspaces,
-};
+pub use submissions::{SubmissionUpdate, Submissions, TaskResult};
+pub use task::{parse_task, Task};
+pub use workspace::{read_task_page, TaskWorkspace, WorkspaceFiles, Workspaces};
 
 #[cfg(unix)]
 #[derive(Clone, serde::Serialize)]

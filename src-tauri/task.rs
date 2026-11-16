@@ -1,61 +1,9 @@
-//! A task's samples and limits read from its AtCoder page, and the workspace that holds the user's
-//! solution and samples for that task.
-use crate::files::{read_limited, write_atomic, MAX_TEXT_BYTES};
-use crate::navigation::contest_url;
-use crate::{
-    load_samples, save_samples, solutions, DocumentResult, DocumentStore, ProblemSample,
-    SampleCase, Samples,
-};
+//! A task's samples, limits and input format, read from its AtCoder page.
+use crate::navigation::TaskKey;
+use crate::ProblemSample;
 use scraper::{ElementRef, Html, Node, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use url::Url;
-
-pub(crate) const MAX_HTML_BYTES: usize = 4 * MAX_TEXT_BYTES;
-const MAX_TASK_BYTES: usize = 16 * 1024 * 1024;
-
-pub(crate) struct TaskKey {
-    pub(crate) url: String,
-    pub(crate) contest: String,
-    pub(crate) task: String,
-}
-impl TaskKey {
-    pub(crate) fn parse(value: &str) -> Result<Self, String> {
-        let url = Url::parse(value.trim()).map_err(|_| "AtCoder の問題URLを入力してください。")?;
-        let parts: Vec<_> = url.path().trim_end_matches('/').split('/').collect();
-        let valid_id = |id: &str| {
-            !id.is_empty()
-                && id.len() <= 100
-                && id
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-        };
-        if !crate::is_atcoder(&url)
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || parts.len() != 5
-            || parts[1] != "contests"
-            || parts[3] != "tasks"
-            || !valid_id(parts[2])
-            || !valid_id(parts[4])
-        {
-            return Err(
-                "https://atcoder.jp/contests/<contest>/tasks/<task> 形式のURLを入力してください。"
-                    .into(),
-            );
-        }
-        Ok(Self {
-            url: format!("{}/tasks/{}", contest_url(parts[2]), parts[4]),
-            contest: parts[2].into(),
-            task: parts[4].into(),
-        })
-    }
-    fn workspace(&self, root: &Path) -> PathBuf {
-        root.join("workspaces").join(&self.contest).join(&self.task)
-    }
-}
 
 /// What the app keeps from a task page. The statement itself is read in the browser.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -83,96 +31,18 @@ impl Task {
             .and_then(|format| crate::input_code(format, &self.constraints))
             .unwrap_or_default()
     }
-    fn reading_forms(&self) -> Vec<[String; 2]> {
+    pub(crate) fn reading_forms(&self) -> Vec<[String; 2]> {
         self.input_format
             .as_deref()
             .map(|format| crate::reading_forms(format, &self.constraints))
             .unwrap_or_default()
     }
-    fn graph_form(&self) -> Option<crate::GraphForm> {
+    pub(crate) fn graph_form(&self) -> Option<crate::GraphForm> {
         crate::graph_form(self.input_format.as_deref()?, &self.constraints)
     }
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskWorkspace {
-    pub task: Task,
-    /// The rows of the reading code as `[loop, array]`, for the editor's switch buttons.
-    pub reading_forms: Vec<[String; 2]>,
-    /// Where the sample input holds a graph, for the graph window (D4).
-    pub graph: Option<crate::GraphForm>,
-    /// The file names in tab order; `file` is the open one.
-    pub files: Vec<String>,
-    pub file: String,
-    pub document: DocumentResult,
-    pub samples: Samples,
-}
-
-/// The home workspace: code and samples that belong to no task.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HomeWorkspace {
-    pub files: Vec<String>,
-    pub file: String,
-    pub document: DocumentResult,
-    pub samples: Samples,
-}
-
-/// The name the screen and the file commands use for the home workspace.
-const HOME: &str = "home";
-
-struct Opened {
-    files: Vec<String>,
-    file: String,
-    document: DocumentResult,
-    samples: Samples,
-}
-
-fn empty_case() -> SampleCase {
-    SampleCase {
-        stdin: String::new(),
-        expected_output: String::new(),
-        compare: false,
-    }
-}
-
-/// Opens the samples and the first file of a workspace directory, creating them on first use.
-fn open_files(
-    directory: &Path,
-    label: &str,
-    template: &str,
-    initial_cases: Vec<SampleCase>,
-    expected_document_revision: u64,
-    documents: &mut DocumentStore,
-) -> Result<Opened, String> {
-    if documents.revision() != expected_document_revision {
-        return Err("読み込み中に編集中の問題が変わりました。問題を開き直してください。".into());
-    }
-    std::fs::create_dir_all(directory).map_err(|e| format!("作業領域を作成できません: {e}"))?;
-    let sample_path = directory.join("samples.json");
-    if !sample_path.try_exists().map_err(|e| e.to_string())? {
-        let initial = Samples {
-            tolerance: None,
-            cases: initial_cases,
-        };
-        let data = serde_json::to_vec_pretty(&initial).map_err(|e| e.to_string())?;
-        create_if_missing(&sample_path, &data)?;
-    }
-    let samples = load_samples(&sample_path)?;
-    solutions::ensure(directory, label, template)?;
-    let files = solutions::list(directory)?;
-    let file = files.first().ok_or("ファイルがありません。")?.clone();
-    let document = documents.open(solutions::path(directory, &file)?)?;
-    Ok(Opened {
-        files,
-        file,
-        document,
-        samples,
-    })
-}
-
-fn validate(task: &Task, key: &TaskKey) -> Result<(), String> {
+pub(crate) fn validate(task: &Task, key: &TaskKey) -> Result<(), String> {
     if task.url != key.url {
         return Err("問題データのURLが不正です。".into());
     }
@@ -355,7 +225,7 @@ fn constraints(body: ElementRef<'_>) -> Vec<String> {
 /// not registered, or missing) is an error so the caller can ask the user to log in or register.
 pub fn parse_task(url: &str, html: &str) -> Result<Task, String> {
     let key = TaskKey::parse(url)?;
-    if html.len() > MAX_HTML_BYTES {
+    if html.len() > crate::http::MAX_HTML_BYTES {
         return Err("問題ページは4 MiB以下にしてください。".into());
     }
     let doc = Html::parse_document(html);
@@ -440,181 +310,4 @@ pub fn parse_task(url: &str, html: &str) -> Result<Task, String> {
     };
     validate(&task, &key)?;
     Ok(task)
-}
-
-pub struct Workspaces {
-    root: PathBuf,
-}
-impl Workspaces {
-    pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
-    }
-    /// The saved task, or None when it is missing or no longer readable and must be read again.
-    pub fn task(&self, url: &str) -> Result<Option<Task>, String> {
-        let key = TaskKey::parse(url)?;
-        let Ok(data) = read_limited(&key.workspace(&self.root).join("task.json"), MAX_TASK_BYTES)
-        else {
-            return Ok(None);
-        };
-        Ok(serde_json::from_slice::<Task>(&data)
-            .ok()
-            .filter(|task| validate(task, &key).is_ok()))
-    }
-    pub fn store_task(&self, task: &Task) -> Result<(), String> {
-        let key = TaskKey::parse(&task.url)?;
-        validate(task, &key)?;
-        let directory = key.workspace(&self.root);
-        std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
-        let data = serde_json::to_vec_pretty(task).map_err(|e| e.to_string())?;
-        write_atomic(&directory.join("task.json"), &data)
-            .map_err(|e| format!("問題の内容を保存できません: {e}"))
-    }
-    /// Opens the workspace of a task whose page has been read. The first open creates the
-    /// solution and the samples; later opens restore them unchanged.
-    pub fn open(
-        &self,
-        url: &str,
-        label: &str,
-        expected_document_revision: u64,
-        documents: &mut DocumentStore,
-    ) -> Result<TaskWorkspace, String> {
-        let key = TaskKey::parse(url)?;
-        let task = self
-            .task(url)?
-            .ok_or("問題ページをまだ読み取っていません。ブラウザで問題ページを開いてください。")?;
-        let initial_cases = if task.samples.is_empty() {
-            vec![empty_case()]
-        } else {
-            task.samples.iter().map(SampleCase::from).collect()
-        };
-        let opened = open_files(
-            &key.workspace(&self.root),
-            label,
-            &task.input_code(),
-            initial_cases,
-            expected_document_revision,
-            documents,
-        )?;
-        Ok(TaskWorkspace {
-            reading_forms: task.reading_forms(),
-            graph: task.graph_form(),
-            task,
-            files: opened.files,
-            file: opened.file,
-            document: opened.document,
-            samples: opened.samples,
-        })
-    }
-    /// Opens the home workspace, creating it with one empty, uncompared sample on first use.
-    pub fn open_home(
-        &self,
-        expected_document_revision: u64,
-        documents: &mut DocumentStore,
-    ) -> Result<HomeWorkspace, String> {
-        let opened = open_files(
-            &self.root.join(HOME),
-            HOME,
-            "",
-            vec![empty_case()],
-            expected_document_revision,
-            documents,
-        )?;
-        Ok(HomeWorkspace {
-            files: opened.files,
-            file: opened.file,
-            document: opened.document,
-            samples: opened.samples,
-        })
-    }
-    /// The directory of a workspace: `home`, or a task URL.
-    fn directory(&self, workspace: &str) -> Result<PathBuf, String> {
-        if workspace == HOME {
-            Ok(self.root.join(HOME))
-        } else {
-            Ok(TaskKey::parse(workspace)?.workspace(&self.root))
-        }
-    }
-    pub fn files(&self, workspace: &str) -> Result<Vec<String>, String> {
-        solutions::list(&self.directory(workspace)?)
-    }
-    pub fn open_file(
-        &self,
-        workspace: &str,
-        name: &str,
-        documents: &mut DocumentStore,
-    ) -> Result<DocumentResult, String> {
-        let directory = self.directory(workspace)?;
-        if !self.files(workspace)?.iter().any(|file| file == name) {
-            return Err(format!("「{name}」がありません。"));
-        }
-        documents.open(solutions::path(&directory, name)?)
-    }
-    pub fn create_file(&self, workspace: &str, label: &str) -> Result<String, String> {
-        // New files of a task start with its reading code; home has no input format.
-        let template = if workspace == HOME {
-            String::new()
-        } else {
-            self.task(workspace)?
-                .map(|task| task.input_code())
-                .unwrap_or_default()
-        };
-        solutions::create(&self.directory(workspace)?, label, &template)
-    }
-    pub fn copy_file(&self, workspace: &str, name: &str, label: &str) -> Result<String, String> {
-        solutions::copy(&self.directory(workspace)?, name, label)
-    }
-    /// Renames a file. The open file keeps being the open one under its new name.
-    pub fn rename_file(
-        &self,
-        workspace: &str,
-        from: &str,
-        to: &str,
-        documents: &mut DocumentStore,
-    ) -> Result<(), String> {
-        let (old, new) = solutions::rename(&self.directory(workspace)?, from, to)?;
-        if documents.path() == Some(old.as_path()) {
-            documents.open(new)?;
-        }
-        Ok(())
-    }
-    pub fn delete_file(
-        &self,
-        workspace: &str,
-        name: &str,
-        documents: &DocumentStore,
-    ) -> Result<(), String> {
-        solutions::delete(&self.directory(workspace)?, name, documents.path())
-    }
-    /// Saves the samples of an open workspace: `home` or a task URL.
-    pub fn save_samples(&self, workspace: &str, samples: Samples) -> Result<(), String> {
-        let directory = self.directory(workspace)?;
-        if !directory.is_dir() {
-            return Err("問題を開いてからサンプルを保存してください。".into());
-        }
-        save_samples(samples, &directory.join("samples.json"))
-    }
-}
-
-pub(crate) fn create_if_missing(path: &Path, data: &[u8]) -> Result<(), String> {
-    if path.try_exists().map_err(|e| e.to_string())? {
-        return Ok(());
-    }
-    let mut temporary =
-        tempfile::NamedTempFile::new_in(path.parent().unwrap()).map_err(|e| e.to_string())?;
-    temporary.write_all(data).map_err(|e| e.to_string())?;
-    match temporary.persist_noclobber(path) {
-        Ok(_) => Ok(()),
-        Err(e) if e.error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
-        Err(e) => Err(format!("作業領域を作成できません: {e}")),
-    }
-}
-
-/// Reads a loaded task page into `task.json`. Used by the browser and by the UI test host.
-pub fn read_task_page(workspaces: &Workspaces, url: &str, html: &str) -> Result<(), String> {
-    workspaces.store_task(&parse_task(url, html)?)
-}
-
-/// Whether a loaded page address is the given task page, ignoring query and fragment.
-pub fn is_task_page(task_url: &str, loaded: &Url) -> bool {
-    Url::parse(task_url).is_ok_and(|task| task.path() == loaded.path().trim_end_matches('/'))
 }

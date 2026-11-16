@@ -1,9 +1,7 @@
 //! The user's submissions, read from the submission list shown in the right column, and the color
 //! of each task: AC, judging or other (docs/problem-library.md#提出一覧の読み取り).
-use crate::contests::ContestKey;
 use crate::files::{read_limited, write_atomic};
-use crate::navigation::{contest_url, ATCODER_ORIGIN};
-use crate::task::TaskKey;
+use crate::navigation::{submissions_page, ContestKey, TaskKey, ATCODER_ORIGIN};
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -48,21 +46,6 @@ pub struct SubmissionUpdate {
     pub contest: String,
     pub states: HashMap<String, TaskResult>,
     pub judging: bool,
-}
-
-/// The contest URL when `url` is the user's submission list, `/contests/<id>/submissions/me`.
-pub fn submissions_page(url: &Url) -> Option<String> {
-    let parts: Vec<_> = url.path().trim_end_matches('/').split('/').collect();
-    if !crate::is_atcoder(url)
-        || parts.len() != 5
-        || parts[1] != "contests"
-        || parts[3..] != ["submissions", "me"]
-    {
-        return None;
-    }
-    ContestKey::parse(&contest_url(parts[2]))
-        .ok()
-        .map(|key| key.url)
 }
 
 fn parse(contest: &ContestKey, html: &str) -> Vec<Submission> {
