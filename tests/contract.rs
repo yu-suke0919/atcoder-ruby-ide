@@ -743,6 +743,12 @@ fn delayed_notification_after_process_exit_does_not_cause_timeout() {
 #[test]
 fn r02_cleanup_failure_releases_reservation() {
     use std::os::unix::fs::PermissionsExt;
+    // root removes the directory despite its permissions, so the failure cannot happen; CI runs
+    // this as a normal user (docs/cloud-development.md#準備の確認).
+    if unsafe { libc::geteuid() } == 0 {
+        eprintln!("r02: not checked as root, which ignores the directory's permissions");
+        return;
+    }
     let runner = Runner::new(Duration::from_secs(5), 1048576);
     let directory = Arc::new(Mutex::new(String::new()));
     let capture = Arc::clone(&directory);

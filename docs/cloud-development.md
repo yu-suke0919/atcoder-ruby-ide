@@ -111,7 +111,7 @@ mkdir -p vendor/wsl && cargo clippy --locked --target x86_64-pc-windows-msvc --f
 npm run test:e2e
 ```
 
-クラウドセッションはrootで動くため、`npm test`のうち`r02_cleanup_failure_releases_reservation`（権限を外した一時ディレクトリの削除失敗を確かめるテスト）は、rootが権限を無視して削除できるため失敗する。それ以外が成功すればよい。
+クラウドセッションはrootで動く。`r02_cleanup_failure_releases_reservation`（権限を外した一時ディレクトリの削除失敗を確かめるテスト）は、rootが権限を無視して削除できるため確かめられない。rootのときはその旨を出して確かめずに終え、`npm test`の残りのテストを止めない。rootでないCIで確かめる。
 
 ## GitHubとの連携
 
