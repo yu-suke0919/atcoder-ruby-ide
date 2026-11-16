@@ -237,8 +237,6 @@ fn read_contest_top(webview: &tauri::Webview, page: Url) {
         let html = serde_json::from_str::<String>(&json).unwrap_or_default();
         let (app, page) = (app.clone(), page.clone());
         std::thread::spawn(move || {
-            let lock = std::sync::Arc::clone(&app.state::<crate::AppState>().contest_lock);
-            let _guard = lock.lock().unwrap();
             let joined = app
                 .path()
                 .app_local_data_dir()

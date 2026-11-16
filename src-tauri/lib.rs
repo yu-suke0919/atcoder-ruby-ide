@@ -10,6 +10,7 @@ mod contests;
 mod document;
 mod files;
 mod graph_form;
+mod http;
 mod input_code;
 #[cfg(unix)]
 mod lsp;
@@ -22,18 +23,17 @@ mod samples;
 mod solutions;
 mod submissions;
 mod task;
+mod workspace;
 pub mod wsl;
 
 pub use agent_client::AgentClient;
 #[cfg(unix)]
 pub use commands::{ruby_info, RubyInfo};
 pub use comparison::{decode_output, first_difference};
-pub use contests::{
-    fetch_page, http_client, parse_task_list, unix_now, Contest, ContestTask, Contests,
-    RegisteredContest,
-};
+pub use contests::{parse_task_list, unix_now, Contest, ContestTask, Contests, RegisteredContest};
 pub use document::{DocumentResult, DocumentStore};
 pub use graph_form::{graph_form, GraphForm};
+pub use http::{fetch_page, http_client};
 pub use input_code::{input_code, reading_forms};
 #[cfg(unix)]
 pub use lsp::{LspInfo, RubyLsp};
@@ -46,7 +46,8 @@ pub use navigation::{
 pub use runner::{Output, RunRequest, RunResult, Runner};
 pub use samples::{load_samples, save_samples, ProblemSample, SampleCase, Samples};
 pub use submissions::{SubmissionUpdate, Submissions, TaskResult};
-pub use task::{parse_task, read_task_page, HomeWorkspace, Task, TaskWorkspace, Workspaces};
+pub use task::{parse_task, Task};
+pub use workspace::{read_task_page, TaskWorkspace, WorkspaceFiles, Workspaces};
 
 #[cfg(unix)]
 #[derive(Clone, serde::Serialize)]

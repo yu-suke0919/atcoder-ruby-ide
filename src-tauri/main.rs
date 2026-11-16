@@ -11,8 +11,8 @@ mod webview2;
 
 use atcoder_ruby_ide::{
     fetch_page, http_client, unix_now, AgentClient, Contest, Contests, DocumentResult,
-    DocumentStore, HomeWorkspace, RegisteredContest, Samples, Submissions, TaskResult,
-    TaskWorkspace, Workspaces,
+    DocumentStore, RegisteredContest, Samples, Submissions, TaskResult, TaskWorkspace,
+    WorkspaceFiles, Workspaces,
 };
 use browser::Browser;
 use serde_json::{json, Value};
@@ -23,7 +23,6 @@ use tauri::{ipc::Channel, Manager};
 struct AppState {
     agent: Arc<AgentClient>,
     documents: Arc<Mutex<DocumentStore>>,
-    contest_lock: Arc<Mutex<()>>,
 }
 
 /// Ruby and Ruby LSP run in the agent (docs/architecture.md#wslのエージェント). The app's own WSL
@@ -219,16 +218,10 @@ async fn submission_states(
 
 /// Registers a contest from its task list, fetched once with the browser's cookies.
 #[tauri::command]
-async fn contest_register(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-    url: String,
-) -> Result<RegisteredContest, String> {
+async fn contest_register(app: tauri::AppHandle, url: String) -> Result<RegisteredContest, String> {
     let contests = Contests::new(data_dir(&app)?);
     let cookie = browser::cookies(&app).await?;
-    let lock = Arc::clone(&state.contest_lock);
     tauri::async_runtime::spawn_blocking(move || {
-        let _guard = lock.lock().unwrap();
         let client = http_client()?;
         contests.register(&url, |page| {
             fetch_page(&client, browser::to_origin(page)?.as_str(), &cookie)
@@ -241,34 +234,22 @@ async fn contest_register(
 #[tauri::command]
 async fn contest_set_hidden(
     app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
     url: String,
     hidden: bool,
 ) -> Result<Contest, String> {
     let contests = Contests::new(data_dir(&app)?);
-    let lock = Arc::clone(&state.contest_lock);
-    tauri::async_runtime::spawn_blocking(move || {
-        let _guard = lock.lock().unwrap();
-        contests.set_hidden(&url, hidden)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || contests.set_hidden(&url, hidden))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Hides the joined contests that ended a day ago and returns them (U6a).
 #[tauri::command]
-async fn contest_hide_ended(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<Contest>, String> {
+async fn contest_hide_ended(app: tauri::AppHandle) -> Result<Vec<Contest>, String> {
     let contests = Contests::new(data_dir(&app)?);
-    let lock = Arc::clone(&state.contest_lock);
-    tauri::async_runtime::spawn_blocking(move || {
-        let _guard = lock.lock().unwrap();
-        contests.hide_ended(unix_now())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || contests.hide_ended(unix_now()))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Opens a task's workspace, or returns None while its page has not been read yet.
@@ -311,7 +292,7 @@ async fn samples_save(
 async fn home_open(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-) -> Result<HomeWorkspace, String> {
+) -> Result<WorkspaceFiles, String> {
     let workspaces = Workspaces::new(data_dir(&app)?);
     let documents = Arc::clone(&state.documents);
     let revision = documents.lock().unwrap().revision();
@@ -420,7 +401,6 @@ fn main() {
             app.manage(AppState {
                 agent: Arc::new(agent(app.handle())),
                 documents: Arc::new(Mutex::new(DocumentStore::default())),
-                contest_lock: Arc::new(Mutex::new(())),
             });
             Browser::create_home(app, browser_args.clone())?;
             // The screen's own text can be searched for in るりま from the right-click menu too.
