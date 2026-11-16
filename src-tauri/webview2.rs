@@ -3,7 +3,7 @@
 use tauri::{Emitter, Manager};
 
 /// Adds 「るりまを全文検索」 to the right-click menu of a webview when text is selected; choosing
-/// it sends the text to the screen as `rurima-search` (D3). Tauri has no menu of its own for
+/// it sends the text to the screen as `rurima-search`. Tauri has no menu of its own for
 /// this, so the item goes into WebView2's menu. The page itself is not touched.
 pub fn add_search_menu(webview: &tauri::Webview) {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
