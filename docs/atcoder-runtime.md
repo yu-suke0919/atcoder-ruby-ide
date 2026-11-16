@@ -87,7 +87,7 @@ primeが依存するforwardableとsingleton、sorted_setが依存するset、rum
 
 `config/atcoder-runtime.json`を取得元・バージョン・SHA-256の固定情報とする。RubyGemsから取得した `.gem` はすべてハッシュ検証してから、ネットワークで依存解決せずに指定先へインストールする。C拡張は依存先の後にビルドする（lbfgsbはnumo-narrayのヘッダーを使う）。別プラットフォーム向けにビルド済みのgemは拒否する。
 同梱するRubyにはCIのビルドで追加し、Linuxの開発・CIは `npm run prepare:gems` で実行用Rubyへ同じgemを追加する（C拡張のビルドにCコンパイラーを使う）。標準ライブラリの利用方法は変えない。
-アプリはRuby起動前に、子プロセスの環境変数からRUBYOPT・RUBYLIB・BUNDLE_GEMFILE・GEM_HOME・GEM_PATHを除外する。端末のRubyオプション、外部ライブラリ探索先、BundlerのGemfileを引き継がない。起動後もGem.use_paths(Gem.default_dir)により、そのRubyの標準gemディレクトリだけを探索し、ユーザー用gemディレクトリから別バージョンを読み込まない。Rubyの確認とコード実行は同じRunnerを使う。prepare:gemsも選択したRubyの標準gemディレクトリへ追加するため、Linuxでは書き込み可能なRuby環境を用意する。
+アプリはRuby起動前に、子プロセスの環境変数からRUBYOPT・RUBYLIB・GEM_HOME・GEM_PATH・BUNDLE_*などを除外する（[除去する環境変数](architecture.md#コマンドとruby起動の共通処理)）。端末のRubyオプション、外部ライブラリ探索先、BundlerのGemfileを引き継がない。起動後もGem.use_paths(Gem.default_dir)により、そのRubyの標準gemディレクトリだけを探索し、ユーザー用gemディレクトリから別バージョンを読み込まない。Rubyの確認とコード実行は同じRunnerを使う。prepare:gemsも選択したRubyの標準gemディレクトリへ追加するため、Linuxでは書き込み可能なRuby環境を用意する。
 Rubyのソースまたは採用gemの固定情報が変わったら、同梱するディストリビューションをCIで作り直す。
 
 ## 残る差

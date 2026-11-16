@@ -35,7 +35,7 @@ Rubyはプロセスグループで起動し、停止・時間制限・出力上�
 エージェントは、WSL内に置いた同梱のRubyを絶対パスで使い、WSLのPATHやシステムのRubyに依存しない。共通テストとブラウザー用テストホストは、`RUBY_PATH`または PATH の Ruby を使う（開発とCIでは同梱と同じRubyを用意する）。
 起動時のRuby確認は問題に関係なく5秒を上限とする。WSLとエージェントの起動・アプリ専用のディストリビューションの登録はこれに含めず、別に上限を設ける（[WSLのエージェント](#wslのエージェント)）。確認失敗時は「Ruby を再確認」から再試行でき、確認中は重複確認と実行を抑止する。編集・保存は確認の成否に依存しない。
 RubyはAtCoderと同じ3.4.5を、CIでYJIT付き・配置場所に依存しない形でビルドし、静的ライブラリとデバッグ情報を除いて、SHA-256を固定して同梱する。採用gemもCIで同じRubyへ入れる。[AtCoderとの比較](atcoder-runtime.md)を参照する。
-RunnerはCommandのenv_removeでRUBYOPT・RUBYLIB・BUNDLE_GEMFILE・GEM_HOME・GEM_PATHを子プロセスの環境から除外してからRubyを起動する。bootstrapもGem.use_paths(Gem.default_dir)で、そのRubyの標準gemディレクトリだけを探索先にし、ユーザー用gemを含めない。prepare:gemsの既定の追加先もGem.default_dirとする。
+RunnerはRubyやBundlerの環境変数（[除去する環境変数](#コマンドとruby起動の共通処理)）を子プロセスの環境から除外してからRubyを起動する。bootstrapもGem.use_paths(Gem.default_dir)で、そのRubyの標準gemディレクトリだけを探索先にし、ユーザー用gemを含めない。prepare:gemsの既定の追加先もGem.default_dirとする。
 
 ## 文書と比較状態
 
@@ -172,7 +172,7 @@ AtCoderのページからアプリの機能を呼べないよう、次の3つを
 
 ## Rubyの実行環境の調査（C0）
 
-ロードマップのPhase C（Rubyの実行とLSPをWSL内のエージェントへ移す）の前に、2026-11-02にGitHubのCIの試作で確かめた結論。C1以降はこの節に従う。試作は`spike/c0-wsl`ブランチにあり、マージしない（[検証記録](verification.md#rubyの実行環境の調査c0)）。WSL2でしか確かめられない項目は、利用者の手元で確認用のスクリプトを実行して埋めた（[WSL2での確認](#wsl2での確認)）。
+ロードマップのPhase C（Rubyの実行とLSPをWSL内のエージェントへ移す）の前に、2026-11-02にGitHubのCIの試作で確かめた結論。調査の時点の記録で、その後に決めた置き場所・エージェントの起動・メモリ上限などは[WSLのエージェント](#wslのエージェント)と[メモリ上限](atcoder-runtime.md#メモリ上限)を正とする。試作は`spike/c0-wsl`ブランチにあり、マージしない（[検証記録](verification.md#rubyの実行環境の調査c0)）。WSL2でしか確かめられない項目は、利用者の手元で確認用のスクリプトを実行して埋めた（[WSL2での確認](#wsl2での確認)）。
 
 ### CIで使えるWSL
 
